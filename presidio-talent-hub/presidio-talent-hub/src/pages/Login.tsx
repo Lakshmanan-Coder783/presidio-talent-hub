@@ -31,7 +31,7 @@ export const Login: React.FC = () => {
       {/* ── Left panel ───────────────────────────────────────────────── */}
       <div
         className="hidden lg:flex lg:w-[44%] flex-col relative overflow-hidden"
-        style={{ background: 'linear-gradient(175deg, #0d2880 0%, #0b2268 35%, #071540 65%, #040c28 100%)' }}
+        style={{ background: 'linear-gradient(175deg, #1535a8 0%, #1030a0 30%, #0a1d70 60%, #06103c 100%)' }}
       >
 
         <div className="relative z-10 flex flex-col h-full px-10 pt-8 pb-6">
@@ -69,8 +69,6 @@ export const Login: React.FC = () => {
             />
           </div>
 
-          {/* Footer — sits below the photo */}
-          <p className="text-white/35 text-xs mt-4">© 2026 Presidio. All rights reserved.</p>
         </div>
       </div>
 
