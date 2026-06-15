@@ -31,11 +31,8 @@ export const Login: React.FC = () => {
       {/* ── Left panel ───────────────────────────────────────────────── */}
       <div
         className="hidden lg:flex lg:w-[44%] flex-col relative overflow-hidden"
-        style={{ background: 'linear-gradient(160deg, #0b1b36 0%, #0e2449 45%, #081425 100%)' }}
+        style={{ background: 'linear-gradient(175deg, #0d2880 0%, #0b2268 35%, #071540 65%, #040c28 100%)' }}
       >
-        {/* Subtle radial glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #3b82f6 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
 
         <div className="relative z-10 flex flex-col h-full px-10 pt-8 pb-6">
           {/* Brand */}
@@ -61,13 +58,14 @@ export const Login: React.FC = () => {
 
           {/* Building photo — fills the remaining space */}
           <div className="flex-1 mt-8 -mx-10 relative overflow-hidden" style={{ minHeight: '320px' }}>
-            {/* Seamless top fade so photo sky blends into panel gradient */}
-            <div className="absolute top-0 inset-x-0 h-20 z-10 pointer-events-none"
-              style={{ background: 'linear-gradient(to bottom, #0e1f3d 0%, rgba(14,31,61,0.6) 40%, transparent 100%)' }} />
+            {/* Seamless top fade blending photo sky into panel gradient */}
+            <div className="absolute top-0 inset-x-0 h-24 z-10 pointer-events-none"
+              style={{ background: 'linear-gradient(to bottom, #0b2268 0%, rgba(11,34,104,0.55) 50%, transparent 100%)' }} />
             <img
               src={buildingImg}
               alt="Presidio headquarters"
               className="w-full h-full object-cover object-top"
+              style={{ filter: 'brightness(1.15) saturate(1.4) hue-rotate(-5deg)' }}
             />
           </div>
 
