@@ -1,7 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', fontFamily: 'monospace', background: '#fee', color: '#800' }}>
+          <h2>Runtime Error</h2>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{this.state.error.message}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px' }}>{this.state.error.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
+import { Toaster } from 'sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // Admin Pages
 import { Dashboard } from './pages/admin/Dashboard';
@@ -41,7 +63,6 @@ const NavigationRouter: React.FC = () => {
     return <CandidatePortal />;
   }
 
-  // Admin Views routing
   const renderAdminView = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -78,9 +99,14 @@ const NavigationRouter: React.FC = () => {
 
 function App() {
   return (
-    <AppProvider>
-      <NavigationRouter />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <TooltipProvider>
+          <NavigationRouter />
+          <Toaster richColors position="top-right" />
+        </TooltipProvider>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
 

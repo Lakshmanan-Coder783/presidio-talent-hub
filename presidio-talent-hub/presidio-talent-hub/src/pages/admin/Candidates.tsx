@@ -3,104 +3,95 @@ import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
 import type { Candidate } from '../../types';
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  School, 
-  GraduationCap, 
-  Award, 
-  Calendar, 
-  MessageSquare,
-  FileSpreadsheet,
-  UploadCloud,
-  CheckCircle2,
-  Plus
+import {
+  User, Mail, Phone, School, GraduationCap, Award,
+  Calendar, MessageSquare, FileSpreadsheet, UploadCloud, CheckCircle2, Plus,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
+
+const assessmentBadge = (status: string) => {
+  if (status === 'Completed') return <Badge variant="default">Completed</Badge>;
+  if (status === 'InProgress') return <Badge variant="secondary">In Progress</Badge>;
+  if (status === 'Pending') return <Badge variant="outline">Pending</Badge>;
+  return <Badge variant="destructive">{status}</Badge>;
+};
+
+const interviewBadge = (status: string) => {
+  if (status === 'Passed') return <Badge variant="default">Passed</Badge>;
+  if (status === 'Failed') return <Badge variant="destructive">Failed</Badge>;
+  if (status === 'Scheduled') return <Badge variant="outline">Scheduled</Badge>;
+  if (status === 'Ongoing') return <Badge variant="secondary">Ongoing</Badge>;
+  return <span className="text-muted-foreground text-sm">—</span>;
+};
+
+const offerBadge = (status: string) => {
+  if (status === 'Joined' || status === 'Accepted') return <Badge variant="default">{status}</Badge>;
+  if (status === 'Declined') return <Badge variant="destructive">Declined</Badge>;
+  if (status === 'Offered') return <Badge variant="outline">Offered</Badge>;
+  return <span className="text-muted-foreground text-sm">—</span>;
+};
 
 export const Candidates: React.FC<{ setActiveTab?: (tab: string) => void }> = ({ setActiveTab }) => {
   const { db } = useApp();
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
-  const [profileTab, setProfileTab] = useState<'personal' | 'education' | 'assessment' | 'interview' | 'offer'>('personal');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
-  // Define Table Columns
   const columns = useMemo(() => [
     {
       header: 'Candidate ID',
-      accessor: 'id',
+      accessor: 'id' as const,
       sortable: true,
       render: (row: Candidate) => (
-        <span 
-          style={{ color: 'var(--primary-blue)', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-          onClick={() => { setSelectedCandidate(row); setProfileTab('personal'); }}
+        <button
+          className="text-primary font-semibold underline-offset-2 hover:underline text-sm"
+          onClick={() => setSelectedCandidate(row)}
         >
           {row.id}
-        </span>
-      )
+        </button>
+      ),
     },
     {
       header: 'Name',
-      accessor: 'name',
+      accessor: 'name' as const,
       sortable: true,
       render: (row: Candidate) => (
-        <span 
-          style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}
-          onClick={() => { setSelectedCandidate(row); setProfileTab('personal'); }}
+        <button
+          className="font-semibold text-sm hover:text-primary"
+          onClick={() => setSelectedCandidate(row)}
         >
           {row.name}
-        </span>
-      )
+        </button>
+      ),
     },
-    { header: 'College', accessor: 'college', sortable: true },
-    { header: 'Degree', accessor: 'degree', sortable: true },
-    { header: 'CGPA', accessor: 'cgpa', sortable: true },
+    { header: 'College', accessor: 'college' as const, sortable: true },
+    { header: 'Degree', accessor: 'degree' as const, sortable: true },
+    { header: 'CGPA', accessor: 'cgpa' as const, sortable: true },
     {
       header: 'Assessment',
-      accessor: 'assessmentStatus',
+      accessor: 'assessmentStatus' as const,
       sortable: true,
-      render: (row: Candidate) => {
-        let badgeClass = 'badge ';
-        if (row.assessmentStatus === 'Completed') badgeClass += 'success';
-        else if (row.assessmentStatus === 'InProgress') badgeClass += 'warning';
-        else if (row.assessmentStatus === 'Pending') badgeClass += 'info';
-        else badgeClass += 'error';
-        return <span className={badgeClass}>{row.assessmentStatus}</span>;
-      }
+      render: (row: Candidate) => assessmentBadge(row.assessmentStatus),
     },
     {
       header: 'Interview',
-      accessor: 'interviewStatus',
+      accessor: 'interviewStatus' as const,
       sortable: true,
-      render: (row: Candidate) => {
-        let badgeClass = 'badge ';
-        if (row.interviewStatus === 'Passed') badgeClass += 'success';
-        else if (row.interviewStatus === 'Failed') badgeClass += 'error';
-        else if (row.interviewStatus === 'Scheduled') badgeClass += 'info';
-        else if (row.interviewStatus === 'Ongoing') badgeClass += 'warning';
-        else return <span style={{ color: 'var(--text-muted)' }}>-</span>;
-        return <span className={badgeClass}>{row.interviewStatus}</span>;
-      }
+      render: (row: Candidate) => interviewBadge(row.interviewStatus),
     },
     {
       header: 'Offer',
-      accessor: 'offerStatus',
+      accessor: 'offerStatus' as const,
       sortable: true,
-      render: (row: Candidate) => {
-        let badgeClass = 'badge ';
-        if (row.offerStatus === 'Joined') badgeClass += 'success';
-        else if (row.offerStatus === 'Accepted') badgeClass += 'success';
-        else if (row.offerStatus === 'Declined') badgeClass += 'error';
-        else if (row.offerStatus === 'Offered') badgeClass += 'info';
-        else return <span style={{ color: 'var(--text-muted)' }}>-</span>;
-        return <span className={badgeClass}>{row.offerStatus}</span>;
-      }
-    }
+      render: (row: Candidate) => offerBadge(row.offerStatus),
+    },
   ], []);
 
-  // Filter Configurations
   const tableFilters = useMemo(() => [
     {
       key: 'assessmentStatus',
@@ -109,8 +100,8 @@ export const Candidates: React.FC<{ setActiveTab?: (tab: string) => void }> = ({
         { label: 'Not Invited', value: 'Not Invited' },
         { label: 'Pending', value: 'Pending' },
         { label: 'InProgress', value: 'InProgress' },
-        { label: 'Completed', value: 'Completed' }
-      ]
+        { label: 'Completed', value: 'Completed' },
+      ],
     },
     {
       key: 'offerStatus',
@@ -120,392 +111,260 @@ export const Candidates: React.FC<{ setActiveTab?: (tab: string) => void }> = ({
         { label: 'Offered', value: 'Offered' },
         { label: 'Accepted', value: 'Accepted' },
         { label: 'Declined', value: 'Declined' },
-        { label: 'Joined', value: 'Joined' }
-      ]
+        { label: 'Joined', value: 'Joined' },
+      ],
     },
     {
       key: 'college',
       label: 'College',
       options: Array.from(new Set(db.candidates.slice(0, 100).map(c => c.college))).map(col => ({
         label: col,
-        value: col
-      }))
-    }
+        value: col,
+      })),
+    },
   ], [db]);
 
   const handleBulkUploadSimulate = () => {
     setUploading(true);
     setUploadSuccess(false);
-
     setTimeout(() => {
       setUploading(false);
       setUploadSuccess(true);
-      setTimeout(() => {
-        setUploadModalOpen(false);
-        setUploadSuccess(false);
-      }, 1500);
+      setTimeout(() => { setUploadModalOpen(false); setUploadSuccess(false); }, 1500);
     }, 2000);
   };
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Candidates Directory</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Manage profiles, assessment scorecards, interview feedbacks, and hiring funnels of all {db.candidates.length} candidates.
+          <h1 className="text-2xl font-bold tracking-tight">Candidates Directory</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Manage profiles, scorecards, interview feedback and funnel for {db.candidates.length} candidates.
           </p>
         </div>
-
-        <div className="page-actions">
-          <button className="btn btn-secondary" onClick={() => setUploadModalOpen(true)}>
-            <UploadCloud size={16} />
-            Bulk Import (XLS)
-          </button>
-          <button className="btn btn-primary" onClick={() => setActiveTab?.('invite-candidates')}>
-            <Plus size={16} />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setUploadModalOpen(true)} className="gap-2">
+            <UploadCloud className="h-4 w-4" />
+            Bulk Import
+          </Button>
+          <Button onClick={() => setActiveTab?.('invite-candidates')} className="gap-2">
+            <Plus className="h-4 w-4" />
             Invite Candidates
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Candidates table */}
       <Table
         data={db.candidates}
         columns={columns}
         filters={tableFilters}
-        searchPlaceholder="Search by Candidate ID, Name, College..."
-        searchKey={(c) => `${c.id} ${c.name} ${c.college}`}
+        searchPlaceholder="Search by ID, name, or college..."
+        searchKey={c => `${c.id} ${c.name} ${c.college}`}
         initialSort={{ key: 'id', direction: 'asc' }}
-        exportFileName="Candidates_Database_Export"
+        exportFileName="Candidates_Export"
       />
 
-      {/* Candidate Profile Drawer / Modal */}
+      {/* Candidate Profile Modal */}
       {selectedCandidate && (
         <Modal
-          isOpen={true}
+          isOpen
           onClose={() => setSelectedCandidate(null)}
-          title={`Candidate Profile: ${selectedCandidate.name}`}
+          title={`Profile: ${selectedCandidate.name}`}
           size="lg"
-          footer={
-            <button className="btn btn-secondary" onClick={() => setSelectedCandidate(null)}>
-              Close Profile
-            </button>
-          }
+          footer={<Button variant="outline" onClick={() => setSelectedCandidate(null)}>Close</Button>}
         >
-          {/* Sub Navigation Tabs */}
-          <div 
-            style={{ 
-              display: 'flex', 
-              borderBottom: '1px solid var(--border)', 
-              marginBottom: '20px',
-              overflowX: 'auto',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {[
-              { id: 'personal', label: 'Personal Information', icon: User },
-              { id: 'education', label: 'Education Details', icon: GraduationCap },
-              { id: 'assessment', label: 'Assessment Scorecard', icon: Award },
-              { id: 'interview', label: 'Interview Logs', icon: MessageSquare },
-              { id: 'offer', label: 'Offer Conversion', icon: Calendar }
-            ].map(tab => {
-              const Icon = tab.icon;
-              const isTabActive = profileTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setProfileTab(tab.id as any)}
-                  style={{
-                    padding: '12px 18px',
-                    border: 'none',
-                    background: 'none',
-                    borderBottom: isTabActive ? '2px solid var(--primary-blue)' : '2px solid transparent',
-                    color: isTabActive ? 'var(--primary-blue)' : 'var(--text-secondary)',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    outline: 'none'
-                  }}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+          <Tabs defaultValue="personal">
+            <TabsList className="w-full mb-4">
+              <TabsTrigger value="personal" className="flex-1 gap-1.5"><User className="h-3.5 w-3.5" />Personal</TabsTrigger>
+              <TabsTrigger value="education" className="flex-1 gap-1.5"><GraduationCap className="h-3.5 w-3.5" />Education</TabsTrigger>
+              <TabsTrigger value="assessment" className="flex-1 gap-1.5"><Award className="h-3.5 w-3.5" />Assessment</TabsTrigger>
+              <TabsTrigger value="interview" className="flex-1 gap-1.5"><MessageSquare className="h-3.5 w-3.5" />Interview</TabsTrigger>
+              <TabsTrigger value="offer" className="flex-1 gap-1.5"><Calendar className="h-3.5 w-3.5" />Offer</TabsTrigger>
+            </TabsList>
 
-          {/* TAB CONTENTS */}
-          <div style={{ minHeight: '300px' }}>
-            
-            {/* PERSONAL INFO */}
-            {profileTab === 'personal' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <User size={18} style={{ color: 'var(--primary-blue)' }} />
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Full Name</span>
-                      <p style={{ fontWeight: 600 }}>{selectedCandidate.name}</p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Mail size={18} style={{ color: 'var(--primary-blue)' }} />
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Email Address</span>
-                      <p style={{ fontWeight: 600 }}>{selectedCandidate.email}</p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Phone size={18} style={{ color: 'var(--primary-blue)' }} />
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Phone Number</span>
-                      <p style={{ fontWeight: 600 }}>{selectedCandidate.phone}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: '20px', borderLeft: '1px solid var(--border)' }}>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Funnel Hiring Stage</span>
-                    <p style={{ fontWeight: 700, color: 'var(--primary-blue)', marginTop: '4px' }}>
-                      <span className="badge info">{selectedCandidate.funnelStage}</span>
-                    </p>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Portal Candidate ID</span>
-                    <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', marginTop: '2px' }}>
-                      {selectedCandidate.id}
-                    </p>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Exam Portal Password</span>
-                    <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', marginTop: '2px' }}>
-                      {selectedCandidate.assessmentPassword || 'Not Generated'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* EDUCATION */}
-            {profileTab === 'education' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <School size={18} style={{ color: 'var(--primary-blue)' }} />
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>College Institute</span>
-                      <p style={{ fontWeight: 600 }}>{selectedCandidate.college}</p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <GraduationCap size={18} style={{ color: 'var(--primary-blue)' }} />
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Degree & Stream</span>
-                      <p style={{ fontWeight: 600 }}>{selectedCandidate.degree}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: '20px', borderLeft: '1px solid var(--border)' }}>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>CGPA Score</span>
-                    <p style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--primary-blue)' }}>
-                      {selectedCandidate.cgpa}
-                      <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-secondary)' }}> / 10.0</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ASSESSMENT HISTORY */}
-            {profileTab === 'assessment' && (
-              <div>
-                {selectedCandidate.assessmentStatus === 'Completed' ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                    <div>
-                      <h4 style={{ fontSize: '1rem', marginBottom: '12px' }}>Test Statistics</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.875rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Assigned Exam</span>
-                          <span style={{ fontWeight: 600 }}>{selectedCandidate.assessmentId}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Total Marks Scored</span>
-                          <span style={{ fontWeight: 700, color: 'var(--success)' }}>{selectedCandidate.assessmentScore} Marks</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Percentile Rank</span>
-                          <span style={{ fontWeight: 700, color: 'var(--primary-blue)' }}>{selectedCandidate.assessmentPercentile}%</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>State-wide Rank</span>
-                          <span style={{ fontWeight: 600 }}>#{selectedCandidate.assessmentRank}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Time Taken</span>
-                          <span style={{ fontWeight: 600 }}>{Math.round((selectedCandidate.assessmentDurationUsed || 0) / 60)} mins</span>
-                        </div>
+            <TabsContent value="personal" className="space-y-4">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  {[
+                    { icon: User, label: 'Full Name', value: selectedCandidate.name },
+                    { icon: Mail, label: 'Email', value: selectedCandidate.email },
+                    { icon: Phone, label: 'Phone', value: selectedCandidate.phone },
+                  ].map(({ icon: Icon, label, value }) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <Icon className="h-4 w-4 text-primary shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">{label}</p>
+                        <p className="font-semibold text-sm">{value}</p>
                       </div>
                     </div>
+                  ))}
+                </div>
+                <div className="space-y-4 pl-4 border-l">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Funnel Stage</p>
+                    <Badge variant="outline">{selectedCandidate.funnelStage}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Candidate ID</p>
+                    <p className="font-mono font-semibold text-sm">{selectedCandidate.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Portal Password</p>
+                    <p className="font-mono font-semibold text-sm">{selectedCandidate.assessmentPassword || 'Not Generated'}</p>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
 
-                    <div style={{ paddingLeft: '24px', borderLeft: '1px solid var(--border)' }}>
-                      <h4 style={{ fontSize: '1rem', marginBottom: '12px' }}>Topic Breakdown</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {selectedCandidate.sectionScores && Object.entries(selectedCandidate.sectionScores).map(([sec, val]) => (
-                          <div key={sec}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', marginBottom: '4px' }}>
-                              <span>{sec}</span>
-                              <span style={{ color: 'var(--text-primary)' }}>{val} Marks</span>
-                            </div>
-                            <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-slate)', borderRadius: '3px', overflow: 'hidden' }}>
-                              <div style={{ width: `${Math.min(val * 4, 100)}%`, height: '100%', backgroundColor: 'var(--primary-blue)', borderRadius: '3px' }}></div>
-                            </div>
+            <TabsContent value="education" className="grid grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <School className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">College</p>
+                    <p className="font-semibold text-sm">{selectedCandidate.college}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <GraduationCap className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Degree</p>
+                    <p className="font-semibold text-sm">{selectedCandidate.degree}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col justify-center pl-4 border-l">
+                <p className="text-xs text-muted-foreground">CGPA</p>
+                <p className="text-4xl font-black text-primary">
+                  {selectedCandidate.cgpa}
+                  <span className="text-base font-medium text-muted-foreground"> / 10.0</span>
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="assessment">
+              {selectedCandidate.assessmentStatus === 'Completed' ? (
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2 text-sm">
+                    {[
+                      { label: 'Exam ID', value: selectedCandidate.assessmentId },
+                      { label: 'Total Score', value: `${selectedCandidate.assessmentScore} marks` },
+                      { label: 'Percentile', value: `${selectedCandidate.assessmentPercentile}%` },
+                      { label: 'Rank', value: `#${selectedCandidate.assessmentRank}` },
+                      { label: 'Time Taken', value: `${Math.round((selectedCandidate.assessmentDurationUsed || 0) / 60)} mins` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between py-1 border-b">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-semibold">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pl-4 border-l space-y-3">
+                    <p className="text-sm font-semibold mb-2">Topic Breakdown</p>
+                    {selectedCandidate.sectionScores &&
+                      Object.entries(selectedCandidate.sectionScores).map(([sec, val]) => (
+                        <div key={sec}>
+                          <div className="flex justify-between text-xs font-medium mb-1">
+                            <span className="capitalize">{sec}</span>
+                            <span>{val} marks</span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
-                    Assessment status is <b>{selectedCandidate.assessmentStatus}</b>. No scorecard metrics generated yet.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* INTERVIEW logs */}
-            {profileTab === 'interview' && (
-              <div>
-                {selectedCandidate.interviewStatus !== 'Not Scheduled' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ backgroundColor: 'var(--bg-slate)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px', fontSize: '0.875rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Technical Interview Panel</span>
-                        <span className="badge success">{selectedCandidate.interviewStatus}</span>
-                      </div>
-                      <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        Candidate demonstrated good problem-solving logic. Strong knowledge in database concepts and OS concurrency. Satisfactorily resolved coding exercise. Recommended for next steps.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
-                    No interview logs found. Candidate is currently not scheduled.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* OFFER DETAILS */}
-            {profileTab === 'offer' && (
-              <div>
-                {selectedCandidate.offerStatus !== 'None' ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Offer CTC Package</span>
-                        <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--success)' }}>12.5 LPA</p>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Offer Release Date</span>
-                        <p style={{ fontWeight: 600 }}>10th June 2026</p>
-                      </div>
-                    </div>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: '20px', borderLeft: '1px solid var(--border)' }}>
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Hiring Status</span>
-                        <div style={{ marginTop: '8px' }}>
-                          <span className="badge success" style={{ fontSize: '0.9rem', padding: '6px 12px' }}>
-                            {selectedCandidate.offerStatus}
-                          </span>
+                          <Progress value={Math.min((val as number) * 4, 100)} className="h-1.5" />
                         </div>
-                      </div>
+                      ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-center py-10 text-muted-foreground">
+                  Assessment status is <strong>{selectedCandidate.assessmentStatus}</strong>. No scorecard yet.
+                </p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="interview">
+              {selectedCandidate.interviewStatus !== 'Not Scheduled' ? (
+                <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">Technical Interview Panel</span>
+                    {interviewBadge(selectedCandidate.interviewStatus)}
+                  </div>
+                  <Separator />
+                  <p className="text-muted-foreground leading-relaxed">
+                    Candidate demonstrated good problem-solving logic. Strong knowledge in database concepts and OS concurrency.
+                    Satisfactorily resolved coding exercise. Recommended for next steps.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-center py-10 text-muted-foreground">No interview logs found. Candidate not yet scheduled.</p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="offer">
+              {selectedCandidate.offerStatus !== 'None' ? (
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Offer CTC</p>
+                      <p className="text-3xl font-black text-emerald-600">12.5 LPA</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Release Date</p>
+                      <p className="font-semibold text-sm">10th June 2026</p>
                     </div>
                   </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
-                    No offer details released for this candidate. Funnel status: <b>{selectedCandidate.funnelStage}</b>.
+                  <div className="flex flex-col justify-center pl-4 border-l">
+                    <p className="text-xs text-muted-foreground mb-2">Hiring Status</p>
+                    {offerBadge(selectedCandidate.offerStatus)}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              ) : (
+                <p className="text-center py-10 text-muted-foreground">
+                  No offer released. Funnel stage: <strong>{selectedCandidate.funnelStage}</strong>.
+                </p>
+              )}
+            </TabsContent>
+          </Tabs>
         </Modal>
       )}
 
-      {/* Bulk Import Simulator Modal */}
+      {/* Bulk Import Modal */}
       <Modal
         isOpen={uploadModalOpen}
         onClose={() => setUploadModalOpen(false)}
         title="Import Candidates via Spreadsheet"
         footer={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={() => setUploadModalOpen(false)} disabled={uploading}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handleBulkUploadSimulate} disabled={uploading}>
-              {uploading ? 'Processing XLS...' : 'Import Spreadsheet'}
-            </button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setUploadModalOpen(false)} disabled={uploading}>Cancel</Button>
+            <Button onClick={handleBulkUploadSimulate} disabled={uploading}>
+              {uploading ? 'Processing…' : 'Import Spreadsheet'}
+            </Button>
           </div>
         }
       >
-        <div style={{
-          border: '2px dashed var(--border)',
-          borderRadius: '8px',
-          padding: '40px',
-          textAlign: 'center',
-          backgroundColor: 'var(--bg-slate)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px'
-        }}>
+        <div className="rounded-lg border-2 border-dashed bg-muted/30 p-10 flex flex-col items-center justify-center gap-3 text-center min-h-[180px]">
           {uploading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid var(--primary-blue-light)',
-                borderTop: '4px solid var(--primary-blue)',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }}></div>
-              <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-              <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>Analyzing sheet layout and rows...</p>
-            </div>
+            <>
+              <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <p className="font-semibold text-sm">Analyzing sheet layout and rows…</p>
+            </>
           ) : uploadSuccess ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-              <CheckCircle2 size={40} style={{ color: 'var(--success)' }} />
-              <p style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--success)' }}>
-                Import Completed! 50 Candidates created.
-              </p>
-            </div>
+            <>
+              <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+              <p className="font-semibold text-emerald-600 text-sm">Import complete — 50 candidates created.</p>
+            </>
           ) : (
             <>
-              <FileSpreadsheet size={48} style={{ color: 'var(--primary-blue)' }} />
+              <FileSpreadsheet className="h-12 w-12 text-primary" />
               <div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 600 }}>Drag and Drop your spreadsheet here</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Supports CSV, XLS, XLSX formats. Minimum columns required: Name, Email, Phone, College, Degree, CGPA.
+                <h4 className="font-semibold">Drag & Drop your spreadsheet here</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Supports CSV, XLS, XLSX. Required columns: Name, Email, Phone, College, Degree, CGPA.
                 </p>
               </div>
-              <input type="file" id="xls-file" style={{ display: 'none' }} />
-              <button className="btn btn-secondary" onClick={() => document.getElementById('xls-file')?.click()} style={{ fontSize: '0.75rem', padding: '6px 12px' }}>
+              <input type="file" id="xls-file" className="hidden" />
+              <Button variant="outline" size="sm" onClick={() => document.getElementById('xls-file')?.click()}>
                 Browse Files
-              </button>
+              </Button>
             </>
           )}
         </div>

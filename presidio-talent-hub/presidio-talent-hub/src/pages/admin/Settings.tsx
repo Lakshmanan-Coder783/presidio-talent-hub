@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
 import { ShieldAlert, Cpu, Network, CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'security' | 'sso'>('general');
   const [successSaved, setSuccessSaved] = useState(false);
-
   const [platformName, setPlatformName] = useState('Presidio Talent Hub');
   const [proctoring, setProctoring] = useState(true);
   const [tabSwitchLimit, setTabSwitchLimit] = useState('3');
@@ -14,196 +22,149 @@ export const Settings: React.FC = () => {
 
   const handleSave = () => {
     setSuccessSaved(true);
-    setTimeout(() => {
-      setSuccessSaved(false);
-    }, 2000);
+    setTimeout(() => setSuccessSaved(false), 2000);
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Platform Settings</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Configure default corporate setups, proctoring security parameters, and Entra ID SSO credentials.
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Platform Settings</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Configure default corporate setups, proctoring security parameters, and Entra ID SSO credentials.
+        </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '32px', alignItems: 'start' }}>
-        
-        {/* Left Side: Tabs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[
-            { id: 'general', label: 'General Config', icon: Cpu },
-            { id: 'security', label: 'Assessment Security', icon: ShieldAlert },
-            { id: 'sso', label: 'Single Sign-On (SSO)', icon: Network }
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isTabActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: isTabActive ? 'var(--primary-blue-light)' : 'none',
-                  color: isTabActive ? 'var(--primary-blue)' : 'var(--text-secondary)',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-              >
-                <Icon size={16} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+      <Tabs defaultValue="general">
+        <TabsList>
+          <TabsTrigger value="general" className="gap-2">
+            <Cpu className="h-3.5 w-3.5" />
+            General Config
+          </TabsTrigger>
+          <TabsTrigger value="security" className="gap-2">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            Assessment Security
+          </TabsTrigger>
+          <TabsTrigger value="sso" className="gap-2">
+            <Network className="h-3.5 w-3.5" />
+            Single Sign-On (SSO)
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Right Side: Tab panel details */}
-        <div className="widget-card">
-          <div style={{ minHeight: '320px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div>
-              {activeTab === 'general' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="widget-title">
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>General Configuration</h3>
-                  </div>
+        <TabsContent value="general" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>General Configuration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-1.5">
+                <Label>Enterprise Platform Name</Label>
+                <Input value={platformName} onChange={e => setPlatformName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Session Timeout Limit (minutes)</Label>
+                <Input type="number" defaultValue="120" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>System Timezone</Label>
+                <Select defaultValue="IST">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="IST">India Standard Time (IST - UTC+05:30)</SelectItem>
+                    <SelectItem value="EST">Eastern Standard Time (EST - UTC-05:00)</SelectItem>
+                    <SelectItem value="GMT">Greenwich Mean Time (GMT - UTC+00:00)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                  <div className="form-group">
-                    <label className="form-label">Enterprise Platform Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={platformName}
-                      onChange={e => setPlatformName(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Session Timeout Limit (minutes)</label>
-                    <input type="number" className="form-control" defaultValue="120" />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">System Timezone</label>
-                    <select className="select-filter" style={{ width: '100%', padding: '10px' }} defaultValue="IST">
-                      <option value="IST">India Standard Time (IST - UTC+05:30)</option>
-                      <option value="EST">Eastern Standard Time (EST - UTC-05:00)</option>
-                      <option value="GMT">Greenwich Mean Time (GMT - UTC+00:00)</option>
-                    </select>
-                  </div>
+        <TabsContent value="security" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Assessment Security &amp; Proctoring</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="proctoring-switch">AI-Proctoring Camera Monitoring</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Requires candidate camera permissions to enable live monitoring.
+                  </p>
                 </div>
-              )}
+                <Switch
+                  id="proctoring-switch"
+                  checked={proctoring}
+                  onCheckedChange={setProctoring}
+                />
+              </div>
 
-              {activeTab === 'security' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="widget-title">
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Assessment Security & Proctoring</h3>
-                  </div>
+              <Separator />
 
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-                    <input
-                      type="checkbox"
-                      id="proct-check-admin"
-                      checked={proctoring}
-                      onChange={e => setProctoring(e.target.checked)}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                    <label className="form-label" htmlFor="proct-check-admin" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                      Enable AI-Proctoring Camera Monitoring (Requires candidate camera permissions)
-                    </label>
-                  </div>
+              <div className="space-y-1.5">
+                <Label>Max Allowed Tab Switches / Navigation Violations</Label>
+                <Input
+                  type="number"
+                  value={tabSwitchLimit}
+                  onChange={e => setTabSwitchLimit(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The test will automatically terminate if the candidate switches tabs more than this limit.
+                </p>
+              </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Max Allowed Tab Switches / Navigation Violations</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={tabSwitchLimit}
-                      onChange={e => setTabSwitchLimit(e.target.value)}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      The test will automatically terminate if the candidate switches tabs more than this limit.
-                    </span>
-                  </div>
+              <Separator />
 
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <input
-                      type="checkbox"
-                      id="copy-paste-admin"
-                      checked={copyPasteBlock}
-                      onChange={e => setCopyPasteBlock(e.target.checked)}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                    <label className="form-label" htmlFor="copy-paste-admin" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                      Disable Right-click & Text Copy-Paste in Coding IDE
-                    </label>
-                  </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="copypaste-switch">Disable Right-click &amp; Copy-Paste in Coding IDE</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Prevents plagiarism in coding and SQL sections.
+                  </p>
                 </div>
-              )}
+                <Switch
+                  id="copypaste-switch"
+                  checked={copyPasteBlock}
+                  onCheckedChange={setCopyPasteBlock}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              {activeTab === 'sso' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="widget-title">
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Microsoft Entra ID (Azure AD) SSO</h3>
-                  </div>
+        <TabsContent value="sso" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Microsoft Entra ID (Azure AD) SSO</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-1.5">
+                <Label>Directory Tenant ID</Label>
+                <Input value={tenantId} onChange={e => setTenantId(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Application Client ID</Label>
+                <Input value={clientId} onChange={e => setClientId(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Redirect OAuth URI</Label>
+                <Input defaultValue="https://talent.presidio.com/auth/openid/callback" />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-                  <div className="form-group">
-                    <label className="form-label">Directory Tenant ID</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={tenantId}
-                      onChange={e => setTenantId(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Application Client ID</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={clientId}
-                      onChange={e => setClientId(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Redirect OAuth URI</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      defaultValue="https://talent.presidio.com/auth/openid/callback"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Actions */}
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', alignItems: 'center' }}>
-              {successSaved && (
-                <span style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={14} />
-                  Settings saved successfully!
-                </span>
-              )}
-              <button className="btn btn-primary" onClick={handleSave}>
-                Save Configurations
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center justify-end gap-3 pt-2">
+        {successSaved && (
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600">
+            <CheckCircle className="h-4 w-4" />
+            Settings saved successfully!
+          </span>
+        )}
+        <Button onClick={handleSave}>Save Configurations</Button>
       </div>
     </div>
   );

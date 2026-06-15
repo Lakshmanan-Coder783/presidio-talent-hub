@@ -2,28 +2,36 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CodeEditor } from '../../components/CodeEditor';
 import { DonutChart } from '../../components/Charts';
-import { 
-  Clock, 
-  CheckSquare, 
-  FileCheck2, 
-  AlertCircle, 
-  ChevronRight, 
+import {
+  Clock,
+  CheckSquare,
+  FileCheck2,
+  AlertCircle,
+  ChevronRight,
   ChevronLeft,
   Bookmark,
   LogOut,
   Trophy,
   Activity,
-  Award
+  Award,
+  Check,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
 
 export const CandidatePortal: React.FC = () => {
   const { currentUser, db, submitCandidateAssessment, logout } = useApp();
   const candidate = currentUser?.candidate;
-  
+
   const [portalStep, setPortalStep] = useState<'instructions' | 'assessment' | 'submitted'>('instructions');
   const [agreed, setAgreed] = useState(false);
 
-  // Active exam details
   const assessment = useMemo(() => {
     if (!candidate) return null;
     return db.assessments.find(a => a.id === candidate.assessmentId) || null;
@@ -34,26 +42,18 @@ export const CandidatePortal: React.FC = () => {
     return db.questions.filter(q => assessment.questionIds.includes(q.id));
   }, [assessment, db]);
 
-  // Assessment active states
   const [activeIdx, setActiveIdx] = useState(0);
   const [answers, setAnswers] = useState<{ [qId: string]: any }>({});
   const [markedForReview, setMarkedForReview] = useState<{ [qId: string]: boolean }>({});
-
-  
-  // Timer state
-  const [timeLeft, setTimeLeft] = useState(0); // in seconds
+  const [timeLeft, setTimeLeft] = useState(0);
   const [durationUsed, setDurationUsed] = useState(0);
 
   useEffect(() => {
-    if (assessment) {
-      setTimeLeft(assessment.duration * 60);
-    }
+    if (assessment) setTimeLeft(assessment.duration * 60);
   }, [assessment]);
 
-  // Decrement timer
   useEffect(() => {
     if (portalStep !== 'assessment') return;
-    
     const interval = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -65,13 +65,10 @@ export const CandidatePortal: React.FC = () => {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(interval);
   }, [portalStep]);
 
   const activeQuestion = questions[activeIdx];
-
-
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -87,12 +84,9 @@ export const CandidatePortal: React.FC = () => {
   const handleMultipleSelectToggle = (optIdx: number) => {
     if (!activeQuestion) return;
     const currentAnswers = (answers[activeQuestion.id] as number[]) || [];
-    let next: number[];
-    if (currentAnswers.includes(optIdx)) {
-      next = currentAnswers.filter(v => v !== optIdx);
-    } else {
-      next = [...currentAnswers, optIdx];
-    }
+    const next = currentAnswers.includes(optIdx)
+      ? currentAnswers.filter(v => v !== optIdx)
+      : [...currentAnswers, optIdx];
     setAnswers(prev => ({ ...prev, [activeQuestion.id]: next }));
   };
 
@@ -106,17 +100,8 @@ export const CandidatePortal: React.FC = () => {
     setMarkedForReview(prev => ({ ...prev, [activeQuestion.id]: !prev[activeQuestion.id] }));
   };
 
-  const handleNext = () => {
-    if (activeIdx < questions.length - 1) {
-      setActiveIdx(activeIdx + 1);
-    }
-  };
-
-  const handlePrev = () => {
-    if (activeIdx > 0) {
-      setActiveIdx(activeIdx - 1);
-    }
-  };
+  const handleNext = () => { if (activeIdx < questions.length - 1) setActiveIdx(activeIdx + 1); };
+  const handlePrev = () => { if (activeIdx > 0) setActiveIdx(activeIdx - 1); };
 
   const handleAutoSubmit = () => {
     if (!candidate || !assessment) return;
@@ -130,528 +115,421 @@ export const CandidatePortal: React.FC = () => {
     }
   };
 
+  const sectionBreakdownChartData = () => {
+    const dbCandidate = db.candidates.find(c => c.id === candidate?.id);
+    if (!dbCandidate || !dbCandidate.sectionScores) return [];
+    const colors = ['#2563eb', '#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e'];
+    return Object.entries(dbCandidate.sectionScores)
+      .map(([label, value], idx) => ({ label, value: Number(value), color: colors[idx % colors.length] }))
+      .filter(item => item.value > 0);
+  };
+
   if (!candidate || !assessment) {
     return (
-      <div className="candidate-layout" style={{ justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
-        <div className="widget-card" style={{ maxWidth: '440px', textAlign: 'center' }}>
-          <AlertCircle size={40} style={{ color: 'var(--error)', margin: '0 auto 16px' }} />
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Session Configuration Error</h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '8px' }}>
-            No active candidate assessment record detected. Please sign out and log in again.
-          </p>
-          <button className="btn btn-primary" onClick={logout} style={{ marginTop: '20px', width: '100%' }}>
-            Sign Out
-          </button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card className="max-w-sm w-full">
+          <CardContent className="pt-8 pb-6 flex flex-col items-center gap-4 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive" />
+            <div>
+              <h3 className="font-bold text-lg">Session Configuration Error</h3>
+              <p className="text-muted-foreground text-sm mt-1">
+                No active candidate assessment record detected. Please sign out and log in again.
+              </p>
+            </div>
+            <Button className="w-full" onClick={logout}>Sign Out</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  // Section scores for charts in Results
-  const sectionBreakdownChartData = () => {
-    // Reload candidate from database context to read newly computed scores
-    const dbCandidate = db.candidates.find(c => c.id === candidate.id);
-    if (!dbCandidate || !dbCandidate.sectionScores) return [];
-    
-    const colors = ['#2563eb', '#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e'];
-    return Object.entries(dbCandidate.sectionScores).map(([label, value], idx) => ({
-      label,
-      value: Number(value),
-      color: colors[idx % colors.length]
-    })).filter(item => item.value > 0);
-  };
-
   return (
-    <div className="candidate-layout">
+    <div className="min-h-screen flex flex-col bg-background">
       {/* Top Navbar */}
-      <nav className="candidate-navbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            backgroundColor: 'var(--primary-blue)',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 'bold',
-            fontSize: '1rem'
-          }}>P</div>
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.1rem' }}>Presidio Portal</span>
+      <header className="flex items-center justify-between h-14 px-6 border-b bg-card shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-base">
+            P
+          </div>
+          <span className="font-bold text-lg">Presidio Portal</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '0.875rem' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>
-            Candidate ID: <b style={{ color: 'var(--text-primary)' }}>{candidate.id}</b>
+        <div className="flex items-center gap-5 text-sm">
+          <span className="text-muted-foreground">
+            Candidate ID: <b className="text-foreground">{candidate.id}</b>
           </span>
-          <span style={{ color: 'var(--text-secondary)' }}>
-            Name: <b style={{ color: 'var(--text-primary)' }}>{candidate.name}</b>
+          <span className="text-muted-foreground">
+            Name: <b className="text-foreground">{candidate.name}</b>
           </span>
           {portalStep === 'instructions' && (
-            <button className="btn btn-secondary" style={{ padding: '4px 12px', fontSize: '0.75rem', gap: '4px' }} onClick={logout}>
-              <LogOut size={12} />
+            <Button variant="outline" size="sm" onClick={logout} className="gap-1.5 h-7 text-xs">
+              <LogOut className="h-3 w-3" />
               Exit
-            </button>
+            </Button>
           )}
         </div>
-      </nav>
+      </header>
 
-      {/* RENDER INSTRUCTIONS STEP */}
+      {/* INSTRUCTIONS STEP */}
       {portalStep === 'instructions' && (
-        <div className="candidate-content" style={{ marginTop: '24px' }}>
-          <div className="widget-card" style={{ padding: '32px' }}>
-            <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '16px', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Assessment Instructions</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-                Please read the instructions carefully before launching the test environment.
-              </p>
-            </div>
+        <div className="max-w-5xl mx-auto w-full px-4 py-8">
+          <Card>
+            <CardContent className="p-8">
+              <div className="pb-5 mb-6 border-b">
+                <h2 className="text-2xl font-bold">Assessment Instructions</h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Please read the instructions carefully before launching the test environment.
+                </p>
+              </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1.5fr', gap: '32px', marginBottom: '28px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', lineHeight: '1.6', color: 'var(--text-primary)' }}>
-                <div>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>General Guidelines</h4>
-                  <p style={{ color: 'var(--text-secondary)' }}>
-                    - Total Test Duration is <b>{assessment.duration} minutes</b>. Keep track of the countdown timer.<br />
-                    - The exam comprises <b>{questions.length} questions</b> across configured sections.<br />
-                    - Ensure you have a stable internet connection. Auto-save is active.<br />
-                    - Do NOT close or refresh the browser.
-                  </p>
+              <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.2fr] gap-8 mb-8">
+                <div className="space-y-5 text-sm leading-relaxed">
+                  <div>
+                    <h4 className="font-bold mb-2">General Guidelines</h4>
+                    <p className="text-muted-foreground">
+                      - Total Test Duration is <b className="text-foreground">{assessment.duration} minutes</b>. Keep track of the countdown timer.<br />
+                      - The exam comprises <b className="text-foreground">{questions.length} questions</b> across configured sections.<br />
+                      - Ensure you have a stable internet connection. Auto-save is active.<br />
+                      - Do NOT close or refresh the browser.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-bold mb-2 text-destructive">AI Proctoring &amp; Compliance Rules</h4>
+                    <p className="text-muted-foreground">
+                      - Fullscreen mode is mandatory. Switching tabs or shifting window focus triggers violations.<br />
+                      - Right-click, text selection, and copy-paste are blocked inside the editor layout.<br />
+                      - Ensure your camera is active and you remain in frame throughout the assessment.
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px', color: 'var(--error)' }}>
-                    AI Proctoring & Compliance rules
+                <div className="rounded-xl border bg-muted/50 p-5">
+                  <h4 className="font-bold text-sm mb-4 flex items-center gap-2">
+                    <CheckSquare className="h-4 w-4 text-primary" />
+                    Exam Parameters
                   </h4>
-                  <p style={{ color: 'var(--text-secondary)' }}>
-                    - Fullscreen mode is mandatory. Switching tabs, opening debugger console, or shifting window focus will trigger navigation violations.<br />
-                    - Right-click, text selection, and copy-paste functions are blocked inside the editor layout.<br />
-                    - Ensure your camera is active and you remain in frame throughout the assessment.
-                  </p>
-                </div>
-              </div>
-
-              {/* Assessment Stats sidebar card */}
-              <div style={{ backgroundColor: 'var(--bg-slate)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
-                <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckSquare size={18} style={{ color: 'var(--primary-blue)' }} />
-                  Exam Parameters
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Exam Title</span>
-                    <b style={{ color: 'var(--text-primary)', textAlign: 'right' }}>{assessment.name}</b>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Duration</span>
-                    <b>{assessment.duration} mins</b>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Total Questions</span>
-                    <b>{questions.length} items</b>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Total Marks</span>
-                    <b>{assessment.totalMarks} pts</b>
+                  <div className="space-y-2.5 text-sm">
+                    {[
+                      { label: 'Exam Title', value: assessment.name },
+                      { label: 'Duration', value: `${assessment.duration} mins` },
+                      { label: 'Total Questions', value: `${questions.length} items` },
+                      { label: 'Total Marks', value: `${assessment.totalMarks} pts` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between border-b pb-2 last:border-0 last:pb-0">
+                        <span className="text-muted-foreground">{label}</span>
+                        <b>{value}</b>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input
-                  type="checkbox"
-                  id="agree-inst"
-                  checked={agreed}
-                  onChange={e => setAgreed(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <label htmlFor="agree-inst" style={{ fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
-                  I have read, understood, and agree to comply with the instructions and proctoring rules listed above.
-                </label>
+              <Separator className="mb-6" />
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    id="agree-inst"
+                    checked={agreed}
+                    onCheckedChange={v => setAgreed(v === true)}
+                  />
+                  <Label htmlFor="agree-inst" className="text-sm font-semibold cursor-pointer">
+                    I have read, understood, and agree to comply with the instructions and proctoring rules listed above.
+                  </Label>
+                </div>
+                <Button disabled={!agreed} onClick={() => setPortalStep('assessment')} className="px-8">
+                  Launch Assessment
+                </Button>
               </div>
-
-              <button
-                className="btn btn-primary"
-                style={{ alignSelf: 'flex-start', padding: '10px 24px', fontSize: '0.95rem', fontWeight: 600 }}
-                disabled={!agreed}
-                onClick={() => setPortalStep('assessment')}
-              >
-                Launch Assessment
-              </button>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {/* RENDER ASSESSMENT STATE */}
+      {/* ASSESSMENT STEP */}
       {portalStep === 'assessment' && activeQuestion && (
-        <div style={{ padding: '24px 40px', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-          
-          <div className="mcq-layout" style={{ flexGrow: 1 }}>
-            
-            {/* Left Column: Question Layout */}
-            <div className="widget-card" style={{ minHeight: '480px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              
-              <div>
-                {/* Question Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '20px' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary-blue)', letterSpacing: '0.05em' }}>
-                    Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
-                  </span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Marks: <b style={{ color: 'var(--text-primary)' }}>{activeQuestion.marks} pts</b>
-                  </span>
-                </div>
+        <div className="flex-1 p-4 xl:p-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-4 h-full items-start">
 
-                {/* Question Statement */}
-                <div style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: '1.5', marginBottom: '24px' }}>
-                  {activeQuestion.text}
-                </div>
-
-                {/* Question Inputs (MCQ, SQL, Coding) */}
-                
-                {/* MCQ */}
-                {activeQuestion.type === 'MCQ' && activeQuestion.options && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {activeQuestion.options.map((opt, idx) => {
-                      const isSelected = answers[activeQuestion.id] === idx;
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => handleAnswerSelect(idx)}
-                          style={{
-                            border: isSelected ? '2px solid var(--primary-blue)' : '1px solid var(--border)',
-                            borderRadius: '8px',
-                            padding: '14px 18px',
-                            cursor: 'pointer',
-                            backgroundColor: isSelected ? 'var(--primary-blue-light)' : '#ffffff',
-                            transition: 'all 0.15s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px'
-                          }}
-                        >
-                          <div style={{
-                            width: '20px',
-                            height: '20px',
-                            borderRadius: '50%',
-                            border: isSelected ? '6px solid var(--primary-blue)' : '2px solid var(--text-muted)',
-                            backgroundColor: '#ffffff'
-                          }}></div>
-                          <span style={{ fontSize: '0.9rem', fontWeight: 500, color: isSelected ? 'var(--primary-blue)' : 'var(--text-primary)' }}>
-                            {opt}
-                          </span>
-                        </div>
-                      );
-                    })}
+            {/* Question Panel */}
+            <Card className="flex flex-col min-h-[520px]">
+              <CardContent className="p-6 flex flex-col flex-1 justify-between">
+                <div>
+                  <div className="flex justify-between items-center border-b pb-3 mb-5">
+                    <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                      Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
+                    </span>
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
+                    </span>
                   </div>
-                )}
 
-                {/* MULTIPLE SELECT */}
-                {activeQuestion.type === 'Multiple Select' && activeQuestion.options && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {activeQuestion.options.map((opt, idx) => {
-                      const selectedList = (answers[activeQuestion.id] as number[]) || [];
-                      const isSelected = selectedList.includes(idx);
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => handleMultipleSelectToggle(idx)}
-                          style={{
-                            border: isSelected ? '2px solid var(--primary-blue)' : '1px solid var(--border)',
-                            borderRadius: '8px',
-                            padding: '14px 18px',
-                            cursor: 'pointer',
-                            backgroundColor: isSelected ? 'var(--primary-blue-light)' : '#ffffff',
-                            transition: 'all 0.15s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px'
-                          }}
-                        >
-                          <div style={{
-                            width: '18px',
-                            height: '18px',
-                            border: isSelected ? '2px solid var(--primary-blue)' : '2px solid var(--text-muted)',
-                            borderRadius: '4px',
-                            backgroundColor: isSelected ? 'var(--primary-blue)' : '#ffffff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#ffffff',
-                            fontSize: '10px',
-                            fontWeight: 'bold'
-                          }}>
-                            {isSelected && '✓'}
+                  <p className="text-base font-semibold leading-relaxed mb-6">{activeQuestion.text}</p>
+
+                  {/* MCQ */}
+                  {activeQuestion.type === 'MCQ' && activeQuestion.options && (
+                    <div className="space-y-3">
+                      {activeQuestion.options.map((opt, idx) => {
+                        const isSelected = answers[activeQuestion.id] === idx;
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => handleAnswerSelect(idx)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
+                              isSelected
+                                ? 'border-primary bg-primary/5 text-primary'
+                                : 'border-border hover:bg-muted/50'
+                            )}
+                          >
+                            <div className={cn(
+                              'h-4 w-4 rounded-full border-2 shrink-0',
+                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-background'
+                            )} />
+                            <span className="text-sm font-medium">{opt}</span>
                           </div>
-                          <span style={{ fontSize: '0.9rem', fontWeight: 500, color: isSelected ? 'var(--primary-blue)' : 'var(--text-primary)' }}>
-                            {opt}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
 
-                {/* SQL / DESCRIPTIVE TEXT */}
-                {['SQL', 'Descriptive'].includes(activeQuestion.type) && (
-                  <div className="form-group">
-                    <label className="form-label">Your Solution Query / Text Details</label>
-                    <textarea
-                      className="form-control"
-                      rows={8}
-                      placeholder={activeQuestion.type === 'SQL' ? 'SELECT ... FROM ... WHERE ...' : 'Provide your descriptive notes here...'}
-                      value={answers[activeQuestion.id] || ''}
-                      onChange={e => handleTextAnswerChange(e.target.value)}
-                      style={{ fontFamily: activeQuestion.type === 'SQL' ? 'var(--font-mono)' : 'inherit', fontSize: '0.9rem' }}
-                    />
-                  </div>
-                )}
+                  {/* Multiple Select */}
+                  {activeQuestion.type === 'Multiple Select' && activeQuestion.options && (
+                    <div className="space-y-3">
+                      {activeQuestion.options.map((opt, idx) => {
+                        const selectedList = (answers[activeQuestion.id] as number[]) || [];
+                        const isSelected = selectedList.includes(idx);
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => handleMultipleSelectToggle(idx)}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
+                              isSelected
+                                ? 'border-primary bg-primary/5 text-primary'
+                                : 'border-border hover:bg-muted/50'
+                            )}
+                          >
+                            <div className={cn(
+                              'h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center',
+                              isSelected
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-muted-foreground/40 bg-background'
+                            )}>
+                              {isSelected && <Check className="h-2.5 w-2.5" />}
+                            </div>
+                            <span className="text-sm font-medium">{opt}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                {/* CODING IDE */}
-                {activeQuestion.type === 'Coding' && (
-                  <div style={{ height: '400px', marginTop: '12px' }}>
-                    <CodeEditor
-                      value={answers[activeQuestion.id] || ''}
-                      onChange={handleTextAnswerChange}
-                      languageTemplates={activeQuestion.codingTemplate}
-                    />
-                  </div>
-                )}
+                  {/* SQL / Descriptive */}
+                  {['SQL', 'Descriptive'].includes(activeQuestion.type) && (
+                    <div className="space-y-1.5">
+                      <Label>Your Solution Query / Text Details</Label>
+                      <Textarea
+                        rows={8}
+                        placeholder={activeQuestion.type === 'SQL' ? 'SELECT ... FROM ... WHERE ...' : 'Provide your descriptive notes here...'}
+                        value={answers[activeQuestion.id] || ''}
+                        onChange={e => handleTextAnswerChange(e.target.value)}
+                        className={activeQuestion.type === 'SQL' ? 'font-mono text-sm' : ''}
+                      />
+                    </div>
+                  )}
 
-              </div>
-
-              {/* Navigation buttons */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '24px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-secondary" style={{ padding: '8px 14px' }} onClick={handlePrev} disabled={activeIdx === 0}>
-                    <ChevronLeft size={16} />
-                    Previous
-                  </button>
-                  <button className="btn btn-secondary" style={{ padding: '8px 14px' }} onClick={handleNext} disabled={activeIdx === questions.length - 1}>
-                    Save & Next
-                    <ChevronRight size={16} />
-                  </button>
+                  {/* Coding IDE */}
+                  {activeQuestion.type === 'Coding' && (
+                    <div className="h-[400px] mt-3">
+                      <CodeEditor
+                        value={answers[activeQuestion.id] || ''}
+                        onChange={handleTextAnswerChange}
+                        languageTemplates={activeQuestion.codingTemplate}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button 
-                    className="btn btn-secondary"
-                    style={{
-                      padding: '8px 14px',
-                      color: markedForReview[activeQuestion.id] ? 'var(--warning)' : 'var(--text-secondary)',
-                      borderColor: markedForReview[activeQuestion.id] ? 'var(--warning)' : 'var(--border)',
-                      backgroundColor: markedForReview[activeQuestion.id] ? 'var(--warning-light)' : '#ffffff'
-                    }}
-                    onClick={handleMarkReview}
-                  >
-                    <Bookmark size={16} />
-                    {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
-                  </button>
-                  <button className="btn btn-primary" style={{ backgroundColor: 'var(--success)' }} onClick={handleSubmitTest}>
-                    Submit Assessment
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Right Column: Timer & Navigation dot matrix sidebar */}
-            <div className="navigator-card">
-              {/* Countdown Timer */}
-              <div style={{
-                textAlign: 'center',
-                paddingBottom: '20px',
-                borderBottom: '1px solid var(--border)',
-                marginBottom: '20px'
-              }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Time Remaining
-                </span>
-                <div style={{
-                  fontSize: '2rem',
-                  fontWeight: 800,
-                  fontFamily: 'var(--font-mono)',
-                  color: timeLeft < 300 ? 'var(--error)' : 'var(--text-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  marginTop: '4px',
-                  animation: timeLeft < 300 ? 'pulse 1s infinite' : 'none'
-                }}>
-                  <Clock size={24} />
-                  {formatTime(timeLeft)}
-                </div>
-              </div>
-
-              {/* Question Dots Grid */}
-              <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>Question Navigation</h4>
-              <div className="grid-nav">
-                {questions.map((q, idx) => {
-                  const isCur = activeIdx === idx;
-                  const isReview = markedForReview[q.id];
-                  const ans = answers[q.id];
-                  const isAns = ans !== undefined && (typeof ans === 'string' ? ans.trim().length > 0 : Array.isArray(ans) ? ans.length > 0 : true);
-                  
-                  let dotClass = 'nav-dot ';
-                  if (isCur) dotClass += 'active';
-                  else if (isReview) dotClass += 'review';
-                  else if (isAns) dotClass += 'answered';
-
-                  return (
-                    <button
-                      key={q.id}
-                      className={dotClass}
-                      onClick={() => setActiveIdx(idx)}
+                {/* Navigation */}
+                <div className="flex justify-between items-center border-t pt-4 mt-6">
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
+                      Save &amp; Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMarkReview}
+                      className={cn(
+                        'gap-1',
+                        markedForReview[activeQuestion.id]
+                          ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                          : ''
+                      )}
                     >
-                      {idx + 1}
-                    </button>
-                  );
-                })}
-              </div>
+                      <Bookmark className="h-3.5 w-3.5" />
+                      {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
+                    </Button>
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
+                      Submit Assessment
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Legend details */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '16px', fontSize: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: 'var(--bg-slate)', border: '1px solid var(--border)' }}></span>
-                  <span style={{ color: 'var(--text-secondary)' }}>Unvisited</span>
+            {/* Navigator Sidebar */}
+            <Card className="sticky top-4">
+              <CardContent className="p-4">
+                {/* Timer */}
+                <div className="text-center pb-4 border-b mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Time Remaining</p>
+                  <div className={cn(
+                    'flex items-center justify-center gap-2 mt-1 font-mono text-2xl font-black',
+                    timeLeft < 300 ? 'text-destructive animate-pulse' : ''
+                  )}>
+                    <Clock className="h-5 w-5" />
+                    {formatTime(timeLeft)}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: 'var(--primary-blue-light)', border: '1px solid var(--primary-blue)' }}></span>
-                  <span style={{ color: 'var(--text-secondary)' }}>Active View</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: 'var(--success-light)', border: '1px solid var(--success)' }}></span>
-                  <span style={{ color: 'var(--text-secondary)' }}>Answered & Saved</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: 'var(--warning-light)', border: '1px solid var(--warning)' }}></span>
-                  <span style={{ color: 'var(--text-secondary)' }}>Marked for Review</span>
-                </div>
-              </div>
-            </div>
 
+                {/* Question Grid */}
+                <p className="text-xs font-bold text-foreground mb-2">Question Navigation</p>
+                <div className="grid grid-cols-5 gap-1 mb-4">
+                  {questions.map((q, idx) => {
+                    const isCur = activeIdx === idx;
+                    const isReview = markedForReview[q.id];
+                    const ans = answers[q.id];
+                    const isAns = ans !== undefined && (
+                      typeof ans === 'string' ? ans.trim().length > 0 : Array.isArray(ans) ? ans.length > 0 : true
+                    );
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => setActiveIdx(idx)}
+                        className={cn(
+                          'h-8 w-full text-[11px] font-bold rounded border transition-colors',
+                          isCur
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : isReview
+                            ? 'bg-amber-100 text-amber-700 border-amber-400'
+                            : isAns
+                            ? 'bg-emerald-100 text-emerald-700 border-emerald-400'
+                            : 'bg-muted text-muted-foreground border-border'
+                        )}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="space-y-1.5 border-t pt-3 text-[11px]">
+                  {[
+                    { color: 'bg-muted border', label: 'Unvisited' },
+                    { color: 'bg-primary border-primary', label: 'Active View' },
+                    { color: 'bg-emerald-100 border-emerald-400', label: 'Answered' },
+                    { color: 'bg-amber-100 border-amber-400', label: 'Marked for Review' },
+                  ].map(({ color, label }) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded-sm border shrink-0 ${color}`} />
+                      <span className="text-muted-foreground">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
 
-      {/* RENDER RESULT SCORECARD STATE */}
-      {portalStep === 'submitted' && (
-        <div className="candidate-content" style={{ marginTop: '24px' }}>
-          {/* Reload candidate to display freshly computed scorecards */}
-          {(() => {
-            const dbCandidate = db.candidates.find(c => c.id === candidate.id);
-            if (!dbCandidate) return null;
-            return (
-              <div className="widget-card" style={{ padding: '36px', textAlign: 'center' }}>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--success-light)',
-                  color: 'var(--success)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px'
-                }}>
-                  <FileCheck2 size={36} />
+      {/* RESULTS STEP */}
+      {portalStep === 'submitted' && (() => {
+        const dbCandidate = db.candidates.find(c => c.id === candidate.id);
+        if (!dbCandidate) return null;
+        return (
+          <div className="max-w-4xl mx-auto w-full px-4 py-8">
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+                  <FileCheck2 className="h-8 w-8" />
                 </div>
 
-                <h2 style={{ fontSize: '1.75rem', fontWeight: 800 }}>Assessment Submitted Successfully</h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '6px' }}>
+                <h2 className="text-2xl font-black">Assessment Submitted Successfully</h2>
+                <p className="text-muted-foreground text-sm mt-2">
                   Your score has been registered. Below is your performance breakdown report.
                 </p>
 
-                {/* Scorecard Widget */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '12px',
-                  padding: '24px',
-                  backgroundColor: 'var(--bg-slate)',
-                  margin: '28px 0',
-                  gap: '16px'
-                }}>
+                <div className="grid grid-cols-3 gap-4 rounded-xl bg-muted/50 border p-6 my-6">
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-                      Marks Scored
-                    </span>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--success)', marginTop: '4px' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Marks Scored</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-1">
                       {dbCandidate.assessmentScore} / {assessment.totalMarks}
                     </p>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-                      Percentile Rank
-                    </span>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--primary-blue)', marginTop: '4px' }}>
-                      {dbCandidate.assessmentPercentile}%
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Percentile Rank</p>
+                    <p className="text-2xl font-black text-primary mt-1">{dbCandidate.assessmentPercentile}%</p>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-                      State-wide Rank
-                    </span>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
-                      #{dbCandidate.assessmentRank}
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">State-wide Rank</p>
+                    <p className="text-2xl font-black mt-1">#{dbCandidate.assessmentRank}</p>
                   </div>
                 </div>
 
-                {/* Graph breakdown */}
                 {dbCandidate.sectionScores && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '28px', textAlign: 'left', marginTop: '16px' }}>
-                    <div style={{ backgroundColor: '#ffffff', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
-                      <h4 style={{ fontSize: '0.875rem', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Trophy size={16} style={{ color: 'var(--primary-blue)' }} />
-                        Section-wise breakdown
-                      </h4>
-                      <DonutChart data={sectionBreakdownChartData()} />
-                    </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-left mt-2">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Trophy className="h-4 w-4 text-primary" />
+                          Section-wise Breakdown
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <DonutChart data={sectionBreakdownChartData()} />
+                      </CardContent>
+                    </Card>
 
-                    <div style={{ backgroundColor: '#ffffff', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
-                      <h4 style={{ fontSize: '0.875rem', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Activity size={16} style={{ color: 'var(--primary-blue)' }} />
-                        Next Steps
-                      </h4>
-                      <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                        Your assessment responses and compiling analysis logs have been synced to the Presidio Talent Recruitment database. The Talent Acquisition panel will review your codes and scorecards for interview shortlist scheduling.
-                      </p>
-                      
-                      <div style={{
-                        marginTop: '16px',
-                        backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                        border: '1px solid rgba(34, 197, 94, 0.15)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        fontSize: '0.8rem',
-                        color: 'var(--success)',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        <Award size={16} />
-                        Eligible for shortlisting shortlist parameters check!
-                      </div>
-                    </div>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Activity className="h-4 w-4 text-primary" />
+                          Next Steps
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Your assessment responses and compiling analysis logs have been synced to the Presidio Talent Recruitment database. The Talent Acquisition panel will review your codes and scorecards for interview shortlist scheduling.
+                        </p>
+                        <Alert className="border-emerald-300 bg-emerald-50 text-emerald-700">
+                          <Award className="h-4 w-4" />
+                          <AlertDescription className="text-xs font-semibold">
+                            Eligible for shortlisting parameters check!
+                          </AlertDescription>
+                        </Alert>
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
 
-                <button className="btn btn-primary" onClick={logout} style={{ marginTop: '28px', padding: '10px 32px' }}>
+                <Button onClick={logout} className="mt-6 px-10">
                   Sign Out of Portal
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
     </div>
   );
 };

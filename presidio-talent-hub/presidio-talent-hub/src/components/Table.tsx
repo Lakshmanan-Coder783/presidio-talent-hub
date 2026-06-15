@@ -1,5 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Download, ChevronsUpDown } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  Table as ShadTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Column<T> {
   header: string;
@@ -36,15 +53,16 @@ export function Table<T>({
   searchPlaceholder = 'Search...',
   searchKey,
   initialSort,
-  exportFileName = 'export'
+  exportFileName = 'export',
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<{ [key: string]: string }>({});
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(initialSort || null);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(
+    initialSort || null
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Reset page when filters change
   const handleFilterChange = (key: string, value: string) => {
     setActiveFilters(prev => {
       const next = { ...prev };
@@ -55,51 +73,45 @@ export function Table<T>({
     setCurrentPage(1);
   };
 
-  // Filter and search data
   const processedData = useMemo(() => {
     let result = [...data];
 
-    // 1. Apply dropdown filters
     Object.entries(activeFilters).forEach(([key, value]) => {
       result = result.filter(item => {
-        const itemVal = (item as any)[key];
+        const itemVal = (item as Record<string, unknown>)[key];
         return String(itemVal).toLowerCase() === value.toLowerCase();
       });
     });
 
-    // 2. Apply search filter
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       result = result.filter(item => {
         if (typeof searchKey === 'function') {
           return searchKey(item).toLowerCase().includes(query);
         } else if (searchKey) {
-          const itemVal = (item as any)[searchKey];
+          const itemVal = (item as Record<string, unknown>)[searchKey as string];
           return String(itemVal).toLowerCase().includes(query);
         } else {
-          // Default: check all fields
-          return Object.values(item as any).some(val => 
+          return Object.values(item as Record<string, unknown>).some(val =>
             String(val).toLowerCase().includes(query)
           );
         }
       });
     }
 
-    // 3. Apply sorting
     if (sortConfig) {
       result.sort((a, b) => {
-        let valA = sortConfig.key.includes('.') 
-          ? sortConfig.key.split('.').reduce((obj, key) => obj?.[key], a as any)
-          : (a as any)[sortConfig.key];
-        let valB = sortConfig.key.includes('.') 
-          ? sortConfig.key.split('.').reduce((obj, key) => obj?.[key], b as any)
-          : (b as any)[sortConfig.key];
+        const getVal = (obj: unknown, key: string): unknown =>
+          key.includes('.')
+            ? key.split('.').reduce((o, k) => (o as Record<string, unknown>)?.[k], obj)
+            : (obj as Record<string, unknown>)[key];
 
+        let valA = getVal(a, sortConfig.key);
+        let valB = getVal(b, sortConfig.key);
         if (typeof valA === 'string') valA = valA.toLowerCase();
         if (typeof valB === 'string') valB = valB.toLowerCase();
-
-        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        if (valA! < valB!) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA! > valB!) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
@@ -107,7 +119,6 @@ export function Table<T>({
     return result;
   }, [data, activeFilters, searchQuery, searchKey, sortConfig]);
 
-  // Paginated slices
   const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return processedData.slice(startIndex, startIndex + itemsPerPage);
@@ -115,63 +126,70 @@ export function Table<T>({
 
   const totalPages = Math.ceil(processedData.length / itemsPerPage) || 1;
 
-  // Sorting handler
   const handleSort = (key: string) => {
     setSortConfig(prev => {
       if (prev && prev.key === key) {
         if (prev.direction === 'asc') return { key, direction: 'desc' };
-        return null; // Reset sort
+        return null;
       }
       return { key, direction: 'asc' };
     });
   };
 
-  // CSV Exporter
   const handleExport = () => {
     if (processedData.length === 0) return;
-
-    // Get headers
     const headers = columns.map(col => `"${col.header.replace(/"/g, '""')}"`).join(',');
-    
-    // Get rows
     const rows = processedData.map(row => {
-      return columns.map(col => {
-        let value = '';
-        if (col.accessor) {
-          const rawVal = col.accessor.toString().includes('.')
-            ? col.accessor.toString().split('.').reduce((obj, key) => obj?.[key], row as any)
-            : (row as any)[col.accessor as any];
-          value = rawVal !== undefined && rawVal !== null ? String(rawVal) : '';
-        } else {
-          // If no accessor, simulate text extraction from custom renderer
-          value = '';
-        }
-        return `"${value.replace(/"/g, '""')}"`;
-      }).join(',');
+      return columns
+        .map(col => {
+          let value = '';
+          if (col.accessor) {
+            const rawVal = col.accessor.toString().includes('.')
+              ? col.accessor
+                  .toString()
+                  .split('.')
+                  .reduce((obj, key) => (obj as Record<string, unknown>)?.[key], row as unknown)
+              : (row as Record<string, unknown>)[col.accessor as string];
+            value = rawVal !== undefined && rawVal !== null ? String(rawVal) : '';
+          }
+          return `"${value.replace(/"/g, '""')}"`;
+        })
+        .join(',');
     });
-
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers, ...rows].join('\n');
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', encodeURI(csvContent));
     link.setAttribute('download', `${exportFileName}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const getCellValue = (row: T, col: Column<T>) => {
+    if (col.render) return col.render(row);
+    if (col.accessor) {
+      return col.accessor.toString().includes('.')
+        ? col.accessor
+            .toString()
+            .split('.')
+            .reduce((obj, key) => (obj as Record<string, unknown>)?.[key], row as unknown)
+        : (row as Record<string, unknown>)[col.accessor as string];
+    }
+    return null;
+  };
+
   return (
-    <div className="table-container">
-      {/* Table search & filter actions */}
-      <div className="table-header-bar">
-        <div style={{ display: 'flex', gap: '12px', flexGrow: 1, maxWidth: '500px' }}>
-          <div className="search-container" style={{ width: '100%', maxWidth: '320px' }}>
-            <Search className="search-icon" />
-            <input
-              type="text"
-              className="search-input"
+    <div className="rounded-lg border bg-card shadow-sm">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-3 p-4 border-b flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
               placeholder={searchPlaceholder}
               value={searchQuery}
+              className="pl-8 h-9 w-64"
               onChange={e => {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
@@ -179,108 +197,118 @@ export function Table<T>({
             />
           </div>
 
-          {/* Render filters */}
           {filters.map(filter => (
-            <select
+            <Select
               key={filter.key}
-              className="select-filter"
               value={activeFilters[filter.key] || ''}
-              onChange={e => handleFilterChange(filter.key, e.target.value)}
+              onValueChange={val => handleFilterChange(filter.key, val === '__all__' ? '' : val)}
             >
-              <option value="">All {filter.label}</option>
-              {filter.options.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={`All ${filter.label}`} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All {filter.label}</SelectItem>
+                {filter.options.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ))}
         </div>
 
-        <button className="btn btn-secondary" onClick={handleExport} style={{ gap: '6px' }}>
-          <Download size={16} />
+        <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
+          <Download className="h-4 w-4" />
           Export CSV
-        </button>
+        </Button>
       </div>
 
-      {/* Main Table Grid */}
-      <div style={{ overflowX: 'auto' }}>
-        <table className="enterprise-table">
-          <thead>
-            <tr>
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <ShadTable>
+          <TableHeader>
+            <TableRow>
               {columns.map((col, idx) => (
-                <th
+                <TableHead
                   key={idx}
+                  className={col.sortable && col.accessor ? 'cursor-pointer select-none' : ''}
                   onClick={() => col.sortable && col.accessor && handleSort(col.accessor.toString())}
-                  style={{ cursor: col.sortable && col.accessor ? 'pointer' : 'default' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="flex items-center gap-1">
                     {col.header}
-                    {col.sortable && col.accessor && sortConfig?.key === col.accessor.toString() && (
-                      <span style={{ fontSize: '10px' }}>
-                        {sortConfig.direction === 'asc' ? ' ▲' : ' ▼'}
+                    {col.sortable && col.accessor && (
+                      <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    {sortConfig !== null && sortConfig?.key === col.accessor?.toString() && (
+                      <span className="text-primary text-xs">
+                        {sortConfig.direction === 'asc' ? '▲' : '▼'}
                       </span>
                     )}
                   </div>
-                </th>
+                </TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {paginatedData.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-center py-10 text-muted-foreground"
+                >
                   No matching records found.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               paginatedData.map((row, rowIdx) => (
-                <tr key={rowIdx}>
-                  {columns.map((col, colIdx) => {
-                    const cellContent = col.render 
-                      ? col.render(row) 
-                      : col.accessor 
-                        ? col.accessor.toString().includes('.')
-                          ? col.accessor.toString().split('.').reduce((obj, key) => obj?.[key], row as any)
-                          : (row as any)[col.accessor as any]
-                        : null;
-                    return <td key={colIdx}>{cellContent}</td>;
-                  })}
-                </tr>
+                <TableRow key={rowIdx}>
+                  {columns.map((col, colIdx) => (
+                    <TableCell key={colIdx}>{getCellValue(row, col) as React.ReactNode}</TableCell>
+                  ))}
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </ShadTable>
       </div>
 
-      {/* Table Pagination */}
-      <div className="pagination-bar">
-        <div className="pagination-text">
-          Showing <b>{Math.min(processedData.length, (currentPage - 1) * itemsPerPage + 1)}</b> to{' '}
-          <b>{Math.min(processedData.length, currentPage * itemsPerPage)}</b> of{' '}
-          <b>{processedData.length}</b> records
-        </div>
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+        <span>
+          Showing{' '}
+          <strong className="text-foreground">
+            {Math.min(processedData.length, (currentPage - 1) * itemsPerPage + 1)}
+          </strong>{' '}
+          to{' '}
+          <strong className="text-foreground">
+            {Math.min(processedData.length, currentPage * itemsPerPage)}
+          </strong>{' '}
+          of <strong className="text-foreground">{processedData.length}</strong> records
+        </span>
 
-        <div className="pagination-btns">
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '6px 12px' }}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
           >
-            <ChevronLeft size={16} />
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-            Page {currentPage} of {totalPages}
-          </div>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '6px 12px' }}
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="px-3 font-medium text-foreground">
+            {currentPage} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
           >
-            <ChevronRight size={16} />
-          </button>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>
