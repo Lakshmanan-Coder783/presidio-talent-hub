@@ -1,169 +1,158 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { HelpCircle, Shield, Users, Lock, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import buildingImg from '../assets/presidio-building.png';
+
+const MicrosoftLogo = () => (
+  <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+    <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+    <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+    <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+  </svg>
+);
+
 
 export const Login: React.FC = () => {
   const { loginAdmin } = useApp();
-  const [email, setEmail] = useState('rajesh.kumar@presidio.com');
-  const [password, setPassword] = useState('password');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleMicrosoftLogin = () => {
     setLoading(true);
     setTimeout(() => {
-      setLoading(false);
       loginAdmin();
-    }, 1500);
+    }, 1200);
   };
 
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-primary-foreground/5 blur-3xl" />
-          <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-primary-foreground/5 blur-3xl" />
-        </div>
+    <div className="min-h-screen flex">
+      {/* ── Left panel ───────────────────────────────────────────────── */}
+      <div
+        className="hidden lg:flex lg:w-[44%] flex-col relative overflow-hidden"
+        style={{ background: 'linear-gradient(160deg, #0b1b36 0%, #0e2449 45%, #081425 100%)' }}
+      >
+        {/* Subtle radial glow */}
+        <div className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-10"
+          style={{ background: 'radial-gradient(circle, #3b82f6 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
 
-        <div className="relative z-10">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary-foreground mb-6">
-            <span className="text-xl font-extrabold text-primary">P</span>
-          </div>
-          <h1 className="text-5xl font-bold text-primary-foreground mb-2">Presidio</h1>
-          <p className="text-primary-foreground/70 text-lg">Talent Management Hub</p>
-        </div>
+        <div className="relative z-10 flex flex-col h-full px-10 pt-8 pb-6">
+          {/* Brand */}
+          <p className="text-white font-black text-lg tracking-[0.2em] uppercase">PRESIDIO</p>
 
-        <div className="relative z-10 flex-1 flex items-center justify-center my-8">
-          <div className="w-full h-56 rounded-2xl border border-primary-foreground/20 backdrop-blur-sm flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-6xl mb-3">🏢</div>
-              <p className="text-primary-foreground font-semibold">Modern Talent Acquisition</p>
-              <p className="text-primary-foreground/60 text-sm mt-1">Streamline your recruitment process</p>
-            </div>
+          {/* Hero text */}
+          <div className="mt-10">
+            <h1 className="text-[3.75rem] font-black text-white leading-[1.05] tracking-tight">
+              Talent Hub
+            </h1>
+            <p className="mt-4 text-[1.1rem] font-medium text-white">
+              Assess.{' '}
+              <span style={{ color: '#60c6f5' }} className="font-semibold">Evaluate.</span>{' '}
+              Hire.
+            </p>
+            <div className="mt-4 w-10 h-[2px] bg-white/50" />
+            <p className="mt-5 text-white/55 text-[0.9rem] leading-relaxed">
+              A unified platform for campus hiring,<br />
+              assessments, interviews and<br />
+              talent management.
+            </p>
           </div>
-        </div>
 
-        <div className="relative z-10">
-          <p className="text-primary-foreground/70 text-sm leading-relaxed mb-4">
-            Your complete recruitment management solution for discovering and nurturing top talent.
-          </p>
-          <div className="flex items-center gap-2 text-primary-foreground/50 text-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/50" />
-            Secure · Enterprise · Scalable
+          {/* Building photo — fills the remaining space */}
+          <div className="flex-1 mt-8 -mx-10 relative overflow-hidden" style={{ minHeight: '320px' }}>
+            {/* Seamless top fade so photo sky blends into panel gradient */}
+            <div className="absolute top-0 inset-x-0 h-20 z-10 pointer-events-none"
+              style={{ background: 'linear-gradient(to bottom, #0e1f3d 0%, rgba(14,31,61,0.6) 40%, transparent 100%)' }} />
+            <img
+              src={buildingImg}
+              alt="Presidio headquarters"
+              className="w-full h-full object-cover object-top"
+            />
           </div>
+
+          {/* Footer — sits below the photo */}
+          <p className="text-white/35 text-xs mt-4">© 2026 Presidio. All rights reserved.</p>
         </div>
       </div>
 
-      {/* Right login panel */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-md space-y-6">
-          {/* Mobile header */}
-          <div className="lg:hidden text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary/10 mb-3">
-              <span className="text-xl font-extrabold text-primary">P</span>
-            </div>
-            <h1 className="text-3xl font-bold">Presidio</h1>
-            <p className="text-muted-foreground">Talent Hub</p>
-          </div>
+      {/* ── Right panel ──────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col bg-[#f2f3f5]">
+        {/* Top bar */}
+        <div className="flex items-center justify-end gap-2 px-8 pt-5">
+          <button className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors">
+            <HelpCircle className="h-4 w-4" />
+          </button>
+          <button className="flex items-center gap-1.5 text-sm text-gray-600 bg-white border border-gray-200 shadow-sm rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
+            EN <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+          </button>
+        </div>
 
-          <Card className="shadow-lg">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-2xl">Welcome back</CardTitle>
-              <CardDescription>Sign in to continue to your account</CardDescription>
+        {/* Centered card */}
+        <div className="flex-1 flex items-center justify-center p-8">
+          <Card className="w-full max-w-md bg-white shadow-sm border border-gray-200 rounded-2xl">
+            <CardHeader className="pb-2 pt-7 px-8">
+              <CardTitle className="text-2xl font-bold text-gray-900">Admin Login</CardTitle>
+              <CardDescription className="text-gray-500 mt-1">
+                Sign in with Microsoft Entra ID to access Presidio Talent Hub
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email">Email Address</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      className="pl-9"
-                      required
-                    />
-                  </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="pl-9"
-                      required
-                    />
-                  </div>
-                </div>
+            <CardContent className="px-8 pb-8 pt-5 space-y-5">
+              {/* Microsoft button */}
+              <Button
+                variant="outline"
+                className="w-full h-12 text-[15px] font-medium border-gray-300 bg-white hover:bg-gray-50 gap-3 rounded-xl shadow-sm"
+                onClick={handleMicrosoftLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <MicrosoftLogo />
+                )}
+                {loading ? 'Signing in…' : 'Sign in with Microsoft'}
+              </Button>
 
-                <div className="flex items-center justify-between text-sm">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox id="remember" />
-                    <span className="text-muted-foreground">Remember me</span>
-                  </label>
-                  <a href="#" className="text-primary font-medium hover:underline">
-                    Forgot password?
-                  </a>
-                </div>
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400 whitespace-nowrap tracking-wide">Secure SSO Login</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
 
-                <Button type="submit" className="w-full gap-2" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Signing in…
-                    </>
-                  ) : (
-                    <>
-                      Sign In
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </form>
-
-              {/* Demo credentials */}
-              <div className="mt-5 rounded-lg border bg-muted/40 p-4">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                  Demo Credentials
-                </p>
-                <div className="space-y-1 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-3.5 w-3.5 text-primary" />
-                    <span>
-                      <strong>Email:</strong>{' '}
-                      <span className="text-muted-foreground">rajesh.kumar@presidio.com</span>
-                    </span>
+              {/* Features */}
+              <div className="space-y-4 pt-1">
+                {[
+                  {
+                    icon: Shield,
+                    title: 'Secure Authentication',
+                    desc: 'Enterprise-grade security with Microsoft Entra ID',
+                  },
+                  {
+                    icon: Users,
+                    title: 'Unified Access',
+                    desc: 'Access all recruitment and assessment features',
+                  },
+                  {
+                    icon: Lock,
+                    title: 'Data Protection',
+                    desc: 'Your data is protected and encrypted',
+                  },
+                ].map(({ icon: Icon, title, desc }) => (
+                  <div key={title} className="flex items-start gap-4">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm leading-tight">{title}</p>
+                      <p className="text-gray-500 text-sm mt-0.5">{desc}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Lock className="h-3.5 w-3.5 text-primary" />
-                    <span>
-                      <strong>Password:</strong>{' '}
-                      <span className="text-muted-foreground">password</span>
-                    </span>
-                  </div>
-                </div>
+                ))}
               </div>
             </CardContent>
           </Card>
-
-          <p className="text-center text-xs text-muted-foreground">
-            © 2026 Presidio. All rights reserved.
-          </p>
         </div>
       </div>
     </div>
