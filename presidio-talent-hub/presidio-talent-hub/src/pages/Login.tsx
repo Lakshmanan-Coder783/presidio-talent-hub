@@ -56,16 +56,16 @@ export const Login: React.FC = () => {
             </p>
           </div>
 
-          {/* Building photo — fills the remaining space */}
-          <div className="flex-1 mt-8 -mx-10 relative overflow-hidden" style={{ minHeight: '320px' }}>
-            {/* Seamless top fade blending photo sky into panel gradient */}
-            <div className="absolute top-0 inset-x-0 h-24 z-10 pointer-events-none"
-              style={{ background: 'linear-gradient(to bottom, #0b2268 0%, rgba(11,34,104,0.55) 50%, transparent 100%)' }} />
+          {/* Building photo — fills remaining height, no gap */}
+          <div className="flex-1 -mx-10 relative overflow-hidden" style={{ minHeight: '320px' }}>
+            {/* Top fade: blends panel background into the building photo sky */}
+            <div className="absolute top-0 inset-x-0 h-32 z-10 pointer-events-none"
+              style={{ background: 'linear-gradient(to bottom, #1030a0 0%, rgba(16,48,160,0.7) 35%, rgba(16,48,160,0.2) 70%, transparent 100%)' }} />
             <img
               src={buildingImg}
               alt="Presidio headquarters"
               className="w-full h-full object-cover object-top"
-              style={{ filter: 'brightness(1.15) saturate(1.4) hue-rotate(-5deg)' }}
+              style={{ filter: 'brightness(1.2) saturate(1.5) hue-rotate(-5deg)' }}
             />
           </div>
 
