@@ -36,6 +36,7 @@ export interface Candidate {
     coding?: number;
     verbal?: number;
   };
+  gender: 'Male' | 'Female' | 'Other';
   interviewStatus: 'Not Scheduled' | 'Scheduled' | 'Ongoing' | 'Passed' | 'Failed';
   interviewFeedback?: string;
   offerStatus: 'None' | 'Offered' | 'Accepted' | 'Declined' | 'Joined';

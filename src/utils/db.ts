@@ -58,6 +58,7 @@ const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 'Mumbai
 
 const DEGREES = ['B.Tech CSE', 'B.Tech ECE', 'B.Tech IT', 'M.Tech CSE', 'MCA', 'M.Sc Software Engg'];
 
+
 const CTC_STEPS = [7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0];
 const JOINED_CTC_STEPS = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0];
 
@@ -357,6 +358,8 @@ export function generateMockDatabase(): Database {
     const cleanEmailName = name.toLowerCase().replace(/\s+/g, '.');
     const degree = rnd.pick(DEGREES);
     const cgpa = parseFloat(rnd.range(6.5, 9.8).toFixed(2));
+    const genderRoll = rnd.range(0, 100);
+    const gender: Candidate['gender'] = genderRoll < 60 ? 'Male' : genderRoll < 98 ? 'Female' : 'Other';
 
     let funnelStage: Candidate['funnelStage'] = 'Applied';
     let assessmentStatus: Candidate['assessmentStatus'] = 'Not Invited';
@@ -470,6 +473,7 @@ export function generateMockDatabase(): Database {
       name,
       college: drive.college,
       degree,
+      gender,
       cgpa,
       email: `${cleanEmailName}@${drive.college.toLowerCase().replace(/\s+/g, '')}.edu.in`,
       phone: `+91 ${Math.floor(rnd.range(8000000000, 9999999999))}`,
@@ -505,7 +509,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers };
 }
 
-const DB_VERSION = '2';
+const DB_VERSION = '3';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

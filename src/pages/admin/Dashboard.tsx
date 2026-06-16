@@ -92,6 +92,17 @@ export const Dashboard: React.FC = () => {
       .map(([label, value]) => ({ label, value }));
   }, [db]);
 
+  const selectedCandidateGenders = useMemo(() => {
+    const selected = db.candidates.filter(c =>
+      ['Offered', 'Accepted', 'Joined'].includes(c.offerStatus)
+    );
+    const counts: Record<string, number> = {};
+    selected.forEach(c => { counts[c.gender] = (counts[c.gender] || 0) + 1; });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value }));
+  }, [db]);
+
   const kpiCards = [
     { label: 'Total Candidates', value: kpiStats.totalCandidates.toLocaleString(), trend: '+12.4% vs last drive', icon: Users, colorClass: 'text-chart-1 bg-chart-1/10' },
     { label: 'Active Campus Drives', value: kpiStats.activeDrives, trend: '+4 this month', icon: School, colorClass: 'text-chart-2 bg-chart-2/10' },
@@ -161,7 +172,7 @@ export const Dashboard: React.FC = () => {
       </Card>
 
       {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Online Assessment Scores</CardTitle>
@@ -169,6 +180,16 @@ export const Dashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <LineChart data={scoreDistributionData} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Gender Distribution</CardTitle>
+            <CardDescription>Distribution among selected candidates</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DonutChart data={selectedCandidateGenders} />
           </CardContent>
         </Card>
 

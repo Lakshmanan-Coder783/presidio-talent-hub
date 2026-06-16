@@ -199,7 +199,7 @@ export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
 
   return (
     <div className="flex items-center gap-4 w-full">
-      <ChartContainer config={chartConfig} className="h-[150px] w-[150px] shrink-0">
+      <ChartContainer config={chartConfig} className="h-[240px] w-[240px] shrink-0">
         <RePieChart>
           <Pie
             data={chartData}
@@ -207,8 +207,8 @@ export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
             nameKey="label"
             cx="50%"
             cy="50%"
-            innerRadius={42}
-            outerRadius={68}
+            innerRadius={66}
+            outerRadius={108}
             paddingAngle={2}
             labelLine={false}
             label={renderCustomLabel}
@@ -217,12 +217,12 @@ export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
         </RePieChart>
       </ChartContainer>
 
-      <div className="flex flex-col gap-1.5 flex-1">
+      <div className="flex flex-col gap-1.5">
         <p className="text-xs font-semibold text-muted-foreground mb-1">
           Total: <span className="text-foreground font-bold">{total.toLocaleString()}</span>
         </p>
         {data.map((d, idx) => (
-          <div key={idx} className="flex items-center justify-between text-xs">
+          <div key={idx} className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-2">
               <span
                 className="h-2 w-2 rounded-full shrink-0"
