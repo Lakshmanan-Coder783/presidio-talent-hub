@@ -2,6 +2,15 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Send, ShieldCheck, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 
 export const InviteCandidates: React.FC = () => {
   const { db, bulkInvite } = useApp();
@@ -11,221 +20,172 @@ export const InviteCandidates: React.FC = () => {
   const [scheduleTime, setScheduleTime] = useState('');
   const [invitedSuccess, setInvitedSuccess] = useState(false);
 
-  // Colleges with pending candidates
   const collegesWithOptions = useMemo(() => {
     const colleges = Array.from(new Set(db.candidates.map(c => c.college)));
-    return colleges.map(col => {
-      const pendingCount = db.candidates.filter(c => c.college === col && c.assessmentStatus === 'Not Invited').length;
-      return { college: col, count: pendingCount };
-    }).filter(c => c.count > 0);
+    return colleges
+      .map(col => ({
+        college: col,
+        count: db.candidates.filter(c => c.college === col && c.assessmentStatus === 'Not Invited').length,
+      }))
+      .filter(c => c.count > 0);
   }, [db]);
 
-  const activeAssessments = useMemo(() => {
-    return db.assessments.filter(a => a.status === 'Active');
-  }, [db]);
+  const activeAssessments = useMemo(() => db.assessments.filter(a => a.status === 'Active'), [db]);
 
   const handleBulkInvite = () => {
     if (!selectedCollege || !selectedAssessment || !scheduleDate || !scheduleTime) {
-      alert('Please select all required invitation settings.');
+      alert('Please select all required fields.');
       return;
     }
-
     bulkInvite(selectedAssessment, scheduleDate, selectedCollege);
     setInvitedSuccess(true);
   };
 
-  // Preview generated credentials list
-  const invitedCandidates = useMemo(() => {
-    return db.candidates.filter(c => c.college === selectedCollege && c.assessmentStatus === 'Pending');
-  }, [db, selectedCollege, invitedSuccess]);
+  const invitedCandidates = useMemo(
+    () => db.candidates.filter(c => c.college === selectedCollege && c.assessmentStatus === 'Pending'),
+    [db, selectedCollege, invitedSuccess]
+  );
 
-  // Define Columns
   const columns = [
-    { header: 'Candidate ID', accessor: 'id', sortable: true },
-    { header: 'Candidate Name', accessor: 'name', sortable: true },
-    { header: 'Email Address', accessor: 'email' },
+    { header: 'Candidate ID', accessor: 'id' as const, sortable: true },
+    { header: 'Name', accessor: 'name' as const, sortable: true },
+    { header: 'Email', accessor: 'email' as const },
     {
       header: 'Assigned Exam',
-      accessor: 'assessmentId',
-      render: (row: any) => {
+      accessor: 'assessmentId' as const,
+      render: (row: { assessmentId?: string }) => {
         const test = db.assessments.find(a => a.id === row.assessmentId);
         return test ? test.name : row.assessmentId;
-      }
+      },
     },
     {
-      header: 'Access Password',
-      accessor: 'assessmentPassword',
-      render: (row: any) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--primary-blue)' }}>
-          {row.assessmentPassword}
-        </span>
-      )
+      header: 'Password',
+      accessor: 'assessmentPassword' as const,
+      render: (row: { assessmentPassword?: string }) => (
+        <span className="font-mono font-semibold text-primary text-sm">{row.assessmentPassword}</span>
+      ),
     },
     {
-      header: 'Invitation Status',
-      render: () => <span className="badge success">Generated</span>
-    }
+      header: 'Status',
+      render: () => <Badge variant="default">Generated</Badge>,
+    },
   ];
 
+  const canInvite = selectedCollege && selectedAssessment && scheduleDate && scheduleTime;
+
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Candidate Invitations</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Generate unique Candidate IDs and passwords, assign exam schedules, and bulk invite students.
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Candidate Invitations</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Generate unique IDs and passwords, assign exam schedules, and bulk invite students.
+        </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '28px', alignItems: 'start' }}>
-        
-        {/* Left Widget: Invite configurator form */}
-        <div className="widget-card">
-          <div className="widget-title">
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Invite Configurator</h3>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            <div className="form-group">
-              <label className="form-label">Select College Drive *</label>
-              <select
-                className="select-filter"
-                style={{ width: '100%', padding: '10px' }}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Left: Invite configurator */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Invite Configurator</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Select College Drive *</Label>
+              <Select
                 value={selectedCollege}
-                onChange={e => { setSelectedCollege(e.target.value); setInvitedSuccess(false); }}
+                onValueChange={v => { setSelectedCollege(v); setInvitedSuccess(false); }}
               >
-                <option value="">Choose College...</option>
-                {collegesWithOptions.map(opt => (
-                  <option key={opt.college} value={opt.college}>
-                    {opt.college} ({opt.count} candidates pending)
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose college..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {collegesWithOptions.map(opt => (
+                    <SelectItem key={opt.college} value={opt.college}>
+                      {opt.college} ({opt.count} pending)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Select Assessment *</label>
-              <select
-                className="select-filter"
-                style={{ width: '100%', padding: '10px' }}
-                value={selectedAssessment}
-                onChange={e => setSelectedAssessment(e.target.value)}
-              >
-                <option value="">Choose Assessment...</option>
-                {activeAssessments.map(asm => (
-                  <option key={asm.id} value={asm.id}>
-                    {asm.name} ({asm.duration} mins)
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-1.5">
+              <Label>Select Assessment *</Label>
+              <Select value={selectedAssessment} onValueChange={setSelectedAssessment}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose assessment..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeAssessments.map(asm => (
+                    <SelectItem key={asm.id} value={asm.id}>
+                      {asm.name} ({asm.duration} mins)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Exam Schedule Date *</label>
-              <input
-                type="date"
-                className="form-control"
-                value={scheduleDate}
-                onChange={e => setScheduleDate(e.target.value)}
-              />
+            <div className="space-y-1.5">
+              <Label>Exam Date *</Label>
+              <Input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Exam Start Time *</label>
-              <input
-                type="time"
-                className="form-control"
-                value={scheduleTime}
-                onChange={e => setScheduleTime(e.target.value)}
-              />
+            <div className="space-y-1.5">
+              <Label>Start Time *</Label>
+              <Input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} />
             </div>
 
             {invitedSuccess ? (
-              <div style={{
-                backgroundColor: 'var(--success-light)',
-                border: '1px solid var(--success)',
-                color: 'var(--success)',
-                borderRadius: '8px',
-                padding: '12px',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <ShieldCheck size={18} />
-                Invitations successfully dispatched!
+              <Alert className="border-emerald-500 bg-emerald-50 text-emerald-700">
+                <ShieldCheck className="h-4 w-4" />
+                <AlertDescription className="font-semibold">
+                  Invitations dispatched successfully!
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Button className="w-full gap-2" disabled={!canInvite} onClick={handleBulkInvite}>
+                <Send className="h-4 w-4" />
+                Generate & Invite Candidates
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right: Preview panel */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Credentials Preview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {invitedCandidates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-16 text-center text-muted-foreground">
+                <Users className="h-10 w-10" />
+                <div>
+                  <p className="font-semibold text-sm">No active batch selected</p>
+                  <p className="text-xs mt-1 max-w-[280px] mx-auto">
+                    Configure the invitation settings and dispatch invites. Generated credentials will appear here.
+                  </p>
+                </div>
               </div>
             ) : (
-              <button 
-                className="btn btn-primary"
-                onClick={handleBulkInvite}
-                style={{ justifyContent: 'center', padding: '10px', gap: '8px' }}
-                disabled={!selectedCollege || !selectedAssessment || !scheduleDate || !scheduleTime}
-              >
-                <Send size={16} />
-                Generate & Invite Candidates
-              </button>
+              <div className="space-y-3">
+                <Alert className="border-primary/20 bg-primary/5 text-primary">
+                  <AlertDescription className="text-sm">
+                    Generated <strong>{invitedCandidates.length}</strong> credentials for <strong>{selectedCollege}</strong>.
+                    Candidates can now access the portal.
+                  </AlertDescription>
+                </Alert>
+                <Table
+                  data={invitedCandidates}
+                  columns={columns}
+                  searchPlaceholder="Filter preview list..."
+                  searchKey="name"
+                  initialSort={{ key: 'id', direction: 'asc' }}
+                  exportFileName="Credentials_Batch"
+                />
+              </div>
             )}
-          </div>
-        </div>
-
-        {/* Right Widget: Preview panel */}
-        <div className="widget-card" style={{ minHeight: '360px' }}>
-          <div className="widget-title" style={{ marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Invitations Access Preview</h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Generated credential preview list.</span>
-          </div>
-
-          {invitedCandidates.length === 0 ? (
-            <div style={{
-              flexGrow: 1,
-              border: '2px dashed var(--border)',
-              borderRadius: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-secondary)',
-              padding: '60px 20px',
-              textAlign: 'center',
-              gap: '12px'
-            }}>
-              <Users size={36} style={{ color: 'var(--text-muted)' }} />
-              <div>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>No active batch selected</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '300px' }}>
-                  Configure invitation settings on the left and dispatch the invites. The generated candidate ID and assessment password credentials will preview here.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{
-                backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                border: '1px solid rgba(37, 99, 235, 0.15)',
-                color: 'var(--primary-blue)',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                lineHeight: '1.4'
-              }}>
-                Generated <b>{invitedCandidates.length}</b> unique exam credentials for <b>{selectedCollege}</b> drive. Candidates can now access the portal using these credentials.
-              </div>
-              
-              <Table
-                data={invitedCandidates}
-                columns={columns}
-                searchPlaceholder="Filter preview list..."
-                searchKey="name"
-                initialSort={{ key: 'id', direction: 'asc' }}
-                exportFileName="Generated_Credentials_Batch"
-              />
-            </div>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

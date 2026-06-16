@@ -4,280 +4,232 @@ import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
 import type { Interview } from '../../types';
 import { Plus, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+
+const stageBadge = (stage: Interview['stage']) => {
+  if (stage === 'Interview') return <Badge variant="default">{stage}</Badge>;
+  if (stage === 'Coding Exercise') return <Badge variant="outline">{stage}</Badge>;
+  return <Badge variant="secondary">{stage}</Badge>;
+};
+
+const statusBadge = (status: string) =>
+  status === 'Scheduled'
+    ? <Badge variant="secondary">Scheduled</Badge>
+    : <Badge variant="default">Completed</Badge>;
 
 export const Interviews: React.FC = () => {
   const { db, createInterview } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
-
-  // Form states
   const [candidateId, setCandidateId] = useState('');
   const [panelName, setPanelName] = useState('Panel Alpha');
   const [date, setDate] = useState('2026-06-15');
   const [time, setTime] = useState('10:00');
   const [stage, setStage] = useState<Interview['stage']>('Interview');
 
-  // Filter candidates who have completed assessment or are in test/interview stage
-  const eligibleCandidates = useMemo(() => {
-    return db.candidates.filter(c => 
-      c.assessmentStatus === 'Completed' && c.interviewStatus !== 'Passed' && c.interviewStatus !== 'Failed'
-    );
-  }, [db]);
+  const eligibleCandidates = useMemo(() =>
+    db.candidates.filter(c =>
+      c.assessmentStatus === 'Completed' &&
+      c.interviewStatus !== 'Passed' &&
+      c.interviewStatus !== 'Failed'
+    ),
+    [db]
+  );
 
   const handleSchedule = () => {
-    if (!candidateId) {
-      alert('Please select a candidate.');
-      return;
-    }
+    if (!candidateId) { alert('Please select a candidate.'); return; }
     const candidate = db.candidates.find(c => c.id === candidateId);
     if (!candidate) return;
-
-    createInterview({
-      candidateId,
-      candidateName: candidate.name,
-      panelName,
-      date,
-      time,
-      stage,
-      status: 'Scheduled'
-    });
-
+    createInterview({ candidateId, candidateName: candidate.name, panelName, date, time, stage, status: 'Scheduled' });
     setCandidateId('');
     setModalOpen(false);
   };
 
-  // Generate calendar days for June 2026
-  // June 1, 2026 starts on Monday. It has 30 days.
   const calendarDays = useMemo(() => {
-    const days: { dayNum: number; isCurrentMonth: boolean; events: Interview[] }[] = [];
-    
-    // Add empty padding for starting day of the week (Monday starts on index 0 in our grid)
-    // In 2026, June 1st is Monday.
-    for (let i = 1; i <= 30; i++) {
-      const dateStr = `2026-06-${i < 10 ? '0' + i : i}`;
-      const dayEvents = db.interviews.filter(evt => evt.date === dateStr);
-      days.push({
-        dayNum: i,
-        isCurrentMonth: true,
-        events: dayEvents
-      });
-    }
-    return days;
+    return Array.from({ length: 30 }, (_, i) => {
+      const dayNum = i + 1;
+      const dateStr = `2026-06-${dayNum < 10 ? '0' + dayNum : dayNum}`;
+      return { dayNum, events: db.interviews.filter(e => e.date === dateStr) };
+    });
   }, [db]);
 
   const columns = [
-    { header: 'ID', accessor: 'id', sortable: true },
-    { header: 'Candidate Name', accessor: 'candidateName', sortable: true },
-    {
-      header: 'Stage',
-      accessor: 'stage',
-      render: (row: Interview) => {
-        let badgeClass = 'badge ';
-        if (row.stage === 'Interview') badgeClass += 'success';
-        else if (row.stage === 'Coding Exercise') badgeClass += 'info';
-        else badgeClass += 'warning';
-        return <span className={badgeClass}>{row.stage}</span>;
-      }
-    },
-    { header: 'Panel / Interviewer', accessor: 'panelName', sortable: true },
+    { header: 'ID', accessor: 'id' as const, sortable: true },
+    { header: 'Candidate', accessor: 'candidateName' as const, sortable: true },
+    { header: 'Stage', accessor: 'stage' as const, render: (row: Interview) => stageBadge(row.stage) },
+    { header: 'Panel', accessor: 'panelName' as const, sortable: true },
     {
       header: 'Schedule',
       render: (row: Interview) => (
-        <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Clock size={12} style={{ color: 'var(--text-secondary)' }} />
+        <span className="flex items-center gap-1.5 text-sm">
+          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           {row.date} @ {row.time}
         </span>
-      )
+      ),
     },
-    {
-      header: 'Status',
-      accessor: 'status',
-      render: (row: Interview) => (
-        <span className={`badge ${row.status === 'Scheduled' ? 'warning' : 'success'}`}>
-          {row.status}
-        </span>
-      )
-    }
+    { header: 'Status', accessor: 'status' as const, render: (row: Interview) => statusBadge(row.status) },
   ];
 
+  const dayColors: Record<string, string> = {
+    'Interview': 'bg-primary/10 text-primary',
+    'Coding Exercise': 'bg-cyan-100 text-cyan-700',
+    'Whiteboard Interview': 'bg-amber-100 text-amber-700',
+  };
+
   return (
-    <div>
-      <div className="page-header">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Interviews Scheduler</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Coordinate panels, schedule candidate sessions, and track general technical and coding whiteboard rounds.
+          <h1 className="text-2xl font-bold tracking-tight">Interviews Scheduler</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Coordinate panels, schedule sessions, and track technical and coding rounds.
           </p>
         </div>
-
-        <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
-            <Plus size={16} />
-            Schedule Interview
-          </button>
-        </div>
+        <Button onClick={() => setModalOpen(true)} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Schedule Interview
+        </Button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '5fr 3fr', gap: '28px', alignItems: 'start' }}>
-        
-        {/* Left Widget: Monthly Calendar view */}
-        <div className="widget-card">
-          <div className="widget-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>June 2026</h3>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Standard Grid View</span>
-          </div>
-
-          <div className="calendar-view" style={{ padding: 0, border: 'none' }}>
-            <div className="calendar-grid">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+        {/* Calendar view */}
+        <Card className="xl:col-span-3">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">June 2026</CardTitle>
+              <span className="text-xs text-muted-foreground font-medium">Monthly Calendar</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-7 gap-1">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                <div key={day} className="calendar-cell-header">{day}</div>
+                <div key={day} className="text-center text-xs font-semibold uppercase text-muted-foreground py-1">
+                  {day}
+                </div>
               ))}
-
               {calendarDays.map((cell, idx) => {
-                const isToday = cell.dayNum === 12; // June 12, 2026 is today's local time!
+                const isToday = cell.dayNum === 15;
                 return (
-                  <div key={idx} className="calendar-cell current-month" style={{ borderColor: isToday ? 'var(--primary-blue)' : 'var(--border)', minHeight: '90px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <span className={`calendar-cell-num ${isToday ? 'today' : ''}`}>{cell.dayNum}</span>
-                      {isToday && <span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--primary-blue)' }}>TODAY</span>}
-                    </div>
-
-                    <div className="calendar-events">
-                      {cell.events.slice(0, 2).map((evt, eIdx) => {
-                        let cClass = 'primary';
-                        if (evt.stage === 'Coding Exercise') cClass = 'info';
-                        if (evt.stage === 'Whiteboard Interview') cClass = 'warning';
-                        return (
-                          <div key={eIdx} className={`calendar-event ${cClass}`}>
-                            {evt.candidateName.split(' ')[0]} ({evt.time})
-                          </div>
-                        );
-                      })}
-                      {cell.events.length > 2 && (
-                        <div style={{ fontSize: '8px', color: 'var(--text-secondary)', textAlign: 'right', fontWeight: 600 }}>
-                          +{cell.events.length - 2} more
-                        </div>
-                      )}
-                    </div>
+                  <div
+                    key={idx}
+                    className={`min-h-[72px] rounded-md border p-1.5 text-xs flex flex-col gap-0.5
+                      ${isToday ? 'border-primary bg-primary/5' : 'bg-card'}`}
+                  >
+                    <span className={`font-semibold text-xs ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {cell.dayNum}
+                    </span>
+                    {cell.events.slice(0, 2).map((evt, eIdx) => (
+                      <div
+                        key={eIdx}
+                        className={`rounded px-1 py-0.5 text-[9px] font-semibold truncate ${dayColors[evt.stage] ?? 'bg-muted text-muted-foreground'}`}
+                      >
+                        {evt.candidateName.split(' ')[0]} {evt.time}
+                      </div>
+                    ))}
+                    {cell.events.length > 2 && (
+                      <span className="text-[9px] text-muted-foreground text-right">+{cell.events.length - 2}</span>
+                    )}
                   </div>
                 );
               })}
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Right Widget: Directory Table of Scheduled Interviews */}
-        <div className="widget-card">
-          <div className="widget-title" style={{ marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Upcoming Schedule</h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Active interview panels list.</span>
-          </div>
-
-          <Table
-            data={db.interviews}
-            columns={columns}
-            searchPlaceholder="Filter interview panels..."
-            searchKey="candidateName"
-            initialSort={{ key: 'id', direction: 'desc' }}
-            exportFileName="Interviews_Schedules_Export"
-          />
-        </div>
+        {/* Upcoming table */}
+        <Card className="xl:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Upcoming Schedule</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table
+              data={db.interviews}
+              columns={columns}
+              searchPlaceholder="Filter panels..."
+              searchKey="candidateName"
+              initialSort={{ key: 'id', direction: 'desc' }}
+              exportFileName="Interviews_Export"
+            />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Schedule Interview Modal */}
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Schedule Interview Session"
         footer={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handleSchedule} disabled={eligibleCandidates.length === 0}>
-              Confirm Schedule
-            </button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleSchedule} disabled={eligibleCandidates.length === 0}>Confirm Schedule</Button>
           </div>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          
-          <div className="form-group">
-            <label className="form-label">Select Candidate *</label>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Select Candidate *</Label>
             {eligibleCandidates.length === 0 ? (
-              <div style={{
-                backgroundColor: 'var(--warning-light)',
-                border: '1px solid var(--warning)',
-                color: 'var(--warning)',
-                borderRadius: '8px',
-                padding: '12px',
-                fontSize: '0.85rem'
-              }}>
-                No candidates available for interviews. Ensure candidates have completed assessments first.
-              </div>
+              <Alert>
+                <AlertDescription className="text-sm">
+                  No eligible candidates. Ensure candidates have completed their assessments first.
+                </AlertDescription>
+              </Alert>
             ) : (
-              <select
-                className="select-filter"
-                style={{ width: '100%', padding: '10px' }}
-                value={candidateId}
-                onChange={e => setCandidateId(e.target.value)}
-              >
-                <option value="">Select Student...</option>
-                {eligibleCandidates.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.college} - CGPA {c.cgpa}) - Score: {c.assessmentScore} pts
-                  </option>
-                ))}
-              </select>
+              <Select value={candidateId} onValueChange={setCandidateId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select candidate..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {eligibleCandidates.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name} ({c.college} · CGPA {c.cgpa}) — {c.assessmentScore} pts
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Interview Stage *</label>
-            <select
-              className="select-filter"
-              style={{ width: '100%', padding: '10px' }}
-              value={stage}
-              onChange={e => setStage(e.target.value as any)}
-            >
-              <option value="Interview">Technical Interview Round</option>
-              <option value="Coding Exercise">Coding Evaluation Round</option>
-              <option value="Whiteboard Interview">System Design / Whiteboard Round</option>
-            </select>
+          <div className="space-y-1.5">
+            <Label>Interview Stage *</Label>
+            <Select value={stage} onValueChange={v => setStage(v as Interview['stage'])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Interview">Technical Interview Round</SelectItem>
+                <SelectItem value="Coding Exercise">Coding Evaluation Round</SelectItem>
+                <SelectItem value="Whiteboard Interview">System Design / Whiteboard</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Assigned Interview Panelist Name *</label>
-            <select
-              className="select-filter"
-              style={{ width: '100%', padding: '10px' }}
-              value={panelName}
-              onChange={e => setPanelName(e.target.value)}
-            >
-              <option value="Panel Alpha">Panel Alpha (SDE-2 lead)</option>
-              <option value="Panel Beta">Panel Beta (Architect lead)</option>
-              <option value="Panel Gamma">Panel Gamma (Director TA)</option>
-              <option value="Panel Delta">Panel Delta (QA lead)</option>
-            </select>
+          <div className="space-y-1.5">
+            <Label>Panelist *</Label>
+            <Select value={panelName} onValueChange={setPanelName}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Panel Alpha">Panel Alpha (SDE-2 lead)</SelectItem>
+                <SelectItem value="Panel Beta">Panel Beta (Architect lead)</SelectItem>
+                <SelectItem value="Panel Gamma">Panel Gamma (Director TA)</SelectItem>
+                <SelectItem value="Panel Delta">Panel Delta (QA lead)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">Interview Date *</label>
-              <input
-                type="date"
-                className="form-control"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-              />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Date *</Label>
+              <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Start Time *</label>
-              <input
-                type="time"
-                className="form-control"
-                value={time}
-                onChange={e => setTime(e.target.value)}
-              />
+            <div className="space-y-1.5">
+              <Label>Time *</Label>
+              <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
             </div>
           </div>
         </div>

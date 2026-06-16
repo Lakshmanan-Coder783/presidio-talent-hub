@@ -15,7 +15,7 @@ interface AppContextType {
   loginAdmin: () => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
   logout: () => void;
-  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'shortlisted'>) => void;
+  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => void;
   updateDrive: (drive: CampusDrive) => void;
   updateCandidate: (candidate: Candidate) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
@@ -99,12 +99,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem('presidio_session');
   };
 
-  const createDrive = (driveData: Omit<CampusDrive, 'id' | 'registered' | 'shortlisted'>) => {
+  const createDrive = (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => {
     const newDrive: CampusDrive = {
       ...driveData,
       id: `DRV-2026-${100 + db.drives.length + 1}`,
       registered: 0,
-      shortlisted: 0
+      selected: 0
     };
     const updatedDb = { ...db, drives: [newDrive, ...db.drives] };
     setDb(updatedDb);

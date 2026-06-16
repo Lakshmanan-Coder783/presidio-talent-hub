@@ -4,12 +4,25 @@ import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
 import type { Question } from '../../types';
 import { Plus, Tag, HelpCircle, Code } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+
+const difficultyVariant = (d: Question['difficulty']) => {
+  if (d === 'Easy') return 'default';
+  if (d === 'Medium') return 'secondary';
+  return 'destructive';
+};
 
 export const QuestionBank: React.FC = () => {
   const { db, createQuestion } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
-
-  // Form states
   const [text, setText] = useState('');
   const [type, setType] = useState<Question['type']>('MCQ');
   const [topic, setTopic] = useState<Question['topic']>('Technical');
@@ -25,317 +38,206 @@ export const QuestionBank: React.FC = () => {
     setOptions(next);
   };
 
+  const resetForm = () => {
+    setText(''); setType('MCQ'); setTopic('Technical'); setDifficulty('Medium');
+    setMarks('2'); setTagsInput(''); setOptions(['', '', '', '']); setCorrectOption('0');
+  };
+
   const handleSaveQuestion = () => {
-    if (!text || !marks) {
-      alert('Please fill out all required fields.');
-      return;
-    }
-
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
-    
-    // Construct new question
-    const qData: Omit<Question, 'id'> = {
-      text,
-      type,
-      topic,
-      difficulty,
-      marks: parseInt(marks),
-      tags,
-      options: ['MCQ', 'Multiple Select'].includes(type) ? options.filter(o => o.trim() !== '') : undefined,
-      correctOptions: ['MCQ', 'Multiple Select'].includes(type) ? [parseInt(correctOption)] : undefined
-    };
-
-    createQuestion(qData);
+    if (!text || !marks) { alert('Fill all required fields.'); return; }
+    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+    createQuestion({
+      text, type, topic, difficulty, marks: parseInt(marks), tags,
+      options: ['MCQ', 'Multiple Select'].includes(type) ? options.filter(o => o.trim()) : undefined,
+      correctOptions: ['MCQ', 'Multiple Select'].includes(type) ? [parseInt(correctOption)] : undefined,
+    });
     resetForm();
     setModalOpen(false);
   };
 
-  const resetForm = () => {
-    setText('');
-    setType('MCQ');
-    setTopic('Technical');
-    setDifficulty('Medium');
-    setMarks('2');
-    setTagsInput('');
-    setOptions(['', '', '', '']);
-    setCorrectOption('0');
-  };
-
-  // Define Table Columns
   const columns = useMemo(() => [
     {
       header: 'Question Text',
-      accessor: 'text',
+      accessor: 'text' as const,
       sortable: true,
       render: (row: Question) => (
-        <div style={{ maxWidth: '400px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-          <b style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>
-            {row.text.length > 110 ? `${row.text.slice(0, 110)}...` : row.text}
-          </b>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+        <div className="max-w-[400px]">
+          <p className="font-semibold text-sm leading-snug">
+            {row.text.length > 110 ? `${row.text.slice(0, 110)}…` : row.text}
+          </p>
+          <div className="flex flex-wrap gap-1 mt-1.5">
             {row.tags.map(t => (
-              <span 
-                key={t} 
-                style={{ 
-                  fontSize: '10px', 
-                  backgroundColor: 'var(--bg-slate)', 
-                  border: '1px solid var(--border)', 
-                  borderRadius: '4px', 
-                  padding: '1px 6px',
-                  color: 'var(--text-secondary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
-              >
-                <Tag size={8} />
-                {t}
+              <span key={t} className="inline-flex items-center gap-1 text-[10px] rounded border bg-muted px-1.5 py-0.5 text-muted-foreground">
+                <Tag className="h-2 w-2" />{t}
               </span>
             ))}
           </div>
         </div>
-      )
+      ),
     },
-    { header: 'Topic', accessor: 'topic', sortable: true },
+    { header: 'Topic', accessor: 'topic' as const, sortable: true },
     {
       header: 'Type',
-      accessor: 'type',
+      accessor: 'type' as const,
       sortable: true,
-      render: (row: Question) => {
-        let iconColor = 'var(--primary-blue)';
-        if (row.type === 'Coding') iconColor = '#8b5cf6';
-        if (row.type === 'SQL') iconColor = '#06b6d4';
-        return (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
-            {row.type === 'Coding' ? <Code size={14} style={{ color: iconColor }} /> : <HelpCircle size={14} style={{ color: iconColor }} />}
-            {row.type}
-          </span>
-        );
-      }
+      render: (row: Question) => (
+        <span className="flex items-center gap-1.5 text-xs font-semibold">
+          {row.type === 'Coding' ? <Code className="h-3.5 w-3.5 text-violet-500" /> : <HelpCircle className="h-3.5 w-3.5 text-primary" />}
+          {row.type}
+        </span>
+      ),
     },
     {
       header: 'Difficulty',
-      accessor: 'difficulty',
+      accessor: 'difficulty' as const,
       sortable: true,
-      render: (row: Question) => {
-        let badgeClass = 'badge ';
-        if (row.difficulty === 'Easy') badgeClass += 'success';
-        else if (row.difficulty === 'Medium') badgeClass += 'warning';
-        else badgeClass += 'error';
-        return <span className={badgeClass}>{row.difficulty}</span>;
-      }
+      render: (row: Question) => <Badge variant={difficultyVariant(row.difficulty)}>{row.difficulty}</Badge>,
     },
-    { header: 'Marks', accessor: 'marks', sortable: true, render: (row: Question) => `${row.marks} pts` }
+    {
+      header: 'Marks',
+      accessor: 'marks' as const,
+      sortable: true,
+      render: (row: Question) => `${row.marks} pts`,
+    },
   ], []);
 
-  // Filters configs
   const filters = useMemo(() => [
     {
-      key: 'type',
-      label: 'Type',
+      key: 'type', label: 'Type',
       options: [
-        { label: 'MCQ', value: 'MCQ' },
-        { label: 'Multiple Select', value: 'Multiple Select' },
-        { label: 'Coding', value: 'Coding' },
-        { label: 'SQL', value: 'SQL' },
-        { label: 'Descriptive', value: 'Descriptive' }
-      ]
+        { label: 'MCQ', value: 'MCQ' }, { label: 'Multiple Select', value: 'Multiple Select' },
+        { label: 'Coding', value: 'Coding' }, { label: 'SQL', value: 'SQL' }, { label: 'Descriptive', value: 'Descriptive' },
+      ],
     },
     {
-      key: 'topic',
-      label: 'Topic',
+      key: 'topic', label: 'Topic',
       options: [
-        { label: 'Aptitude', value: 'Aptitude' },
-        { label: 'Logical Reasoning', value: 'Logical Reasoning' },
-        { label: 'Technical', value: 'Technical' },
-        { label: 'Coding', value: 'Coding' },
-        { label: 'Verbal', value: 'Verbal' }
-      ]
+        { label: 'Aptitude', value: 'Aptitude' }, { label: 'Logical Reasoning', value: 'Logical Reasoning' },
+        { label: 'Technical', value: 'Technical' }, { label: 'Coding', value: 'Coding' }, { label: 'Verbal', value: 'Verbal' },
+      ],
     },
     {
-      key: 'difficulty',
-      label: 'Difficulty',
-      options: [
-        { label: 'Easy', value: 'Easy' },
-        { label: 'Medium', value: 'Medium' },
-        { label: 'Hard', value: 'Hard' }
-      ]
-    }
+      key: 'difficulty', label: 'Difficulty',
+      options: [{ label: 'Easy', value: 'Easy' }, { label: 'Medium', value: 'Medium' }, { label: 'Hard', value: 'Hard' }],
+    },
   ], []);
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Question Bank</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Central repository of all {db.questions.length} pre-approved assessment questions, filters, and tagging categories.
+          <h1 className="text-2xl font-bold tracking-tight">Question Bank</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Central repository of {db.questions.length} pre-approved assessment questions.
           </p>
         </div>
-
-        <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
-            <Plus size={16} />
-            Create Question
-          </button>
-        </div>
+        <Button onClick={() => setModalOpen(true)} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Create Question
+        </Button>
       </div>
 
-      {/* Directory Table */}
       <Table
         data={db.questions}
         columns={columns}
         filters={filters}
-        searchPlaceholder="Search questions by text or tags..."
-        searchKey={(q) => `${q.text} ${q.tags.join(' ')}`}
+        searchPlaceholder="Search by text or tags..."
+        searchKey={q => `${q.text} ${q.tags.join(' ')}`}
         initialSort={{ key: 'id', direction: 'desc' }}
         exportFileName="Question_Bank_Export"
       />
 
-      {/* Create Question Modal */}
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); resetForm(); }}
         title="Add Question to Bank"
         size="lg"
         footer={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={() => { setModalOpen(false); resetForm(); }}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handleSaveQuestion}>
-              Add Question
-            </button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setModalOpen(false); resetForm(); }}>Cancel</Button>
+            <Button onClick={handleSaveQuestion}>Add Question</Button>
           </div>
         }
       >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          {/* Left Fields */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">Question Text *</label>
-              <textarea
-                className="form-control"
-                placeholder="Enter question statement details..."
-                rows={4}
-                value={text}
-                onChange={e => setText(e.target.value)}
-                style={{ resize: 'vertical' }}
-              />
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left */}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Question Text *</Label>
+              <Textarea placeholder="Enter question statement..." rows={4} value={text} onChange={e => setText(e.target.value)} />
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Question Type *</label>
-              <select
-                className="select-filter"
-                style={{ width: '100%', padding: '10px' }}
-                value={type}
-                onChange={e => setType(e.target.value as any)}
-              >
-                <option value="MCQ">Multiple Choice (Single Correct)</option>
-                <option value="Multiple Select">Multiple Select (Multiple Correct)</option>
-                <option value="Coding">Coding Challenge</option>
-                <option value="SQL">SQL Query Writing</option>
-                <option value="Descriptive">Descriptive Theory</option>
-              </select>
+            <div className="space-y-1.5">
+              <Label>Question Type *</Label>
+              <Select value={type} onValueChange={v => setType(v as Question['type'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MCQ">MCQ (Single Correct)</SelectItem>
+                  <SelectItem value="Multiple Select">Multiple Select</SelectItem>
+                  <SelectItem value="Coding">Coding Challenge</SelectItem>
+                  <SelectItem value="SQL">SQL Query</SelectItem>
+                  <SelectItem value="Descriptive">Descriptive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="form-group">
-                <label className="form-label">Difficulty *</label>
-                <select
-                  className="select-filter"
-                  style={{ width: '100%', padding: '10px' }}
-                  value={difficulty}
-                  onChange={e => setDifficulty(e.target.value as any)}
-                >
-                  <option value="Easy">Easy</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Hard">Hard</option>
-                </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Difficulty *</Label>
+                <Select value={difficulty} onValueChange={v => setDifficulty(v as Question['difficulty'])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Easy">Easy</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="form-group">
-                <label className="form-label">Marks *</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={marks}
-                  onChange={e => setMarks(e.target.value)}
-                />
+              <div className="space-y-1.5">
+                <Label>Marks *</Label>
+                <Input type="number" value={marks} onChange={e => setMarks(e.target.value)} />
               </div>
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Topic Area *</label>
-              <select
-                className="select-filter"
-                style={{ width: '100%', padding: '10px' }}
-                value={topic}
-                onChange={e => setTopic(e.target.value as any)}
-              >
-                <option value="Aptitude">Aptitude</option>
-                <option value="Logical Reasoning">Logical Reasoning</option>
-                <option value="Technical">Technical MCQ</option>
-                <option value="Coding">Coding IDE</option>
-                <option value="Verbal">Verbal / Communication</option>
-              </select>
+            <div className="space-y-1.5">
+              <Label>Topic *</Label>
+              <Select value={topic} onValueChange={v => setTopic(v as Question['topic'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Aptitude">Aptitude</SelectItem>
+                  <SelectItem value="Logical Reasoning">Logical Reasoning</SelectItem>
+                  <SelectItem value="Technical">Technical MCQ</SelectItem>
+                  <SelectItem value="Coding">Coding IDE</SelectItem>
+                  <SelectItem value="Verbal">Verbal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Tags (comma separated)</label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="e.g. Arrays, Recursion, Time Complexity"
-                value={tagsInput}
-                onChange={e => setTagsInput(e.target.value)}
-              />
+            <div className="space-y-1.5">
+              <Label>Tags (comma separated)</Label>
+              <Input placeholder="e.g. Arrays, Recursion" value={tagsInput} onChange={e => setTagsInput(e.target.value)} />
             </div>
           </div>
 
-          {/* Right MCQ Config Fields */}
-          <div style={{ paddingLeft: '20px', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-            <h4 style={{ fontSize: '1rem', marginBottom: '12px' }}>MCQ/MSQ Options Configurator</h4>
+          {/* Right: MCQ options */}
+          <div className="pl-4 border-l space-y-3">
+            <p className="font-semibold text-sm">MCQ / MSQ Options</p>
             {['MCQ', 'Multiple Select'].includes(type) ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <RadioGroup value={correctOption} onValueChange={setCorrectOption} className="space-y-3">
                 {options.map((opt, idx) => (
-                  <div key={idx} className="form-group">
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      Option {idx + 1}
-                      <input 
-                        type="radio" 
-                        name="correct-option" 
-                        checked={correctOption === String(idx)} 
-                        onChange={() => setCorrectOption(String(idx))} 
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder={`Enter text for Option ${idx + 1}...`}
+                  <div key={idx} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Option {idx + 1}</Label>
+                      <RadioGroupItem value={String(idx)} id={`opt-${idx}`} />
+                    </div>
+                    <Input
+                      placeholder={`Text for option ${idx + 1}…`}
                       value={opt}
                       onChange={e => handleOptionChange(idx, e.target.value)}
                     />
                   </div>
                 ))}
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  * Select the corresponding radio button to mark the correct option.
-                </span>
-              </div>
+                <p className="text-xs text-muted-foreground">Select the radio button to mark the correct option.</p>
+              </RadioGroup>
             ) : (
-              <div style={{
-                flexGrow: 1,
-                border: '2px dashed var(--border)',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-secondary)',
-                fontSize: '0.875rem',
-                padding: '40px 20px',
-                textAlign: 'center'
-              }}>
-                Options configuration is only available for Multiple Choice and Multiple Select question types.
+              <div className="flex-1 flex items-center justify-center rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
+                Options configuration is only available for MCQ and Multiple Select question types.
               </div>
             )}
           </div>

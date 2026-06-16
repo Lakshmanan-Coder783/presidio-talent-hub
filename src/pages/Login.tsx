@@ -1,189 +1,154 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Shield, Users, Lock, HelpCircle, Loader2 } from 'lucide-react';
-import presidioHq from '../assets/presidio_hq.png';
+import { HelpCircle, Shield, Users, Lock, ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import buildingImg from '../assets/presidio-building.png';
+
+const MicrosoftLogo = () => (
+  <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+    <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+    <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+    <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+  </svg>
+);
+
 
 export const Login: React.FC = () => {
   const { loginAdmin } = useApp();
   const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState('');
-  const [languageOpen, setLanguageOpen] = useState(false);
 
-  const handleAdminSSO = async () => {
+  const handleMicrosoftLogin = () => {
     setLoading(true);
-    setLoadingStep('Redirecting to Microsoft Entra ID...');
-    
     setTimeout(() => {
-      setLoadingStep('Verifying corporate SSO credentials...');
-      setTimeout(() => {
-        setLoadingStep('Authorizing user access and loading roles...');
-        loginAdmin().then(() => {
-          setLoading(false);
-        });
-      }, 1000);
-    }, 1000);
+      loginAdmin();
+    }, 1200);
   };
 
   return (
-    <div className="w-screen h-screen flex overflow-hidden font-sans bg-[#F8FAFC] select-none">
-      {/* LEFT PANEL: 50% width, full height */}
-      <div className="relative w-1/2 h-full flex flex-col justify-between pl-16 pr-16 pt-12 pb-12 text-white bg-gradient-to-b from-[#002B7F] via-[#003DA5] to-[#2563EB] overflow-hidden">
-        {/* Subtle decorative glow layer */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_50%)] z-0 pointer-events-none"></div>
-        
-        {/* Top Left Branding */}
-        <div className="z-10">
-          <span className="text-[32px] font-bold tracking-tight text-white uppercase leading-none block">
-            PRESIDIO
-          </span>
-        </div>
+    <div className="min-h-screen flex">
+      {/* ── Left panel ───────────────────────────────────────────────── */}
+      <div
+        className="hidden lg:flex lg:w-[44%] flex-col relative overflow-hidden"
+        style={{ background: 'linear-gradient(175deg, #1535a8 0%, #1030a0 30%, #0a1d70 60%, #06103c 100%)' }}
+      >
 
-        {/* Hero Copy (Middle) */}
-        <div className="z-10 my-auto space-y-4 max-w-lg">
-          <h1 className="text-[56px] font-bold tracking-tight leading-none text-white">
-            Talent Hub
-          </h1>
-          <p className="text-[20px] font-medium text-white">
-            Assess. <span className="text-[#60A5FA]">Evaluate.</span> Hire.
-          </p>
-          <div className="w-12 h-[2px] bg-white/40"></div>
-          <p className="text-[16px] leading-relaxed text-white/90 max-w-[420px]">
-            A unified platform for campus hiring, assessments, interviews and talent management.
-          </p>
-        </div>
+        <div className="relative z-10 flex flex-col h-full px-10 pt-8 pb-6">
+          {/* Brand */}
+          <p className="text-white font-black text-lg tracking-[0.2em] uppercase">PRESIDIO</p>
 
-        {/* Office Building Image: Bottom, centered, fully contained */}
-        <div className="z-10 flex flex-col items-center w-full mt-auto overflow-hidden">
-          <img 
-            src={presidioHq} 
-            alt="Presidio Corporate HQ" 
-            className="w-[85%] h-auto max-h-[35vh] object-contain object-bottom rounded-t-xl opacity-95"
-          />
-        </div>
+          {/* Hero text */}
+          <div className="mt-10">
+            <h1 className="text-[3.75rem] font-black text-white leading-[1.05] tracking-tight">
+              Talent Hub
+            </h1>
+            <p className="mt-4 text-[1.1rem] font-medium text-white">
+              Assess.{' '}
+              <span style={{ color: '#60c6f5' }} className="font-semibold">Evaluate.</span>{' '}
+              Hire.
+            </p>
+            <div className="mt-4 w-10 h-[2px] bg-white/50" />
+            <p className="mt-5 text-white/55 text-[0.9rem] leading-relaxed">
+              A unified platform for campus hiring,<br />
+              assessments, interviews and<br />
+              talent management.
+            </p>
+          </div>
 
-        {/* Bottom Left Copyright Footer */}
-        <div className="absolute left-16 bottom-12 z-20 text-[14px] text-white/80">
-          © 2026 Presidio. All rights reserved.
+          {/* Building photo — fills remaining height, no gap */}
+          <div className="flex-1 -mx-10 relative overflow-hidden" style={{ minHeight: '320px' }}>
+            {/* Top fade: blends panel background into the building photo sky */}
+            <div className="absolute top-0 inset-x-0 h-32 z-10 pointer-events-none"
+              style={{ background: 'linear-gradient(to bottom, #1030a0 0%, rgba(16,48,160,0.7) 35%, rgba(16,48,160,0.2) 70%, transparent 100%)' }} />
+            <img
+              src={buildingImg}
+              alt="Presidio headquarters"
+              className="w-full h-full object-cover object-top"
+              style={{ filter: 'brightness(1.2) saturate(1.5) hue-rotate(-5deg)' }}
+            />
+          </div>
+
         </div>
       </div>
 
-      {/* RIGHT PANEL: 50% width, full height */}
-      <div className="relative w-1/2 h-full flex items-center justify-center p-8 bg-[#F8FAFC] overflow-hidden">
-        
-        {/* Top Right Corner Controls */}
-        <div className="absolute top-10 right-16 flex items-center gap-5 text-slate-500 z-10">
-          {/* Help Button */}
-          <button className="p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer" title="Get Help">
-            <HelpCircle size={24} className="text-slate-400 hover:text-slate-600" />
+      {/* ── Right panel ──────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col bg-[#f2f3f5]">
+        {/* Top bar */}
+        <div className="flex items-center justify-end gap-2 px-8 pt-5">
+          <button className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors">
+            <HelpCircle className="h-4 w-4" />
           </button>
-          
-          {/* Language Selector Dropdown */}
-          <div className="relative">
-            <button 
-              className="flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg bg-white text-sm font-semibold hover:bg-slate-50 transition-all cursor-pointer shadow-sm text-slate-700"
-              onClick={() => setLanguageOpen(!languageOpen)}
-            >
-              EN
-              <span className="text-[10px] text-slate-400">▼</span>
-            </button>
-            {languageOpen && (
-              <div className="absolute right-0 mt-1.5 w-28 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 text-sm">
-                <div className="px-4 py-2 hover:bg-slate-50 cursor-pointer font-medium text-slate-800">English</div>
-                <div className="px-4 py-2 hover:bg-slate-50 cursor-pointer text-slate-500">Español</div>
-                <div className="px-4 py-2 hover:bg-slate-50 cursor-pointer text-slate-500">Français</div>
-              </div>
-            )}
-          </div>
+          <button className="flex items-center gap-1.5 text-sm text-gray-600 bg-white border border-gray-200 shadow-sm rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
+            EN <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+          </button>
         </div>
 
-        {/* SSO Centered White Card (width: 620px, height: auto, padding: 48px) */}
-        <div className="w-[620px] max-w-[90%] bg-white rounded-[20px] border border-slate-200/80 shadow-2xl p-12 flex flex-col gap-6">
-          {loading ? (
-            /* Loader state when SSO process is active */
-            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-              <Loader2 size={44} className="animate-spin text-[#2563EB]" />
-              <div className="space-y-1.5">
-                <h3 className="text-base font-bold text-slate-900">Microsoft Entra ID Login</h3>
-                <p className="text-xs text-slate-500">{loadingStep}</p>
-              </div>
-            </div>
-          ) : (
-            /* Card Content - Left-Aligned */
-            <div className="flex flex-col gap-6">
-              <div>
-                <h2 className="text-[48px] font-bold text-[#111827] tracking-tight leading-none mb-4">
-                  Admin Login
-                </h2>
-                <p className="text-[#6B7280] text-[18px] leading-normal">
-                  Sign in with Microsoft Entra ID to access Presidio Talent Hub
-                </p>
-              </div>
+        {/* Centered card */}
+        <div className="flex-1 flex items-center justify-center p-8">
+          <Card className="w-full max-w-md bg-white shadow-sm border border-gray-200 rounded-2xl">
+            <CardHeader className="pb-2 pt-7 px-8">
+              <CardTitle className="text-2xl font-bold text-gray-900">Admin Login</CardTitle>
+              <CardDescription className="text-gray-500 mt-1">
+                Sign in with Microsoft Entra ID to access Presidio Talent Hub
+              </CardDescription>
+            </CardHeader>
 
-              {/* Microsoft Login Button */}
-              <div>
-                <button
-                  onClick={handleAdminSSO}
-                  className="w-full h-[64px] flex items-center justify-center gap-3.5 border border-[#E5E7EB] rounded-xl bg-white hover:bg-slate-50 transition-all text-[#111827] font-semibold text-[18px] shadow-sm active:scale-[0.99] cursor-pointer"
-                >
-                  {/* Microsoft Quadrants Logo */}
-                  <svg width="22" height="22" viewBox="0 0 23 23" className="flex-shrink-0">
-                    <rect x="1" y="1" width="10" height="10" fill="#f25022" />
-                    <rect x="12" y="1" width="10" height="10" fill="#7fba00" />
-                    <rect x="1" y="12" width="10" height="10" fill="#00a4ef" />
-                    <rect x="12" y="12" width="10" height="10" fill="#ffb900" />
-                  </svg>
-                  Sign in with Microsoft
-                </button>
+            <CardContent className="px-8 pb-8 pt-5 space-y-5">
+              {/* Microsoft button */}
+              <Button
+                variant="outline"
+                className="w-full h-12 text-[15px] font-medium border-gray-300 bg-white hover:bg-gray-50 gap-3 rounded-xl shadow-sm"
+                onClick={handleMicrosoftLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <MicrosoftLogo />
+                )}
+                {loading ? 'Signing in…' : 'Sign in with Microsoft'}
+              </Button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400 whitespace-nowrap tracking-wide">Secure SSO Login</span>
+                <div className="flex-1 h-px bg-gray-200" />
               </div>
 
-              {/* Custom Badge Divider */}
-              <div className="relative flex items-center justify-center my-1">
-                <div className="absolute inset-x-0 h-[1px] bg-slate-200/60"></div>
-                <span className="relative z-10 px-4 py-1.5 bg-[#F8FAFC] border border-slate-200/60 rounded-full text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-                  Secure SSO Login
-                </span>
+              {/* Features */}
+              <div className="space-y-4 pt-1">
+                {[
+                  {
+                    icon: Shield,
+                    title: 'Secure Authentication',
+                    desc: 'Enterprise-grade security with Microsoft Entra ID',
+                  },
+                  {
+                    icon: Users,
+                    title: 'Unified Access',
+                    desc: 'Access all recruitment and assessment features',
+                  },
+                  {
+                    icon: Lock,
+                    title: 'Data Protection',
+                    desc: 'Your data is protected and encrypted',
+                  },
+                ].map(({ icon: Icon, title, desc }) => (
+                  <div key={title} className="flex items-start gap-4">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm leading-tight">{title}</p>
+                      <p className="text-gray-500 text-sm mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              {/* Security Features List */}
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 bg-blue-50 text-[#2563EB] rounded-lg border border-blue-100/30 flex-shrink-0">
-                    <Shield size={18} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-[#111827]">Secure Authentication</h4>
-                    <p className="text-[13px] text-[#6B7280] mt-0.5">
-                      Enterprise-grade security with Microsoft Entra ID
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="p-2 bg-blue-50 text-[#2563EB] rounded-lg border border-blue-100/30 flex-shrink-0">
-                    <Users size={18} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-[#111827]">Unified Access</h4>
-                    <p className="text-[13px] text-[#6B7280] mt-0.5">
-                      Access all recruitment and assessment features
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="p-2 bg-blue-50 text-[#2563EB] rounded-lg border border-blue-100/30 flex-shrink-0">
-                    <Lock size={18} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-[#111827]">Data Protection</h4>
-                    <p className="text-[13px] text-[#6B7280] mt-0.5">
-                      Your data is protected and encrypted
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

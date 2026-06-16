@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Send, Terminal, Settings } from 'lucide-react';
+import { Play, Send, Terminal } from 'lucide-react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface CodeEditorProps {
   value: string;
@@ -13,41 +23,48 @@ interface CodeEditorProps {
   onSubmitSuccess?: () => void;
 }
 
+type Lang = 'javascript' | 'python' | 'java' | 'csharp';
+
+const LANG_LABELS: Record<Lang, string> = {
+  javascript: 'JavaScript (Node.js)',
+  python: 'Python 3.x',
+  java: 'Java (JDK 17)',
+  csharp: 'C# (.NET Core)',
+};
+
 export const CodeEditor: React.FC<CodeEditorProps> = ({
   value,
   onChange,
   languageTemplates = {},
-  onSubmitSuccess
+  onSubmitSuccess,
 }) => {
-  const [lang, setLang] = useState<'javascript' | 'python' | 'java' | 'csharp'>('javascript');
-  const [consoleOutput, setConsoleOutput] = useState<string>('Terminal initialized. Press "Run Code" to compile.');
+  const [lang, setLang] = useState<Lang>('javascript');
+  const [consoleOutput, setConsoleOutput] = useState(
+    'Terminal initialized. Press "Run Code" to compile.'
+  );
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lines, setLines] = useState<number[]>([]);
+  const lineCount = value.split('\n').length || 1;
 
-  // Calculate line numbers
   useEffect(() => {
-    const linesCount = value.split('\n').length || 1;
-    const linesArr = Array.from({ length: linesCount }, (_, i) => i + 1);
-    setLines(linesArr);
-  }, [value]);
-
-  // Set default templates when language changes
-  useEffect(() => {
-    const template = languageTemplates[lang] || '';
-    if (template) {
-      onChange(template);
-    }
+    const template = languageTemplates[lang];
+    if (template) onChange(template);
   }, [lang]);
 
   const handleRunCode = () => {
     setIsRunning(true);
     setConsoleOutput('Compiling code...\n');
-
     setTimeout(() => {
-      setConsoleOutput(prev => prev + `Status: Compilation Successful.\n\nRunning sample test cases...\n`);
+      setConsoleOutput(
+        prev =>
+          prev + 'Status: Compilation Successful.\n\nRunning sample test cases...\n'
+      );
       setTimeout(() => {
-        setConsoleOutput(prev => prev + `✓ Test Case 1: Passed\n  Input: [1, 2, 3, 4, 5]\n  Output: 5\n\n✓ Test Case 2: Passed\n  Input: [100, 20, 5, 80]\n  Output: 100\n\nAll Sample Test Cases Passed (2/2).`);
+        setConsoleOutput(
+          prev =>
+            prev +
+            '✓ Test Case 1: Passed\n  Input: [1, 2, 3, 4, 5]\n  Output: 5\n\n✓ Test Case 2: Passed\n  Input: [100, 20, 5, 80]\n  Output: 100\n\nAll Sample Test Cases Passed (2/2).'
+        );
         setIsRunning(false);
       }, 1000);
     }, 800);
@@ -56,109 +73,100 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const handleSubmitCode = () => {
     setIsSubmitting(true);
     setConsoleOutput('Compiling code for submission...\n');
-
     setTimeout(() => {
-      setConsoleOutput(prev => prev + `Running 5 automated test cases...\n`);
+      setConsoleOutput(prev => prev + 'Running 5 automated test cases...\n');
       setTimeout(() => {
-        setConsoleOutput(prev => prev + `✓ Test Case 1: Passed\n✓ Test Case 2: Passed\n✓ Test Case 3: Passed (Secret)\n✓ Test Case 4: Passed (Secret)\n✓ Test Case 5: Passed (Secret)\n\nAll test cases successfully passed. Code submitted!`);
+        setConsoleOutput(
+          prev =>
+            prev +
+            '✓ Test Case 1: Passed\n✓ Test Case 2: Passed\n✓ Test Case 3: Passed (Secret)\n✓ Test Case 4: Passed (Secret)\n✓ Test Case 5: Passed (Secret)\n\nAll test cases successfully passed. Code submitted!'
+        );
         setIsSubmitting(false);
-        if (onSubmitSuccess) {
-          onSubmitSuccess();
-        }
+        onSubmitSuccess?.();
       }, 1200);
     }, 800);
   };
 
   return (
-    <div className="editor-panel">
-      {/* Editor Header */}
-      <div className="panel-header" style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ color: '#f8fafc', fontWeight: 600 }}>Solution Editor</span>
-          <select
-            className="select-filter"
-            style={{
-              backgroundColor: '#0f172a',
-              color: '#38bdf8',
-              borderColor: '#334155',
-              padding: '4px 8px',
-              fontSize: '0.75rem',
-              fontWeight: 600
-            }}
-            value={lang}
-            onChange={e => setLang(e.target.value as any)}
-          >
-            <option value="javascript">JavaScript (Node.js)</option>
-            <option value="python">Python 3.x</option>
-            <option value="java">Java (JDK 17)</option>
-            <option value="csharp">C# (.NET Core)</option>
-          </select>
+    <Card className="flex flex-col h-full overflow-hidden bg-slate-900 border-slate-700 rounded-lg">
+      {/* Editor header */}
+      <CardHeader className="flex-row items-center justify-between py-2 px-3 bg-slate-800 border-b border-slate-700 space-y-0">
+        <div className="flex items-center gap-3">
+          <span className="text-slate-100 font-semibold text-sm">Solution Editor</span>
+          <Select value={lang} onValueChange={val => setLang(val as Lang)}>
+            <SelectTrigger className="h-7 w-44 text-xs bg-slate-900 border-slate-600 text-sky-400 font-semibold">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.entries(LANG_LABELS) as [Lang, string][]).map(([val, label]) => (
+                <SelectItem key={val} value={val} className="text-xs">
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            className="btn btn-secondary"
-            style={{
-              padding: '4px 12px',
-              fontSize: '0.75rem',
-              backgroundColor: '#334155',
-              borderColor: '#475569',
-              color: '#e2e8f0',
-              gap: '4px'
-            }}
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs bg-slate-700 border-slate-600 text-slate-100 hover:bg-slate-600 gap-1"
             disabled={isRunning || isSubmitting}
             onClick={handleRunCode}
           >
-            <Play size={12} fill="#e2e8f0" />
-            {isRunning ? 'Running...' : 'Run Code'}
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{
-              padding: '4px 12px',
-              fontSize: '0.75rem',
-              backgroundColor: '#22c55e',
-              color: '#ffffff',
-              gap: '4px'
-            }}
+            <Play className="h-3 w-3 fill-current" />
+            {isRunning ? 'Running…' : 'Run Code'}
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
             disabled={isRunning || isSubmitting}
             onClick={handleSubmitCode}
           >
-            <Send size={12} />
-            {isSubmitting ? 'Submitting...' : 'Submit Code'}
-          </button>
+            <Send className="h-3 w-3" />
+            {isSubmitting ? 'Submitting…' : 'Submit Code'}
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      {/* Editor Textarea with line numbers */}
-      <div className="ide-wrapper" style={{ flexGrow: 1, display: 'flex', minHeight: 0 }}>
-        <div className="line-numbers">
-          {lines.map(num => (
-            <div key={num}>{num}</div>
-          ))}
-        </div>
-        <textarea
-          className="ide-textarea"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="// Enter your solution here"
-          spellCheck={false}
-        />
-      </div>
-
-      {/* Console panel */}
-      <div className="console-panel">
-        <div className="console-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-            <Terminal size={14} />
-            Console Output
+      {/* Editor body */}
+      <CardContent className="flex-1 p-0 flex flex-col min-h-0">
+        <div className="flex flex-1 min-h-0 bg-slate-950">
+          {/* Line numbers */}
+          <div
+            className="select-none text-right text-slate-500 font-mono text-sm leading-relaxed py-4 px-2 bg-slate-950 border-r border-slate-800 min-w-[2.5rem]"
+            aria-hidden="true"
+          >
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i + 1}>{i + 1}</div>
+            ))}
           </div>
-          <Settings size={12} style={{ cursor: 'pointer' }} />
+
+          <textarea
+            className="ide-textarea flex-1"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder="// Enter your solution here"
+            spellCheck={false}
+          />
         </div>
-        <div className="console-body" style={{ whiteSpace: 'pre-wrap' }}>
-          {consoleOutput}
+
+        {/* Console */}
+        <div className="h-40 border-t border-slate-800 bg-slate-950 flex flex-col">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center gap-1.5 font-semibold">
+              <Terminal className="h-3.5 w-3.5" />
+              Console Output
+            </div>
+          </div>
+          <ScrollArea className="flex-1">
+            <pre className="px-3 py-2 text-xs text-sky-400 font-mono leading-relaxed whitespace-pre-wrap">
+              {consoleOutput}
+            </pre>
+          </ScrollArea>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

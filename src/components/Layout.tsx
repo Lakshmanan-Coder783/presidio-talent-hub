@@ -1,252 +1,159 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
-  LayoutDashboard,
-  School,
-  Users,
-  FileText,
-  Database,
-  Calendar,
-  Gift,
-  BarChart3,
-  Settings as SettingsIcon,
-  LogOut,
-  Bell,
-  Search,
-  User,
-  Menu,
-  ChevronDown
+  LayoutDashboard, School, Users, FileText, Database,
+  Calendar, Gift, BarChart3, Settings as SettingsIcon,
+  LogOut, Bell, Search, User, Send,
 } from 'lucide-react';
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
+  SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu,
+  SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
+} from '@/components/ui/sidebar';
+import {
+  Breadcrumb, BreadcrumbItem, BreadcrumbList,
+  BreadcrumbPage, BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+const menuItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'campus-drives', label: 'Campus Drives', icon: School },
+  { id: 'candidates', label: 'Candidates', icon: Users },
+  { id: 'assessments', label: 'Assessments', icon: FileText },
+  { id: 'question-bank', label: 'Question Bank', icon: Database },
+  { id: 'invite-candidates', label: 'Invite Candidates', icon: Send },
+  { id: 'interviews', label: 'Interviews', icon: Calendar },
+  { id: 'offers', label: 'Offers', icon: Gift },
+  { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
+  { id: 'settings', label: 'Settings', icon: SettingsIcon },
+];
+
+export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { logout } = useApp();
-  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'campus-drives', label: 'Campus Drives', icon: School },
-    { id: 'candidates', label: 'Candidates', icon: Users },
-    { id: 'assessments', label: 'Assessments', icon: FileText },
-    { id: 'question-bank', label: 'Question Bank', icon: Database },
-    { id: 'interviews', label: 'Interviews', icon: Calendar },
-    { id: 'offers', label: 'Offers', icon: Gift },
-    { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  ];
-
-  const getBreadcrumbLabel = () => {
-    const active = menuItems.find(item => item.id === activeTab);
-    return active ? active.label : 'Dashboard';
-  };
+  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? 'Dashboard';
 
   return (
-    <div className="app-container">
-      {/* Sidebar Navigation */}
-      <aside className={`sidebar ${showMobileSidebar ? 'mobile-show' : ''}`} style={{
-        display: showMobileSidebar ? 'flex' : undefined,
-        position: showMobileSidebar ? 'fixed' : undefined,
-        height: showMobileSidebar ? '100%' : undefined
-      }}>
-        <div className="sidebar-header">
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            backgroundColor: 'var(--primary-blue)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            fontWeight: 800,
-            fontSize: '1.2rem',
-            fontFamily: 'var(--font-display)'
-          }}>P</div>
-          <span className="sidebar-logo-text">Presidio Talent</span>
-        </div>
-
-        <ul className="sidebar-menu">
-          {menuItems.map(item => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <li
-                key={item.id}
-                className={`sidebar-item ${isActive ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setShowMobileSidebar(false);
-                }}
-              >
-                <Icon />
-                {item.label}
-              </li>
-            );
-          })}
-        </ul>
-
-        <div className="sidebar-footer">
-          <span>v1.0.0 Stable</span>
-          <button
-            onClick={logout}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#94a3b8',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '0.75rem',
-              fontWeight: 500
-            }}
-            onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
-            onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
-          >
-            <LogOut size={12} />
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="main-layout">
-        {/* Top Navbar */}
-        <header className="top-navbar">
-          <div className="top-left">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                className="nav-btn"
-                style={{ display: 'none', padding: '4px' }}
-                onClick={() => setShowMobileSidebar(!showMobileSidebar)}
-                ref={el => {
-                  if (el) {
-                    // Quick inline styling helper to show Menu button on responsive sizes
-                    el.style.display = window.innerWidth <= 768 ? 'block' : 'none';
-                  }
-                }}
-              >
-                <Menu size={20} />
-              </button>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                {getBreadcrumbLabel()}
-              </h2>
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarHeader>
+          <div className="flex items-center gap-2 px-2 py-1">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
+              P
             </div>
-            <div className="breadcrumbs">
-              <span>Admin</span>
-              <span>/</span>
-              <span>{getBreadcrumbLabel()}</span>
+            <div className="leading-tight">
+              <p className="font-semibold text-sm">Presidio Talent</p>
+              <p className="text-xs text-muted-foreground">Talent Acquisition</p>
             </div>
           </div>
+        </SidebarHeader>
 
-          <div className="top-right">
-            {/* Search Input bar */}
-            <div className="search-container" style={{ display: window.innerWidth <= 768 ? 'none' : 'block' }}>
-              <Search className="search-icon" />
-              <input type="text" className="search-input" placeholder="Search anything..." />
-            </div>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+            <SidebarMenu>
+              {menuItems.map(item => {
+                const Icon = item.icon;
+                return (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === `/admin/${item.id}`}
+                      tooltip={item.label}
+                    >
+                      <Link to={`/admin/${item.id}`}>
+                        <Icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
 
-            <div className="nav-actions">
-              {/* Notification bell */}
-              <button className="nav-btn">
-                <Bell size={20} />
-                <span className="badge-dot"></span>
-              </button>
-
-              {/* User Profile */}
-              <div 
-                className="user-profile" 
-                style={{ position: 'relative' }}
-                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              >
-                <div className="avatar">AD</div>
-                <div className="user-info" style={{ display: window.innerWidth <= 640 ? 'none' : 'flex' }}>
-                  <span className="user-name">TA Admin</span>
-                  <span className="user-role">Talent Acquisition</span>
+        <SidebarFooter>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex w-full items-center gap-2 rounded-lg p-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">AD</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col items-start text-left overflow-hidden">
+                  <span className="font-medium text-xs truncate">TA Admin</span>
+                  <span className="text-xs text-muted-foreground truncate">admin@presidio.com</span>
                 </div>
-                <ChevronDown size={14} style={{ color: 'var(--text-secondary)' }} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-48">
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate('/admin/settings')}>
+                <User className="mr-2 h-4 w-4" />
+                Profile Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarFooter>
+      </Sidebar>
 
-                {/* Profile drop-down menu */}
-                {profileDropdownOpen && (
-                  <div 
-                    style={{
-                      position: 'absolute',
-                      top: '48px',
-                      right: 0,
-                      backgroundColor: '#ffffff',
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      boxShadow: 'var(--shadow-lg)',
-                      width: '180px',
-                      zIndex: 200,
-                      overflow: 'hidden'
-                    }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Signed in as <br />
-                      <b style={{ color: 'var(--text-primary)' }}>admin@presidio.com</b>
-                    </div>
-                    <div 
-                      style={{
-                        padding: '10px 16px',
-                        fontSize: '0.875rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'background-color 0.2s'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-slate)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-                      onClick={() => {
-                        setProfileDropdownOpen(false);
-                        setActiveTab('settings');
-                      }}
-                    >
-                      <User size={14} />
-                      Profile Settings
-                    </div>
-                    <div 
-                      style={{
-                        padding: '10px 16px',
-                        fontSize: '0.875rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: 'var(--error)',
-                        borderTop: '1px solid var(--border)',
-                        transition: 'background-color 0.2s'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-slate)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-                      onClick={() => {
-                        setProfileDropdownOpen(false);
-                        logout();
-                      }}
-                    >
-                      <LogOut size={14} />
-                      Sign Out
-                    </div>
-                  </div>
-                )}
-              </div>
+      <SidebarInset>
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden md:block text-muted-foreground text-sm">
+                Admin
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden md:block" />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{activeLabel}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative hidden md:block">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search..."
+                className="w-64 pl-8 h-9 bg-muted/50"
+              />
             </div>
+            <Button variant="ghost" size="icon" className="relative h-9 w-9">
+              <Bell className="h-4 w-4" />
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
+            </Button>
           </div>
         </header>
 
-        {/* Content Render Area */}
-        <main className="content-body">
+        <main className="flex-1 p-6 overflow-auto">
           {children}
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 };

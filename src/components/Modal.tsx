@@ -1,5 +1,12 @@
-import React, { useEffect } from 'react';
-import { X } from 'lucide-react';
+import React from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ModalProps {
   isOpen: boolean;
@@ -10,76 +17,33 @@ interface ModalProps {
   size?: 'md' | 'lg' | 'xl';
 }
 
+const sizeClasses: Record<string, string> = {
+  md: 'max-w-lg',
+  lg: 'max-w-3xl',
+  xl: 'max-w-5xl',
+};
+
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
   title,
   children,
   footer,
-  size = 'md'
+  size = 'md',
 }) => {
-  // Lock body scroll when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const getWidth = () => {
-    switch (size) {
-      case 'lg': return '800px';
-      case 'xl': return '1000px';
-      default: return '600px';
-    }
-  };
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="modal-content" 
-        style={{ maxWidth: getWidth() }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{title}</h3>
-          <button 
-            onClick={onClose} 
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              cursor: 'pointer', 
-              color: 'var(--text-secondary)',
-              padding: '4px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-slate)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-          >
-            <X size={18} />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
+      <DialogContent className={`${sizeClasses[size]} flex flex-col max-h-[90vh]`}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
 
-        <div className="modal-body">
-          {children}
-        </div>
+        <ScrollArea className="flex-1 overflow-auto pr-1">
+          <div className="py-2">{children}</div>
+        </ScrollArea>
 
-        {footer && (
-          <div className="modal-footer">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
+        {footer && <DialogFooter className="pt-2">{footer}</DialogFooter>}
+      </DialogContent>
+    </Dialog>
   );
 };

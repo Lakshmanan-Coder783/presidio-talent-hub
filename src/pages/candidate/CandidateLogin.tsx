@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { ArrowRight, KeyRound, UserCheck, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const CandidateLogin: React.FC = () => {
   const { loginCandidate } = useApp();
@@ -29,73 +35,74 @@ export const CandidateLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6 font-sans">
-      <div className="w-full max-w-[440px] bg-white rounded-2xl border border-slate-200/80 shadow-xl p-10">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 font-bold text-xl font-display">
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
+      <Card className="w-full max-w-[420px] shadow-xl">
+        <CardHeader className="text-center pb-4">
+          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl mx-auto mb-3">
             P
           </div>
-          <h2 className="text-2xl font-bold font-display text-slate-900">Assessment Portal</h2>
-          <p className="text-slate-500 text-xs mt-1">Enter your student credentials to start your exam</p>
-        </div>
+          <CardTitle className="text-2xl">Assessment Portal</CardTitle>
+          <CardDescription>Enter your student credentials to start your exam</CardDescription>
+        </CardHeader>
 
-        {errorMsg && (
-          <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-semibold">
-            {errorMsg}
-          </div>
-        )}
+        <CardContent className="space-y-4">
+          {errorMsg && (
+            <Alert variant="destructive">
+              <AlertDescription className="text-xs font-semibold">{errorMsg}</AlertDescription>
+            </Alert>
+          )}
 
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-            <Loader2 size={32} className="animate-spin text-blue-600" />
-            <span className="text-xs text-slate-500 font-medium">Validating credentials...</span>
-          </div>
-        ) : (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Candidate ID</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="e.g. PRES2026-10025"
-                  className="w-full px-3 py-2.5 pl-10 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all bg-white"
-                  value={candidateId}
-                  onChange={e => setCandidateId(e.target.value)}
-                />
-                <UserCheck size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground font-medium">Validating credentials...</p>
             </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Assessment Password</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2.5 pl-10 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all bg-white"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                />
-                <KeyRound size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="candidate-id">Candidate ID</Label>
+                <div className="relative">
+                  <UserCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="candidate-id"
+                    type="text"
+                    placeholder="e.g. PRES2026-10025"
+                    className="pl-9"
+                    value={candidateId}
+                    onChange={e => setCandidateId(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition-all shadow-md active:scale-[0.99] cursor-pointer"
-            >
-              Start Assessment Portal
-              <ArrowRight size={16} />
-            </button>
-          </form>
-        )}
-        
-        <div className="mt-6 text-center">
-          <a href="#" className="text-xs font-semibold text-blue-600 hover:underline">
-            Go back to Admin Login
-          </a>
-        </div>
-      </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="assessment-password">Assessment Password</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="assessment-password"
+                    type="password"
+                    placeholder="••••••••"
+                    className="pl-9"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <Button type="submit" className="w-full gap-2">
+                Start Assessment Portal
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </form>
+          )}
+
+          <div className="text-center pt-2">
+            <Link to="/" className="text-xs font-semibold text-primary hover:underline">
+              Go back to Admin Login
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
