@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, School, Users, FileText, Database,
@@ -25,8 +26,6 @@ import {
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
 }
 
 const menuItems = [
@@ -42,10 +41,12 @@ const menuItems = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { logout } = useApp();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
 
-  const activeLabel = menuItems.find(item => item.id === activeTab)?.label ?? 'Dashboard';
+  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? 'Dashboard';
 
   return (
     <SidebarProvider>
@@ -71,12 +72,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      isActive={activeTab === item.id}
-                      onClick={() => setActiveTab(item.id)}
+                      asChild
+                      isActive={pathname === `/admin/${item.id}`}
                       tooltip={item.label}
                     >
-                      <Icon />
-                      <span>{item.label}</span>
+                      <Link to={`/admin/${item.id}`}>
+                        <Icon />
+                        <span>{item.label}</span>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -101,7 +104,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             <DropdownMenuContent side="top" align="start" className="w-48">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setActiveTab('settings')}>
+              <DropdownMenuItem onClick={() => navigate('/admin/settings')}>
                 <User className="mr-2 h-4 w-4" />
                 Profile Settings
               </DropdownMenuItem>

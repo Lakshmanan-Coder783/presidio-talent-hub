@@ -1,25 +1,6 @@
-import React, { useState, useEffect, Component } from 'react';
+import React, { Component } from 'react';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
-
-class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error: Error) { return { error }; }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ padding: '2rem', fontFamily: 'monospace', background: '#fee', color: '#800' }}>
-          <h2>Runtime Error</h2>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{this.state.error.message}</pre>
-          <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px' }}>{this.state.error.stack}</pre>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Toaster } from 'sonner';
@@ -41,59 +22,77 @@ import { Settings } from './pages/admin/Settings';
 import { CandidatePortal } from './pages/candidate/CandidatePortal';
 import { CandidateLogin } from './pages/candidate/CandidateLogin';
 
-const NavigationRouter: React.FC = () => {
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', fontFamily: 'monospace', background: '#fee', color: '#800' }}>
+          <h2>Runtime Error</h2>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{this.state.error.message}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: '12px' }}>{this.state.error.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const ProtectedRoute: React.FC<{ allowedRole: 'admin' | 'candidate' }> = ({ allowedRole }) => {
   const { currentUser } = useApp();
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [hash, setHash] = useState(window.location.hash);
+  if (!currentUser) return <Navigate to="/" replace />;
+  if (currentUser.role !== allowedRole)
+    return <Navigate to={currentUser.role === 'admin' ? '/admin/dashboard' : '/portal'} replace />;
+  return <Outlet />;
+};
 
-  useEffect(() => {
-    const handleHashChange = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
-
-  if (!currentUser) {
-    if (hash === '#candidate') {
-      return <CandidateLogin />;
-    }
-    return <Login />;
-  }
-
-  if (currentUser.role === 'candidate') {
-    return <CandidatePortal />;
-  }
-
-  const renderAdminView = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'campus-drives':
-        return <CampusDrives />;
-      case 'candidates':
-        return <Candidates setActiveTab={setActiveTab} />;
-      case 'assessments':
-        return <Assessments />;
-      case 'question-bank':
-        return <QuestionBank />;
-      case 'invite-candidates':
-        return <InviteCandidates />;
-      case 'interviews':
-        return <Interviews />;
-      case 'offers':
-        return <Offers />;
-      case 'reports':
-        return <Reports />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <Dashboard />;
-    }
-  };
-
+const AppRoutes: React.FC = () => {
+  const { currentUser } = useApp();
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderAdminView()}
-    </Layout>
+    <Routes>
+      {/* Public auth routes */}
+      <Route
+        path="/"
+        element={currentUser?.role === 'admin' ? <Navigate to="/admin/dashboard" replace /> : <Login />}
+      />
+      <Route
+        path="/candidate"
+        element={
+          currentUser
+            ? <Navigate to={currentUser.role === 'admin' ? '/admin/dashboard' : '/portal'} replace />
+            : <CandidateLogin />
+        }
+      />
+
+      {/* Protected: candidate */}
+      <Route element={<ProtectedRoute allowedRole="candidate" />}>
+        <Route path="/portal" element={<CandidatePortal />} />
+      </Route>
+
+      {/* Protected: admin */}
+      <Route element={<ProtectedRoute allowedRole="admin" />}>
+        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route element={<Layout><Outlet /></Layout>}>
+          <Route path="/admin/dashboard"         element={<Dashboard />} />
+          <Route path="/admin/campus-drives"     element={<CampusDrives />} />
+          <Route path="/admin/candidates"        element={<Candidates />} />
+          <Route path="/admin/assessments"       element={<Assessments />} />
+          <Route path="/admin/question-bank"     element={<QuestionBank />} />
+          <Route path="/admin/invite-candidates" element={<InviteCandidates />} />
+          <Route path="/admin/interviews"        element={<Interviews />} />
+          <Route path="/admin/offers"            element={<Offers />} />
+          <Route path="/admin/reports"           element={<Reports />} />
+          <Route path="/admin/settings"          element={<Settings />} />
+        </Route>
+      </Route>
+
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 
@@ -102,7 +101,7 @@ function App() {
     <ErrorBoundary>
       <AppProvider>
         <TooltipProvider>
-          <NavigationRouter />
+          <AppRoutes />
           <Toaster richColors position="top-right" />
         </TooltipProvider>
       </AppProvider>

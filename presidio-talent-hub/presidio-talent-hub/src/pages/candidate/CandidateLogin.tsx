@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { ArrowRight, KeyRound, UserCheck, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -96,13 +97,9 @@ export const CandidateLogin: React.FC = () => {
           )}
 
           <div className="text-center pt-2">
-            <a
-              href="#"
-              className="text-xs font-semibold text-primary hover:underline"
-              onClick={e => { e.preventDefault(); window.location.hash = ''; }}
-            >
+            <Link to="/" className="text-xs font-semibold text-primary hover:underline">
               Go back to Admin Login
-            </a>
+            </Link>
           </div>
         </CardContent>
       </Card>

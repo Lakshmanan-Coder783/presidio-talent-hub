@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
@@ -35,7 +36,8 @@ const offerBadge = (status: string) => {
   return <span className="text-muted-foreground text-sm">—</span>;
 };
 
-export const Candidates: React.FC<{ setActiveTab?: (tab: string) => void }> = ({ setActiveTab }) => {
+export const Candidates: React.FC = () => {
+  const navigate = useNavigate();
   const { db } = useApp();
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -148,7 +150,7 @@ export const Candidates: React.FC<{ setActiveTab?: (tab: string) => void }> = ({
             <UploadCloud className="h-4 w-4" />
             Bulk Import
           </Button>
-          <Button onClick={() => setActiveTab?.('invite-candidates')} className="gap-2">
+          <Button onClick={() => navigate('/admin/invite-candidates')} className="gap-2">
             <Plus className="h-4 w-4" />
             Invite Candidates
           </Button>
