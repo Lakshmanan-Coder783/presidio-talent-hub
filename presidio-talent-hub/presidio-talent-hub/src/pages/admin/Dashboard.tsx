@@ -48,14 +48,23 @@ export const Dashboard: React.FC = () => {
     ];
   }, [db]);
 
-  const drivePerformanceData = useMemo(() =>
-    db.drives.slice(0, 5).map(d => ({
-      label: d.college.split(' ').map((w: string) => w[0]).join(''),
-      val1: d.registered,
-      val2: d.shortlisted,
-    })),
-    [db]
-  );
+  const drivePerformanceData = useMemo(() => {
+    const byCollege = db.drives.reduce((acc, d) => {
+      if (!acc[d.college]) acc[d.college] = { registered: 0, selected: 0 };
+      acc[d.college].registered += d.registered;
+      acc[d.college].selected += d.selected;
+      return acc;
+    }, {} as Record<string, { registered: number; selected: number }>);
+
+    return Object.entries(byCollege)
+      .sort((a, b) => b[1].registered - a[1].registered)
+      .slice(0, 5)
+      .map(([college, vals]) => ({
+        label: college.split(' ').map((w: string) => w[0]).join(''),
+        val1: vals.registered,
+        val2: vals.selected,
+      }));
+  }, [db]);
 
   const scoreDistributionData = useMemo(() => {
     const scores = db.candidates
@@ -72,29 +81,16 @@ export const Dashboard: React.FC = () => {
     return ranges.map(r => ({ label: r.label, value: r.value }));
   }, [db]);
 
-  const degreeData = useMemo(() => {
+  const selectedCandidateDegrees = useMemo(() => {
+    const selected = db.candidates.filter(c =>
+      ['Offered', 'Accepted', 'Joined'].includes(c.offerStatus)
+    );
     const counts: Record<string, number> = {};
-    db.candidates.forEach(c => { counts[c.degree] = (counts[c.degree] || 0) + 1; });
+    selected.forEach(c => { counts[c.degree] = (counts[c.degree] || 0) + 1; });
     const colors = ['#2563eb', '#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e', '#ec4899'];
-    return Object.entries(counts).map(([label, value], idx) => ({ label, value, color: colors[idx % colors.length] }));
-  }, [db]);
-
-  const recentActivities = useMemo(() => {
-    const completed = db.candidates.filter(c => c.assessmentStatus === 'Completed').slice(0, 3);
-    const accepted = db.candidates.filter(c => c.offerStatus === 'Accepted').slice(0, 2);
-    return [
-      ...completed.map(c => ({
-        text: `${c.name} (${c.college}) completed assessment with ${c.assessmentScore} marks.`,
-        time: 'Just now',
-        type: 'assessment',
-      })),
-      ...accepted.map(c => ({
-        text: `Offer accepted by ${c.name} — joining 15 July 2026.`,
-        time: '2 hours ago',
-        type: 'offer',
-      })),
-      { text: 'New campus drive scheduled for BITS Pilani.', time: '1 day ago', type: 'drive' },
-    ];
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], idx) => ({ label, value, color: colors[idx % colors.length] }));
   }, [db]);
 
   const kpiCards = [
@@ -155,27 +151,15 @@ export const Dashboard: React.FC = () => {
       </Card>
 
       {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Campus Recruitment Progress</CardTitle>
-            <CardDescription>Registered vs Shortlisted per college</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BarChart data={drivePerformanceData} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Candidate Degrees</CardTitle>
-            <CardDescription>Discipline distribution</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DonutChart data={degreeData} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Campus Recruitment Progress</CardTitle>
+          <CardDescription>Registered vs Selected per college</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BarChart data={drivePerformanceData} label2="Selected" />
+        </CardContent>
+      </Card>
 
       {/* Charts row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -191,27 +175,11 @@ export const Dashboard: React.FC = () => {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-            <CardDescription>Real-time event feed</CardDescription>
+            <CardTitle className="text-base">Candidate Degrees</CardTitle>
+            <CardDescription>Distribution among selected candidates</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentActivities.map((act, idx) => (
-                <div key={idx} className="flex gap-3 text-sm">
-                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold
-                    ${act.type === 'assessment' ? 'bg-violet-100 text-violet-600' :
-                      act.type === 'offer' ? 'bg-emerald-100 text-emerald-600' :
-                      'bg-primary/10 text-primary'}`}
-                  >
-                    {act.type[0].toUpperCase()}
-                  </div>
-                  <div className="flex-1 border-b pb-3 last:border-0 last:pb-0">
-                    <p className="leading-snug">{act.text}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{act.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DonutChart data={selectedCandidateDegrees} />
           </CardContent>
         </Card>
       </div>

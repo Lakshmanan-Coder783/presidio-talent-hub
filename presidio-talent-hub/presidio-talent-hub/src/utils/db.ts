@@ -58,25 +58,55 @@ const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 'Mumbai
 
 const DEGREES = ['B.Tech CSE', 'B.Tech ECE', 'B.Tech IT', 'M.Tech CSE', 'MCA', 'M.Sc Software Engg'];
 
+const CTC_STEPS = [7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0];
+const JOINED_CTC_STEPS = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0];
+
+const DRIVE_DESCRIPTIONS = [
+  (college: string) => `Campus placement drive at ${college} targeting software engineering, backend development, and data science roles for final-year B.Tech and M.Tech students.`,
+  (college: string) => `Product engineering recruitment at ${college} for full-stack, mobile, and frontend roles. We are building the next generation of Presidio's SaaS platform.`,
+  (college: string) => `Cloud and DevOps talent drive at ${college}. Seeking engineers with strong fundamentals in infrastructure, CI/CD, and distributed systems for our platform team.`,
+  (college: string) => `Core engineering drive at ${college} focused on backend systems, API design, and high-scale distributed computing. Roles across SDE-1 and SDE-2 levels.`,
+];
+
+const INTERVIEW_FEEDBACK = [
+  'Strong problem-solving approach. Implemented the optimal solution with correct edge-case handling on the first attempt.',
+  'Good system design fundamentals. Clearly explained trade-offs between relational and NoSQL databases for the given use case.',
+  'Solid DSA knowledge. Reversed a linked list in-place with O(1) space and articulated the time complexity accurately.',
+  'Impressive understanding of OOP concepts. Demonstrated SOLID principles with concrete real-world examples.',
+  'Handled all edge cases well during the coding round. SQL subquery optimisation was near-perfect.',
+  'Strong analytical thinking. Arrived at the optimal complexity with minor guidance; communication was clear throughout.',
+  'Well-versed with microservices patterns. Proposed a sensible approach to service decomposition for the design problem.',
+  'Good grasp of OS fundamentals — explained process scheduling and memory management correctly under pressure.',
+];
+
 export function generateMockDatabase(): Database {
   const rnd = new SeededRandom(2026); // Seed to guarantee identical data on first load
 
   // 1. Generate 500 Questions
   const questions: Question[] = [];
-  
-  // MCQ/MSQ options templates
+
   const aptQuestions = [
     { text: 'A train 120 m long passes a telegraph post in 6 seconds. Find the speed of the train in km/hr.', opt: ['72 km/hr', '60 km/hr', '80 km/hr', '90 km/hr'], ans: [0] },
     { text: 'If 15 men can complete a project in 20 days, how many days will 10 men take to complete the same work?', opt: ['30 days', '25 days', '40 days', '15 days'], ans: [0] },
     { text: 'Find the average of all prime numbers between 30 and 50.', opt: ['39.8', '41.2', '38.5', '40.6'], ans: [0] },
     { text: 'What is the compound interest on Rs. 5000 for 2 years at 10% per annum compounded annually?', opt: ['Rs. 1050', 'Rs. 1000', 'Rs. 1100', 'Rs. 1200'], ans: [0] },
-    { text: 'A shopkeeper sells an article at a loss of 12.5%. If he sells it for Rs. 92.40 more, he gains 6%. What is the Cost Price?', opt: ['Rs. 500', 'Rs. 520', 'Rs. 480', 'Rs. 550'], ans: [0] }
+    { text: 'A shopkeeper sells an article at a loss of 12.5%. If he sells it for Rs. 92.40 more, he gains 6%. What is the Cost Price?', opt: ['Rs. 500', 'Rs. 520', 'Rs. 480', 'Rs. 550'], ans: [0] },
+    { text: 'What percentage of 450 is 90?', opt: ['20%', '25%', '18%', '15%'], ans: [0] },
+    { text: 'The average age of 5 students is 16 years. If one student aged 20 joins the group, what is the new average age?', opt: ['16.67 years', '17 years', '16 years', '18 years'], ans: [0] },
+    { text: 'Pipe A can fill a tank in 12 hours and Pipe B can fill it in 18 hours. How long will both pipes together take to fill the tank?', opt: ['7.2 hours', '8 hours', '6 hours', '9 hours'], ans: [0] },
+    { text: 'The LCM of two numbers is 120 and their HCF is 10. If one number is 40, find the other.', opt: ['30', '25', '20', '15'], ans: [0] },
+    { text: 'A boat travels 36 km downstream in 2 hours and 24 km upstream in 4 hours. Find the speed of the stream.', opt: ['3 km/hr', '4 km/hr', '5 km/hr', '6 km/hr'], ans: [0] },
   ];
 
   const logQuestions = [
-    { text: 'Look at this series: 2, 1, (1/2), (1/4), ... What number should come next?', opt: ['(1/3)', '1/8', '2/8', '1/16'], ans: [1] },
-    { text: 'Find the odd one out from the following group.', opt: ['Curd', 'Butter', 'Oil', 'Cheese'], ans: [2] },
-    { text: 'Pointing to a photograph, Vipul said, "She is the daughter of my grandfather\'s only son." How is Vipul related to the girl?', opt: ['Brother', 'Uncle', 'Cousin', 'Father'], ans: [0] }
+    { text: 'Look at this series: 2, 1, 1/2, 1/4, ... What number should come next?', opt: ['1/3', '1/8', '2/8', '1/16'], ans: [1] },
+    { text: 'Find the odd one out: Curd, Butter, Oil, Cheese.', opt: ['Curd', 'Butter', 'Oil', 'Cheese'], ans: [2] },
+    { text: 'Pointing to a photograph, Vipul said, "She is the daughter of my grandfather\'s only son." How is Vipul related to the girl?', opt: ['Brother', 'Uncle', 'Cousin', 'Father'], ans: [0] },
+    { text: 'In a coding scheme, MANGO is written as NBOHP. How is APPLE written in that scheme?', opt: ['BQQMF', 'BQPMF', 'CQQMG', 'BPQMF'], ans: [0] },
+    { text: 'A is the father of B. C is the mother of B. D is the brother of A. How is D related to B?', opt: ['Uncle', 'Cousin', 'Brother', 'Grandfather'], ans: [0] },
+    { text: 'Ravi walks 5 km north, then turns right and walks 3 km, then turns right and walks 5 km. How far is he from the starting point?', opt: ['3 km', '5 km', '8 km', '0 km'], ans: [0] },
+    { text: 'All roses are flowers. Some flowers fade quickly. Which conclusion is correct?', opt: ['All roses fade quickly', 'Some roses may fade quickly', 'No rose fades quickly', 'All flowers are roses'], ans: [1] },
+    { text: 'Find the next term in the series: AZ, BY, CX, DW, ?', opt: ['EU', 'EV', 'FV', 'EX'], ans: [1] },
   ];
 
   const techQuestions = [
@@ -84,7 +114,14 @@ export function generateMockDatabase(): Database {
     { text: 'What is the worst-case time complexity of searching in a Balanced Binary Search Tree (AVL Tree)?', opt: ['O(1)', 'O(n)', 'O(log n)', 'O(n log n)'], ans: [2] },
     { text: 'Which of the following is NOT an ACID property in database management systems?', opt: ['Atomicity', 'Consistency', 'Isolation', 'Concurrency'], ans: [3] },
     { text: 'Which layer of the OSI model is responsible for routing packets across networks?', opt: ['Physical Layer', 'Transport Layer', 'Network Layer', 'Data Link Layer'], ans: [2] },
-    { text: 'What does the virtual keyword specify in C++?', opt: ['Static binding', 'Dynamic binding', 'Private inheritance', 'Multiple inheritance'], ans: [1] }
+    { text: 'What does the virtual keyword specify in C++?', opt: ['Static binding', 'Dynamic binding', 'Private inheritance', 'Multiple inheritance'], ans: [1] },
+    { text: 'In a singly linked list, what is the time complexity of deleting a node when its pointer is given?', opt: ['O(1)', 'O(n)', 'O(log n)', 'O(n²)'], ans: [1] },
+    { text: 'Which sorting algorithm has the best average-case time complexity?', opt: ['Bubble Sort', 'Selection Sort', 'Merge Sort', 'Insertion Sort'], ans: [2] },
+    { text: 'What is the 3rd Normal Form (3NF) in database design concerned with?', opt: ['Eliminating partial dependencies', 'Eliminating transitive dependencies', 'Eliminating multi-valued dependencies', 'Ensuring atomic values'], ans: [1] },
+    { text: 'Which of the following is a necessary condition for a deadlock to occur?', opt: ['Mutual Exclusion', 'No Preemption', 'Circular Wait', 'All of the above'], ans: [3] },
+    { text: 'In TCP/IP, which protocol is responsible for reliable, ordered delivery of data?', opt: ['UDP', 'IP', 'TCP', 'ICMP'], ans: [2] },
+    { text: 'Which OOP principle allows a subclass to provide a specific implementation of a method already defined in the parent class?', opt: ['Encapsulation', 'Abstraction', 'Method Overloading', 'Method Overriding'], ans: [3] },
+    { text: 'What is the time complexity of inserting an element into a max-heap?', opt: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], ans: [1] },
   ];
 
   const codingTemplates = {
@@ -95,15 +132,39 @@ export function generateMockDatabase(): Database {
   };
 
   const codingQuestions = [
-    { text: 'Find the maximum element in a given array of integers. Handles negative and boundary numbers.', topic: 'Coding', difficulty: 'Easy', marks: 10, tags: ['Arrays', 'Algorithms'] },
-    { text: 'Reverse a given string in-place without using library functions.', topic: 'Coding', difficulty: 'Easy', marks: 10, tags: ['Strings', 'Recursion'] },
-    { text: 'Given an array of integers, find if it contains any duplicates. Return true if duplicate exists.', topic: 'Coding', difficulty: 'Medium', marks: 15, tags: ['Hash Table', 'Arrays'] },
-    { text: 'Given a string containing brackets, determine if the input string is valid. Open brackets must be closed by same type.', topic: 'Coding', difficulty: 'Medium', marks: 15, tags: ['Stack', 'Strings'] },
-    { text: 'Merge two sorted linked lists and return it as a new sorted list.', topic: 'Coding', difficulty: 'Medium', marks: 20, tags: ['Linked List', 'Sorting'] },
-    { text: 'Find the longest palindromic substring in a given string S.', topic: 'Coding', difficulty: 'Hard', marks: 25, tags: ['String', 'Dynamic Programming'] }
+    { text: 'Find the maximum element in a given array of integers. Handle negative numbers and single-element arrays.', difficulty: 'Easy', marks: 10, tags: ['Arrays', 'Algorithms'] },
+    { text: 'Reverse a given string in-place without using built-in reverse functions.', difficulty: 'Easy', marks: 10, tags: ['Strings', 'Two Pointers'] },
+    { text: 'Given an array of integers, determine if it contains any duplicate values.', difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'] },
+    { text: 'Given a string containing only brackets ( ), [ ], { }, determine if the brackets are balanced and valid.', difficulty: 'Medium', marks: 15, tags: ['Stack', 'Strings'] },
+    { text: 'Merge two sorted arrays into a single sorted array without using extra space.', difficulty: 'Medium', marks: 15, tags: ['Arrays', 'Sorting', 'Two Pointers'] },
+    { text: 'Find the longest palindromic substring in a given string.', difficulty: 'Hard', marks: 25, tags: ['String', 'Dynamic Programming'] },
+    { text: 'Given an integer array, return the indices of the two numbers that add up to a specific target.', difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'] },
+    { text: 'Implement a function to check if a given binary tree is a valid Binary Search Tree.', difficulty: 'Medium', marks: 20, tags: ['Binary Tree', 'DFS', 'BST'] },
+    { text: 'Find the minimum number of coins needed to make a given amount using dynamic programming.', difficulty: 'Medium', marks: 20, tags: ['Dynamic Programming', 'Greedy'] },
+    { text: 'Given a linked list, detect whether it contains a cycle and return the start of the cycle.', difficulty: 'Medium', marks: 15, tags: ['Linked List', 'Two Pointers'] },
+    { text: 'Implement a function to rotate a matrix (2D array) 90 degrees clockwise in-place.', difficulty: 'Hard', marks: 25, tags: ['Matrix', 'Arrays', 'In-place'] },
+    { text: 'Find the number of islands in a given m x n grid where 1 represents land and 0 represents water.', difficulty: 'Hard', marks: 25, tags: ['Graph', 'BFS', 'DFS'] },
   ];
 
-  // Populate 500 questions programmatically
+  const sqlQuestions = [
+    'Write a SQL query to find the names and salaries of employees who earn more than the average salary in their department. Use a correlated subquery.',
+    'Write a SQL query to find the second highest salary from the Employee table without using LIMIT or TOP.',
+    'Write a SQL query using a JOIN to list all customers who have placed at least one order, along with their total order amount.',
+    'Write a SQL query using a window function to rank employees within each department by their salary in descending order.',
+    'Write a SQL query to find departments where the total headcount exceeds 10 and the average salary is above Rs. 80,000.',
+    'Write a SQL query to update the status of all orders placed before 2025-01-01 that are still marked as "Pending" to "Closed".',
+  ];
+
+  const descriptiveQuestions = [
+    'Explain the difference between REST and GraphQL APIs. When would you choose GraphQL over REST for a production application?',
+    'Describe the microservices architecture pattern. What are its key benefits and the main challenges teams face when adopting it?',
+    'Explain the CAP theorem. How does it influence the design decisions of a distributed database like Cassandra or MongoDB?',
+    'What is Dependency Injection? Explain how it promotes loose coupling and testability in a software system with an example.',
+    'Describe how garbage collection works in the JVM. What are the differences between the G1GC and ZGC collectors?',
+    'Explain containerisation using Docker and orchestration using Kubernetes. How do they improve deployment reliability and scalability?',
+  ];
+
+  // Populate 500 questions
   for (let i = 1; i <= 500; i++) {
     let qType: Question['type'] = 'MCQ';
     let qTopic: Question['topic'] = 'Aptitude';
@@ -120,10 +181,10 @@ export function generateMockDatabase(): Database {
       qDiff = i % 3 === 0 ? 'Hard' : (i % 3 === 1 ? 'Easy' : 'Medium');
       qMarks = qDiff === 'Easy' ? 1 : (qDiff === 'Medium' ? 2 : 4);
       const baseQ = aptQuestions[(i - 1) % aptQuestions.length];
-      qText = `${baseQ.text} (Set Q-${i})`;
+      qText = baseQ.text;
       qOpts = [...baseQ.opt];
       qCorrect = [...baseQ.ans];
-      qTags = ['Quantitative', 'Math', `Topic-${(i % 5) + 1}`];
+      qTags = ['Quantitative Aptitude', i % 3 === 0 ? 'Time & Work' : i % 3 === 1 ? 'Speed & Distance' : 'Profit & Loss'];
     } else if (i <= 250) {
       // Logical Reasoning
       qTopic = 'Logical Reasoning';
@@ -131,20 +192,21 @@ export function generateMockDatabase(): Database {
       qDiff = i % 2 === 0 ? 'Medium' : 'Easy';
       qMarks = qType === 'Multiple Select' ? 3 : 2;
       const baseQ = logQuestions[(i - 151) % logQuestions.length];
-      qText = `${baseQ.text} (Logical Set L-${i})`;
+      qText = baseQ.text;
       qOpts = [...baseQ.opt];
       qCorrect = qType === 'Multiple Select' ? [baseQ.ans[0], (baseQ.ans[0] + 1) % 4] : [...baseQ.ans];
-      qTags = ['Reasoning', 'Puzzles', `Logical-${i % 4}`];
+      qTags = ['Reasoning', i % 4 === 0 ? 'Series' : i % 4 === 1 ? 'Blood Relations' : i % 4 === 2 ? 'Direction Sense' : 'Syllogism'];
     } else if (i <= 400) {
       // Technical MCQs
       qTopic = 'Technical';
       qDiff = i % 3 === 0 ? 'Hard' : (i % 3 === 1 ? 'Easy' : 'Medium');
       qMarks = qDiff === 'Easy' ? 2 : (qDiff === 'Medium' ? 3 : 5);
       const baseQ = techQuestions[(i - 251) % techQuestions.length];
-      qText = `${baseQ.text} (Tech Core T-${i})`;
+      qText = baseQ.text;
       qOpts = [...baseQ.opt];
       qCorrect = [...baseQ.ans];
-      qTags = ['Computer Science', 'DBMS', 'DSA', 'OS'];
+      const techTagSets = [['DSA', 'Arrays'], ['DSA', 'Trees'], ['DBMS', 'Normalization'], ['OS', 'Process Management'], ['Networking', 'TCP/IP'], ['OOP', 'Design Patterns']];
+      qTags = techTagSets[(i - 251) % techTagSets.length];
     } else if (i <= 460) {
       // Coding Challenges
       qType = 'Coding';
@@ -152,7 +214,7 @@ export function generateMockDatabase(): Database {
       const baseQ = codingQuestions[(i - 401) % codingQuestions.length];
       qDiff = baseQ.difficulty as Question['difficulty'];
       qMarks = baseQ.marks;
-      qText = `${baseQ.text} (Challenge #${i})`;
+      qText = baseQ.text;
       qTags = [...baseQ.tags];
     } else {
       // SQL & Descriptive
@@ -160,10 +222,13 @@ export function generateMockDatabase(): Database {
       qType = i % 2 === 0 ? 'SQL' : 'Descriptive';
       qDiff = i % 3 === 0 ? 'Hard' : 'Medium';
       qMarks = qType === 'SQL' ? 10 : 15;
-      qText = qType === 'SQL' 
-        ? `Write a SQL query to find the department name and total employees where average salary exceeds ${(i % 5) * 10000 + 50000} in department table.`
-        : `Explain the concept of ${(i % 2 === 0 ? 'Dependency Injection' : 'Garbage Collection')} in modern software design and outline its primary advantages.`;
-      qTags = qType === 'SQL' ? ['Database', 'SQL'] : ['Software Engineering', 'Theory'];
+      if (qType === 'SQL') {
+        qText = sqlQuestions[(i - 461) % sqlQuestions.length];
+        qTags = ['Database', 'SQL', i % 2 === 0 ? 'Joins' : 'Subquery'];
+      } else {
+        qText = descriptiveQuestions[(i - 461) % descriptiveQuestions.length];
+        qTags = ['Software Engineering', 'System Design'];
+      }
     }
 
     questions.push({
@@ -189,16 +254,24 @@ export function generateMockDatabase(): Database {
   for (let i = 1; i <= 50; i++) {
     const college = COLLEGES[i - 1];
     const location = rnd.pick(LOCATIONS);
-    const date = new Date(2026, rnd.range(0, 11), rnd.range(1, 28)).toISOString().split('T')[0];
-    const target = Math.floor(rnd.range(10, 50));
-    const registered = Math.floor(target * rnd.range(5, 12));
-    const shortlisted = Math.floor(registered * rnd.range(0.3, 0.5));
-    
+
     // Status distribution
     let status: CampusDrive['status'] = 'Published';
     if (i <= 10) status = 'Completed';
     else if (i <= 15) status = 'Ongoing';
     else if (i <= 20) status = 'Draft';
+
+    // Date matches status: Completed=Jan–Apr, Ongoing=May–Jun, Draft=Aug–Oct, Published=Jul–Dec
+    let month: number;
+    if (status === 'Completed') month = Math.floor(rnd.range(0, 4));
+    else if (status === 'Ongoing') month = Math.floor(rnd.range(4, 6));
+    else if (status === 'Draft') month = Math.floor(rnd.range(7, 10));
+    else month = Math.floor(rnd.range(6, 12));
+    const date = new Date(2026, month, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
+
+    const target = Math.floor(rnd.range(10, 50));
+    const registered = Math.floor(target * rnd.range(5, 12));
+    const selected = Math.floor(registered * rnd.range(0.3, 0.5));
 
     drives.push({
       id: `DRV-2026-${100 + i}`,
@@ -208,10 +281,10 @@ export function generateMockDatabase(): Database {
       location,
       targetHiring: target,
       registered,
-      shortlisted,
+      selected,
       spocName: `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`,
       spocContact: `+91 ${Math.floor(rnd.range(7000000000, 9999999999))}`,
-      description: `Annual campus placement drive at ${college} for engineering undergraduates and postgraduates across software engineering roles.`,
+      description: DRIVE_DESCRIPTIONS[(i - 1) % DRIVE_DESCRIPTIONS.length](college),
       status
     });
   }
@@ -228,8 +301,7 @@ export function generateMockDatabase(): Database {
     const name = `${rnd.pick(assessmentNames)} - V${Math.floor(i / 10) + 1}`;
     const type: Assessment['type'] = i % 4 === 0 ? 'Coding' : (i % 4 === 1 ? 'Aptitude' : (i % 4 === 2 ? 'Technical' : 'Combined'));
     const duration = type === 'Coding' ? 90 : (type === 'Combined' ? 120 : 60);
-    
-    // Select questions
+
     const assignedQIds: string[] = [];
     if (type === 'Aptitude') {
       assignedQIds.push(...questions.filter(q => q.topic === 'Aptitude').slice(0, 15).map(q => q.id));
@@ -259,7 +331,6 @@ export function generateMockDatabase(): Database {
     if (type === 'Combined' || type === 'Coding') {
       sections.push({ name: 'Coding', questionCount: type === 'Combined' ? 1 : 3, marks: type === 'Combined' ? 15 : 60 });
     }
-    // Filter sections with positive count
     const activeSections = sections.filter(s => s.questionCount > 0);
 
     assessments.push({
@@ -268,7 +339,7 @@ export function generateMockDatabase(): Database {
       type,
       duration,
       totalMarks,
-      candidatesAssignedCount: 0, // Computed later
+      candidatesAssignedCount: 0,
       status: i <= 80 ? 'Active' : (i <= 90 ? 'Draft' : 'Closed'),
       sections: activeSections,
       questionIds: assignedQIds
@@ -286,22 +357,20 @@ export function generateMockDatabase(): Database {
     const cleanEmailName = name.toLowerCase().replace(/\s+/g, '.');
     const degree = rnd.pick(DEGREES);
     const cgpa = parseFloat(rnd.range(6.5, 9.8).toFixed(2));
-    
-    // Distribute candidate funnel stages
-    // 60% Applied, 22% Online Test, 10% Interview, 5% Offered, 3% Joined
+
     let funnelStage: Candidate['funnelStage'] = 'Applied';
     let assessmentStatus: Candidate['assessmentStatus'] = 'Not Invited';
     let interviewStatus: Candidate['interviewStatus'] = 'Not Scheduled';
     let offerStatus: Candidate['offerStatus'] = 'None';
-    
+
     const roll = rnd.range(0, 100);
-    
-    let targetAssessment = assessments[i % assessments.length];
+
+    const targetAssessment = assessments[i % assessments.length];
     let assessmentScore: number | undefined = undefined;
     let sectionScores: Candidate['sectionScores'] = undefined;
     let durationUsed: number | undefined = undefined;
     let submissionDate: string | undefined = undefined;
-    let assessmentPassword = `PRES${Math.floor(rnd.range(1000, 9999))}`;
+    const assessmentPassword = `PRES${Math.floor(rnd.range(1000, 9999))}`;
 
     if (roll < 40) {
       funnelStage = 'Applied';
@@ -311,15 +380,15 @@ export function generateMockDatabase(): Database {
       assessmentStatus = 'Pending';
     } else if (roll < 82) {
       funnelStage = 'Online Test';
-      // Some are in progress, some completed
       if (roll < 72) {
         assessmentStatus = 'Completed';
-        // Compute realistic score
         assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.3, 0.95));
         durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
         submissionDate = new Date(2026, 4, Math.floor(rnd.range(1, 28))).toISOString();
+        const isCombined = targetAssessment.type === 'Combined';
         sectionScores = {
           aptitude: Math.floor(targetAssessment.totalMarks * 0.2 * rnd.range(0.3, 0.9)),
+          logical: isCombined ? Math.floor(targetAssessment.totalMarks * 0.1 * rnd.range(0.4, 0.9)) : undefined,
           technical: Math.floor(targetAssessment.totalMarks * 0.5 * rnd.range(0.4, 0.95)),
           coding: rnd.next() > 0.4 ? Math.floor(targetAssessment.totalMarks * 0.3 * rnd.range(0.2, 0.9)) : 0
         };
@@ -327,77 +396,72 @@ export function generateMockDatabase(): Database {
         assessmentStatus = 'InProgress';
       }
     } else if (roll < 92) {
-      // Interviews stage
       const stageOptions: Candidate['funnelStage'][] = ['Interview', 'Coding Exercise', 'Whiteboard Interview'];
       funnelStage = rnd.pick(stageOptions);
       assessmentStatus = 'Completed';
       assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.65, 0.98));
+      const isCombined = targetAssessment.type === 'Combined';
       sectionScores = {
         aptitude: Math.floor(targetAssessment.totalMarks * 0.25 * rnd.range(0.7, 0.95)),
+        logical: isCombined ? Math.floor(targetAssessment.totalMarks * 0.1 * rnd.range(0.6, 0.95)) : undefined,
         technical: Math.floor(targetAssessment.totalMarks * 0.45 * rnd.range(0.75, 0.98)),
         coding: Math.floor(targetAssessment.totalMarks * 0.3 * rnd.range(0.65, 0.95))
       };
-      
+
       interviewStatus = roll < 87 ? 'Scheduled' : 'Ongoing';
-      
-      // Schedule an interview
-      const idStr = `INT-2026-${1000 + i}`;
+
+      const hr = Math.floor(rnd.range(9, 17));
+      const min = rnd.next() > 0.5 ? '30' : '00';
       interviews.push({
-        id: idStr,
+        id: `INT-2026-${1000 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
         candidateName: name,
         panelName: `Panel ${rnd.pick(['Alpha', 'Beta', 'Gamma', 'Delta'])}`,
-        date: new Date(2026, 5, Math.floor(rnd.range(15, 25))).toISOString().split('T')[0],
-        time: `${Math.floor(rnd.range(10, 16))}:00`,
+        date: new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
+        time: `${hr}:${min}`,
         stage: funnelStage === 'Interview' ? 'Interview' : (funnelStage === 'Coding Exercise' ? 'Coding Exercise' : 'Whiteboard Interview'),
         status: interviewStatus === 'Scheduled' ? 'Scheduled' : 'Completed',
-        feedback: interviewStatus === 'Ongoing' ? 'Candidate performed well in logical section. Currently conducting coding round.' : undefined,
-        rating: interviewStatus === 'Ongoing' ? 4 : undefined
+        feedback: interviewStatus === 'Ongoing' ? rnd.pick(INTERVIEW_FEEDBACK) : undefined,
+        rating: interviewStatus === 'Ongoing' ? Math.floor(rnd.range(3, 5)) : undefined
       });
 
     } else if (roll < 97) {
-      // Offered
       funnelStage = 'Offered';
       assessmentStatus = 'Completed';
       assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.75, 0.98));
       interviewStatus = 'Passed';
-      
+
       const offerRoll = rnd.range(0, 3);
       if (offerRoll < 1) offerStatus = 'Offered';
       else if (offerRoll < 2) offerStatus = 'Accepted';
       else offerStatus = 'Declined';
 
-      const offerId = `OFF-2026-${200 + i}`;
-      const ctc = parseFloat(rnd.range(6.0, 18.0).toFixed(1));
       offers.push({
-        id: offerId,
+        id: `OFF-2026-${200 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
         candidateName: name,
         college: drive.college,
-        ctc,
+        ctc: rnd.pick(CTC_STEPS),
         status: offerStatus as Offer['status'],
-        dateReleased: new Date(2026, 5, Math.floor(rnd.range(1, 10))).toISOString().split('T')[0]
+        dateReleased: new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0]
       });
 
     } else {
-      // Joined
       funnelStage = 'Joined';
       assessmentStatus = 'Completed';
       assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.8, 0.99));
       interviewStatus = 'Passed';
       offerStatus = 'Joined';
 
-      const offerId = `OFF-2026-${200 + i}`;
-      const ctc = parseFloat(rnd.range(8.0, 24.0).toFixed(1));
       offers.push({
-        id: offerId,
+        id: `OFF-2026-${200 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
         candidateName: name,
         college: drive.college,
-        ctc,
+        ctc: rnd.pick(JOINED_CTC_STEPS),
         status: 'Joined',
-        dateReleased: new Date(2026, 4, Math.floor(rnd.range(1, 15))).toISOString().split('T')[0],
-        joiningDate: new Date(2026, 5, 15).toISOString().split('T')[0]
+        dateReleased: new Date(2026, Math.floor(rnd.range(3, 5)), Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
+        joiningDate: new Date(2026, 6, 15).toISOString().split('T')[0]
       });
     }
 
@@ -421,7 +485,6 @@ export function generateMockDatabase(): Database {
       funnelStage
     });
 
-    // Increment assigned candidates count in assessment
     targetAssessment.candidatesAssignedCount++;
   }
 
@@ -430,27 +493,25 @@ export function generateMockDatabase(): Database {
   assessments.forEach(asm => {
     const asmCandidates = completedCandidates.filter(c => c.assessmentId === asm.id);
     asmCandidates.sort((a, b) => (b.assessmentScore || 0) - (a.assessmentScore || 0));
-    
     asmCandidates.forEach((c, idx) => {
       c.assessmentRank = idx + 1;
       const count = asmCandidates.length;
-      c.assessmentPercentile = count > 1 
+      c.assessmentPercentile = count > 1
         ? parseFloat((((count - (idx + 1)) / (count - 1)) * 100).toFixed(1))
         : 100.0;
     });
   });
 
-  return {
-    drives,
-    candidates,
-    assessments,
-    questions,
-    interviews,
-    offers
-  };
+  return { drives, candidates, assessments, questions, interviews, offers };
 }
 
+const DB_VERSION = '2';
+
 export function getDatabase(): Database {
+  if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {
+    localStorage.removeItem('presidio_talent_hub_db');
+    localStorage.setItem('presidio_talent_hub_db_version', DB_VERSION);
+  }
   const data = localStorage.getItem('presidio_talent_hub_db');
   if (data) {
     try {
@@ -466,11 +527,11 @@ export function getDatabase(): Database {
 
 export function saveDatabase(db: Database): void {
   localStorage.setItem('presidio_talent_hub_db', JSON.stringify(db));
-  // Fire event to notify context of updates
   window.dispatchEvent(new CustomEvent('presidio-db-updated', { detail: db }));
 }
 
 export function resetDatabase(): Database {
   localStorage.removeItem('presidio_talent_hub_db');
+  localStorage.removeItem('presidio_talent_hub_db_version');
   return getDatabase();
 }

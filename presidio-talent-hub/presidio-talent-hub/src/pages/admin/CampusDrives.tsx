@@ -84,7 +84,7 @@ export const CampusDrives: React.FC = () => {
     },
     { header: 'Target', accessor: 'targetHiring' as const, sortable: true },
     { header: 'Registered', accessor: 'registered' as const, sortable: true },
-    { header: 'Shortlisted', accessor: 'shortlisted' as const, sortable: true },
+    { header: 'Selected', accessor: 'selected' as const, sortable: true },
     {
       header: 'Status',
       accessor: 'status' as const,

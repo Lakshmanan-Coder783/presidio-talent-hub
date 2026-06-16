@@ -6,7 +6,7 @@ export interface CampusDrive {
   location: string;
   targetHiring: number;
   registered: number;
-  shortlisted: number;
+  selected: number;
   spocName: string;
   spocContact: string;
   description: string;
