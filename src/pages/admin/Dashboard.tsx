@@ -38,13 +38,13 @@ export const Dashboard: React.FC = () => {
     const offered = db.candidates.filter(c => ['Offered', 'Joined'].includes(c.funnelStage)).length;
     const joined = db.candidates.filter(c => c.funnelStage === 'Joined').length;
     return [
-      { stage: '1. Applied', count: total, pct: 100, color: 'var(--chart-1)' },
-      { stage: '2. Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / total) * 100), color: 'var(--chart-2)' },
-      { stage: '3. Interview', count: passedInterview, pct: Math.round((passedInterview / (passedOnlineTest || 1)) * 100), color: 'var(--chart-3)' },
-      { stage: '4. Coding', count: passedCoding, pct: Math.round((passedCoding / (passedInterview || 1)) * 100), color: 'var(--chart-4)' },
-      { stage: '5. Whiteboard', count: passedWhiteboard, pct: Math.round((passedWhiteboard / (passedCoding || 1)) * 100), color: 'oklch(0.65 0.2 330)' },
-      { stage: '6. Offered', count: offered, pct: Math.round((offered / (passedWhiteboard || 1)) * 100), color: 'oklch(0.65 0.17 142)' },
-      { stage: '7. Joined', count: joined, pct: Math.round((joined / (offered || 1)) * 100), color: 'oklch(0.55 0.15 142)' },
+      { stage: '1. Applied', count: total, pct: 100 },
+      { stage: '2. Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / total) * 100) },
+      { stage: '3. Interview', count: passedInterview, pct: Math.round((passedInterview / (passedOnlineTest || 1)) * 100) },
+      { stage: '4. Coding', count: passedCoding, pct: Math.round((passedCoding / (passedInterview || 1)) * 100) },
+      { stage: '5. Whiteboard', count: passedWhiteboard, pct: Math.round((passedWhiteboard / (passedCoding || 1)) * 100) },
+      { stage: '6. Offered', count: offered, pct: Math.round((offered / (passedWhiteboard || 1)) * 100) },
+      { stage: '7. Joined', count: joined, pct: Math.round((joined / (offered || 1)) * 100) },
     ];
   }, [db]);
 
@@ -87,18 +87,17 @@ export const Dashboard: React.FC = () => {
     );
     const counts: Record<string, number> = {};
     selected.forEach(c => { counts[c.degree] = (counts[c.degree] || 0) + 1; });
-    const colors = ['#2563eb', '#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e', '#ec4899'];
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .map(([label, value], idx) => ({ label, value, color: colors[idx % colors.length] }));
+      .map(([label, value]) => ({ label, value }));
   }, [db]);
 
   const kpiCards = [
-    { label: 'Total Candidates', value: kpiStats.totalCandidates.toLocaleString(), trend: '+12.4% vs last drive', icon: Users, colorClass: 'text-primary bg-primary/10' },
-    { label: 'Active Campus Drives', value: kpiStats.activeDrives, trend: '+4 this month', icon: School, colorClass: 'text-violet-600 bg-violet-100' },
-    { label: 'Active Assessments', value: kpiStats.assessmentsActive, trend: 'Running in cloud', icon: FileCheck, colorClass: 'text-cyan-600 bg-cyan-100', noTrend: true },
-    { label: 'Interviews Scheduled', value: kpiStats.scheduledInterviews, trend: '+8 panel logins', icon: CalendarDays, colorClass: 'text-amber-600 bg-amber-100' },
-    { label: 'Joining Rate', value: `${kpiStats.joiningRate}%`, trend: '+2.3% conversion', icon: Award, colorClass: 'text-emerald-600 bg-emerald-100' },
+    { label: 'Total Candidates', value: kpiStats.totalCandidates.toLocaleString(), trend: '+12.4% vs last drive', icon: Users, colorClass: 'text-chart-1 bg-chart-1/10' },
+    { label: 'Active Campus Drives', value: kpiStats.activeDrives, trend: '+4 this month', icon: School, colorClass: 'text-chart-2 bg-chart-2/10' },
+    { label: 'Active Assessments', value: kpiStats.assessmentsActive, trend: 'Running in cloud', icon: FileCheck, colorClass: 'text-chart-3 bg-chart-3/10', noTrend: true },
+    { label: 'Interviews Scheduled', value: kpiStats.scheduledInterviews, trend: '+8 panel logins', icon: CalendarDays, colorClass: 'text-chart-4 bg-chart-4/10' },
+    { label: 'Joining Rate', value: `${kpiStats.joiningRate}%`, trend: '+2.3% conversion', icon: Award, colorClass: 'text-chart-5 bg-chart-5/10' },
   ];
 
   return (
@@ -119,7 +118,7 @@ export const Dashboard: React.FC = () => {
                 <div className="space-y-1">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
                   <p className="text-2xl font-bold">{value}</p>
-                  <div className={`flex items-center gap-1 text-xs font-medium ${noTrend ? 'text-muted-foreground' : 'text-emerald-600'}`}>
+                  <div className={`flex items-center gap-1 text-xs font-medium ${noTrend ? 'text-muted-foreground' : 'text-primary'}`}>
                     {!noTrend && <TrendingUp className="h-3 w-3" />}
                     {noTrend && <Clock className="h-3 w-3" />}
                     {trend}

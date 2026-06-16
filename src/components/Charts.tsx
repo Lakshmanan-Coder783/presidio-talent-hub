@@ -10,8 +10,6 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from 'recharts';
 import {
   ChartContainer,
@@ -28,7 +26,6 @@ interface FunnelStage {
   stage: string;
   count: number;
   pct: number;
-  color: string;
 }
 
 export const FunnelChart: React.FC<{ data: FunnelStage[] }> = ({ data }) => {
@@ -45,25 +42,25 @@ export const FunnelChart: React.FC<{ data: FunnelStage[] }> = ({ data }) => {
         data={chartData}
         margin={{ top: 4, right: 48, left: 90, bottom: 4 }}
       >
-        <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+        <CartesianGrid horizontal={false} stroke="var(--border)" strokeDasharray="3 3" />
         <YAxis
           dataKey="name"
           type="category"
-          tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
           width={90}
         />
         <XAxis
           type="number"
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
         <Bar dataKey="count" radius={[0, 4, 4, 0]}>
           {chartData.map((_, idx) => (
-            <Cell key={idx} fill={data[idx]?.color ?? `var(--chart-${(idx % 5) + 1})`} />
+            <Cell key={idx} fill={`var(--chart-${(idx % 5) + 1})`} />
           ))}
         </Bar>
       </ReBarChart>
@@ -78,7 +75,7 @@ interface LineChartData {
   value: number;
 }
 
-export const LineChart: React.FC<{ data: LineChartData[]; color?: string }> = ({ data }) => {
+export const LineChart: React.FC<{ data: LineChartData[] }> = ({ data }) => {
   const chartData = data.map(d => ({ name: d.label, value: d.value }));
 
   const chartConfig = {
@@ -88,15 +85,15 @@ export const LineChart: React.FC<{ data: LineChartData[]; color?: string }> = ({
   return (
     <ChartContainer config={chartConfig} className="h-[220px] w-full">
       <ReLineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
         <XAxis
           dataKey="name"
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
           width={32}
@@ -138,15 +135,15 @@ export const BarChart: React.FC<{
   return (
     <ChartContainer config={chartConfig} className="h-[220px] w-full">
       <ReBarChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-        <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+        <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
         <XAxis
           dataKey="name"
-          tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
           width={32}
@@ -165,7 +162,6 @@ export const BarChart: React.FC<{
 interface DonutChartData {
   label: string;
   value: number;
-  color: string;
 }
 
 const RADIAN = Math.PI / 180;
@@ -192,39 +188,34 @@ const renderCustomLabel = (props: {
 export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
   const total = data.reduce((s, d) => s + d.value, 0);
 
+  const chartConfig = Object.fromEntries(
+    data.map((d, idx) => [d.label, { label: d.label, color: `var(--chart-${(idx % 5) + 1})` }])
+  ) satisfies ChartConfig;
+
+  const chartData = data.map((d, idx) => ({
+    ...d,
+    fill: `var(--chart-${(idx % 5) + 1})`,
+  }));
+
   return (
     <div className="flex items-center gap-4 w-full">
-      <div className="h-[150px] w-[150px] shrink-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <RePieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="label"
-              cx="50%"
-              cy="50%"
-              innerRadius={42}
-              outerRadius={68}
-              paddingAngle={2}
-              labelLine={false}
-              label={renderCustomLabel}
-            >
-              {data.map((d, idx) => (
-                <Cell key={idx} fill={d.color} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(val) => [val, '']}
-              contentStyle={{
-                background: 'hsl(var(--popover))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '6px',
-                fontSize: '12px',
-              }}
-            />
-          </RePieChart>
-        </ResponsiveContainer>
-      </div>
+      <ChartContainer config={chartConfig} className="h-[150px] w-[150px] shrink-0">
+        <RePieChart>
+          <Pie
+            data={chartData}
+            dataKey="value"
+            nameKey="label"
+            cx="50%"
+            cy="50%"
+            innerRadius={42}
+            outerRadius={68}
+            paddingAngle={2}
+            labelLine={false}
+            label={renderCustomLabel}
+          />
+          <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+        </RePieChart>
+      </ChartContainer>
 
       <div className="flex flex-col gap-1.5 flex-1">
         <p className="text-xs font-semibold text-muted-foreground mb-1">
@@ -233,7 +224,10 @@ export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
         {data.map((d, idx) => (
           <div key={idx} className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+              <span
+                className="h-2 w-2 rounded-full shrink-0"
+                style={{ backgroundColor: `var(--chart-${(idx % 5) + 1})` }}
+              />
               <span className="text-muted-foreground font-medium">{d.label}</span>
             </div>
             <span className="font-semibold text-foreground">

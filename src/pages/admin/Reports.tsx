@@ -70,8 +70,8 @@ export const Reports: React.FC = () => {
     const completed = db.interviews.filter(i => i.status === 'Completed').length;
     const scheduled = db.interviews.filter(i => i.status === 'Scheduled').length;
     return [
-      { label: 'Completed', value: completed, color: '#22c55e' },
-      { label: 'Scheduled', value: scheduled, color: '#f59e0b' },
+      { label: 'Completed', value: completed },
+      { label: 'Scheduled', value: scheduled },
     ];
   }, [db]);
 
@@ -156,7 +156,7 @@ export const Reports: React.FC = () => {
                 <CardDescription>Calculated across completed test scores.</CardDescription>
               </CardHeader>
               <CardContent className="flex items-center justify-center">
-                <LineChart data={testAveragesData} color="#8b5cf6" />
+                <LineChart data={testAveragesData} />
               </CardContent>
             </Card>
 
@@ -168,11 +168,11 @@ export const Reports: React.FC = () => {
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-muted-foreground">Total Completed Assessments</span>
-                  <span className="font-bold text-emerald-600">{completedAssessments} candidates</span>
+                  <span className="font-bold text-chart-1">{completedAssessments} candidates</span>
                 </div>
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-muted-foreground">Total Pending Assessments</span>
-                  <span className="font-bold text-amber-600">{pendingAssessments} candidates</span>
+                  <span className="font-bold text-chart-2">{pendingAssessments} candidates</span>
                 </div>
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-muted-foreground">Average Score Overall</span>
@@ -203,7 +203,7 @@ export const Reports: React.FC = () => {
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-muted-foreground">Funnel Pipeline Health</span>
-                  <span className="font-bold text-emerald-600">Excellent</span>
+                  <span className="font-bold text-primary">Excellent</span>
                 </div>
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-muted-foreground">Online Test Conversion Rate</span>
