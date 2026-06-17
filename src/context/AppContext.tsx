@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
-import type { CampusDrive, Candidate, Question, Interview, Offer } from '../types';
+import type { Assessment, CampusDrive, Candidate, Question, Interview, Offer } from '../types';
 
 interface UserSession {
   role: 'admin' | 'candidate';
@@ -28,6 +28,8 @@ interface AppContextType {
     durationUsed: number
   ) => void;
   bulkInvite: (assessmentId: string, date: string, college: string) => void;
+  createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
+  loginCandidateByTestSlug: (slug: string, candidateId: string, testPassword: string) => { success: boolean; message: string };
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -301,6 +303,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const createAssessment = (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>): Assessment => {
+    const newAsm: Assessment = {
+      ...data,
+      id: `ASM-${2000 + db.assessments.length + 1}`,
+      candidatesAssignedCount: 0,
+    };
+    const updatedDb = { ...db, assessments: [newAsm, ...db.assessments] };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+    return newAsm;
+  };
+
+  const loginCandidateByTestSlug = (slug: string, candidateId: string, testPassword: string) => {
+    const asm = db.assessments.find(a => a.slug === slug);
+    if (!asm) return { success: false, message: 'Test not found. Check the URL.' };
+    if (asm.accessPassword !== testPassword) return { success: false, message: 'Incorrect test password.' };
+    if (asm.status !== 'Active') return { success: false, message: 'This test is not currently active.' };
+
+    const candidate = db.candidates.find(c => c.id === candidateId);
+    if (!candidate) return { success: false, message: 'Invalid Candidate ID.' };
+    if (candidate.assessmentId !== asm.id) return { success: false, message: 'You are not registered for this test.' };
+    if (candidate.assessmentStatus === 'Completed') return { success: false, message: 'Assessment already completed.' };
+
+    const session: UserSession = { role: 'candidate', id: candidateId, candidate };
+    setCurrentUser(session);
+    localStorage.setItem('presidio_session', JSON.stringify(session));
+
+    const updatedCandidates = db.candidates.map(c =>
+      c.id === candidateId ? { ...c, assessmentStatus: 'InProgress' as const } : c
+    );
+    const updatedDb = { ...db, candidates: updatedCandidates };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+
+    return { success: true, message: 'Login successful.' };
+  };
+
   const bulkInvite = (assessmentId: string, date: string, college: string) => {
     console.log(`Scheduling bulk assessment for ${college} on ${date}`);
     // Invites all "Not Invited" candidates from the specific college to take the assessment
@@ -325,7 +364,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return asm;
     });
 
-    const updatedDb = { ...db, candidates: updatedCandidates, assessments: updatedAssessments };
+    const updatedDrives = db.drives.map(d =>
+      d.college === college ? { ...d, assessmentId, examDate: date } : d
+    );
+    const updatedDb = { ...db, candidates: updatedCandidates, assessments: updatedAssessments, drives: updatedDrives };
     setDb(updatedDb);
     saveDatabase(updatedDb);
   };
@@ -344,7 +386,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createInterview,
       updateOfferStatus,
       submitCandidateAssessment,
-      bulkInvite
+      bulkInvite,
+      createAssessment,
+      loginCandidateByTestSlug,
     }}>
       {children}
     </AppContext.Provider>

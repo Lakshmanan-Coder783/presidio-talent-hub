@@ -1,4 +1,5 @@
 import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection } from '../types';
+import { generateSlug } from '../lib/utils';
 
 class SeededRandom {
   private seed: number;
@@ -133,18 +134,186 @@ export function generateMockDatabase(): Database {
   };
 
   const codingQuestions = [
-    { text: 'Find the maximum element in a given array of integers. Handle negative numbers and single-element arrays.', difficulty: 'Easy', marks: 10, tags: ['Arrays', 'Algorithms'] },
-    { text: 'Reverse a given string in-place without using built-in reverse functions.', difficulty: 'Easy', marks: 10, tags: ['Strings', 'Two Pointers'] },
-    { text: 'Given an array of integers, determine if it contains any duplicate values.', difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'] },
-    { text: 'Given a string containing only brackets ( ), [ ], { }, determine if the brackets are balanced and valid.', difficulty: 'Medium', marks: 15, tags: ['Stack', 'Strings'] },
-    { text: 'Merge two sorted arrays into a single sorted array without using extra space.', difficulty: 'Medium', marks: 15, tags: ['Arrays', 'Sorting', 'Two Pointers'] },
-    { text: 'Find the longest palindromic substring in a given string.', difficulty: 'Hard', marks: 25, tags: ['String', 'Dynamic Programming'] },
-    { text: 'Given an integer array, return the indices of the two numbers that add up to a specific target.', difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'] },
-    { text: 'Implement a function to check if a given binary tree is a valid Binary Search Tree.', difficulty: 'Medium', marks: 20, tags: ['Binary Tree', 'DFS', 'BST'] },
-    { text: 'Find the minimum number of coins needed to make a given amount using dynamic programming.', difficulty: 'Medium', marks: 20, tags: ['Dynamic Programming', 'Greedy'] },
-    { text: 'Given a linked list, detect whether it contains a cycle and return the start of the cycle.', difficulty: 'Medium', marks: 15, tags: ['Linked List', 'Two Pointers'] },
-    { text: 'Implement a function to rotate a matrix (2D array) 90 degrees clockwise in-place.', difficulty: 'Hard', marks: 25, tags: ['Matrix', 'Arrays', 'In-place'] },
-    { text: 'Find the number of islands in a given m x n grid where 1 represents land and 0 represents water.', difficulty: 'Hard', marks: 25, tags: ['Graph', 'BFS', 'DFS'] },
+    {
+      text: 'Find the maximum element in a given array of integers. Handle negative numbers and single-element arrays.',
+      title: 'Maximum Array Element',
+      skill: 'Arrays',
+      estimatedTime: 10,
+      difficulty: 'Easy', marks: 10, tags: ['Arrays', 'Algorithms'],
+      functionName: 'findMax',
+      functionParams: [
+        { name: 'n', type: 'INTEGER', description: 'The size of the array' },
+        { name: 'arr', type: 'INTEGER ARRAY', description: 'The input array of integers' },
+      ],
+      returnType: 'INTEGER',
+      returnDescription: 'the maximum element in the array',
+      constraints: ['1 ≤ n ≤ 10⁵', '-10⁹ ≤ arr[i] ≤ 10⁹'],
+    },
+    {
+      text: 'Reverse a given string in-place without using built-in reverse functions.',
+      title: 'In-Place String Reversal',
+      skill: 'Strings',
+      estimatedTime: 10,
+      difficulty: 'Easy', marks: 10, tags: ['Strings', 'Two Pointers'],
+      functionName: 'reverseString',
+      functionParams: [
+        { name: 's', type: 'STRING', description: 'The string to reverse' },
+      ],
+      returnType: 'STRING',
+      returnDescription: 'the reversed string',
+      constraints: ['1 ≤ |s| ≤ 10⁵', 's contains only printable ASCII characters'],
+    },
+    {
+      text: 'Given an array of integers, determine if it contains any duplicate values.',
+      title: 'Contains Duplicate',
+      skill: 'Hash Table',
+      estimatedTime: 10,
+      difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'],
+      functionName: 'containsDuplicate',
+      functionParams: [
+        { name: 'n', type: 'INTEGER', description: 'The size of the array' },
+        { name: 'arr', type: 'INTEGER ARRAY', description: 'The input array' },
+      ],
+      returnType: 'BOOLEAN',
+      returnDescription: 'true if any value appears at least twice, false otherwise',
+      constraints: ['1 ≤ n ≤ 10⁵', '-10⁹ ≤ arr[i] ≤ 10⁹'],
+    },
+    {
+      text: 'Given a string containing only brackets ( ), [ ], { }, determine if the brackets are balanced and valid.',
+      title: 'Valid Bracket Sequence',
+      skill: 'Stack',
+      estimatedTime: 15,
+      difficulty: 'Medium', marks: 15, tags: ['Stack', 'Strings'],
+      functionName: 'isValid',
+      functionParams: [
+        { name: 's', type: 'STRING', description: 'The bracket string to validate' },
+      ],
+      returnType: 'BOOLEAN',
+      returnDescription: 'true if the bracket sequence is valid, false otherwise',
+      constraints: ['1 ≤ |s| ≤ 10⁴', 's consists only of parentheses (), square brackets [], and curly braces {}'],
+    },
+    {
+      text: 'Merge two sorted arrays into a single sorted array without using extra space.',
+      title: 'Merge Sorted Arrays',
+      skill: 'Two Pointers',
+      estimatedTime: 15,
+      difficulty: 'Medium', marks: 15, tags: ['Arrays', 'Sorting', 'Two Pointers'],
+      functionName: 'mergeSorted',
+      functionParams: [
+        { name: 'm', type: 'INTEGER', description: 'Size of the first array' },
+        { name: 'a', type: 'INTEGER ARRAY', description: 'First sorted array' },
+        { name: 'n', type: 'INTEGER', description: 'Size of the second array' },
+        { name: 'b', type: 'INTEGER ARRAY', description: 'Second sorted array' },
+      ],
+      returnType: 'INTEGER ARRAY',
+      returnDescription: 'the merged sorted array',
+      constraints: ['0 ≤ m, n ≤ 2 × 10⁴', '-10⁹ ≤ a[i], b[i] ≤ 10⁹', 'Both arrays are sorted in non-decreasing order'],
+    },
+    {
+      text: 'Find the longest palindromic substring in a given string.',
+      title: 'Longest Palindromic Substring',
+      skill: 'Dynamic Programming',
+      estimatedTime: 25,
+      difficulty: 'Hard', marks: 25, tags: ['String', 'Dynamic Programming'],
+      functionName: 'longestPalindrome',
+      functionParams: [
+        { name: 's', type: 'STRING', description: 'The input string' },
+      ],
+      returnType: 'STRING',
+      returnDescription: 'the longest palindromic substring in s',
+      constraints: ['1 ≤ |s| ≤ 1000', 's consists of only lowercase English letters'],
+    },
+    {
+      text: 'Given an integer array, return the indices of the two numbers that add up to a specific target.',
+      title: 'Two Sum',
+      skill: 'Hash Table',
+      estimatedTime: 10,
+      difficulty: 'Easy', marks: 10, tags: ['Hash Table', 'Arrays'],
+      functionName: 'twoSum',
+      functionParams: [
+        { name: 'n', type: 'INTEGER', description: 'Size of the array' },
+        { name: 'nums', type: 'INTEGER ARRAY', description: 'The input array of integers' },
+        { name: 'target', type: 'INTEGER', description: 'The target sum' },
+      ],
+      returnType: 'INTEGER ARRAY',
+      returnDescription: 'indices [i, j] such that nums[i] + nums[j] == target',
+      constraints: ['2 ≤ n ≤ 10⁴', '-10⁹ ≤ nums[i] ≤ 10⁹', 'Exactly one valid answer exists'],
+    },
+    {
+      text: 'Implement a function to check if a given binary tree is a valid Binary Search Tree.',
+      title: 'Validate Binary Search Tree',
+      skill: 'Binary Tree',
+      estimatedTime: 20,
+      difficulty: 'Medium', marks: 20, tags: ['Binary Tree', 'DFS', 'BST'],
+      functionName: 'isValidBST',
+      functionParams: [
+        { name: 'root', type: 'TREE NODE', description: 'Root of the binary tree' },
+      ],
+      returnType: 'BOOLEAN',
+      returnDescription: 'true if the tree is a valid BST, false otherwise',
+      constraints: ['Number of nodes: 1 ≤ n ≤ 10⁴', '-2³¹ ≤ Node.val ≤ 2³¹ − 1'],
+    },
+    {
+      text: 'Find the minimum number of coins needed to make a given amount using dynamic programming.',
+      title: 'Coin Change',
+      skill: 'Dynamic Programming',
+      estimatedTime: 20,
+      difficulty: 'Medium', marks: 20, tags: ['Dynamic Programming', 'Greedy'],
+      functionName: 'coinChange',
+      functionParams: [
+        { name: 'n', type: 'INTEGER', description: 'Number of coin denominations' },
+        { name: 'coins', type: 'INTEGER ARRAY', description: 'Available coin denominations' },
+        { name: 'amount', type: 'INTEGER', description: 'The target amount' },
+      ],
+      returnType: 'INTEGER',
+      returnDescription: 'fewest coins needed to make up amount, or -1 if impossible',
+      constraints: ['1 ≤ n ≤ 12', '1 ≤ coins[i] ≤ 2³¹ − 1', '0 ≤ amount ≤ 10⁴'],
+    },
+    {
+      text: 'Given a linked list, detect whether it contains a cycle and return the start of the cycle.',
+      title: 'Linked List Cycle Detection',
+      skill: 'Linked List',
+      estimatedTime: 15,
+      difficulty: 'Medium', marks: 15, tags: ['Linked List', 'Two Pointers'],
+      functionName: 'detectCycle',
+      functionParams: [
+        { name: 'head', type: 'LIST NODE', description: 'Head of the linked list' },
+      ],
+      returnType: 'LIST NODE',
+      returnDescription: 'the node where the cycle begins, or null if there is no cycle',
+      constraints: ['Number of nodes: 0 ≤ n ≤ 10⁴', '-10⁵ ≤ Node.val ≤ 10⁵'],
+    },
+    {
+      text: 'Implement a function to rotate a matrix (2D array) 90 degrees clockwise in-place.',
+      title: 'Rotate Matrix 90°',
+      skill: 'Matrix',
+      estimatedTime: 25,
+      difficulty: 'Hard', marks: 25, tags: ['Matrix', 'Arrays', 'In-place'],
+      functionName: 'rotate',
+      functionParams: [
+        { name: 'n', type: 'INTEGER', description: 'Dimension of the n×n matrix' },
+        { name: 'matrix', type: '2D INTEGER ARRAY', description: 'The n×n matrix to rotate' },
+      ],
+      returnType: 'VOID',
+      returnDescription: 'the matrix is modified in-place',
+      constraints: ['1 ≤ n ≤ 20', '-1000 ≤ matrix[i][j] ≤ 1000'],
+    },
+    {
+      text: 'Find the number of islands in a given m x n grid where 1 represents land and 0 represents water.',
+      title: 'Number of Islands',
+      skill: 'Graph Traversal',
+      estimatedTime: 25,
+      difficulty: 'Hard', marks: 25, tags: ['Graph', 'BFS', 'DFS'],
+      functionName: 'numIslands',
+      functionParams: [
+        { name: 'm', type: 'INTEGER', description: 'Number of rows in the grid' },
+        { name: 'n', type: 'INTEGER', description: 'Number of columns in the grid' },
+        { name: 'grid', type: '2D CHARACTER ARRAY', description: 'The m×n grid of 0s and 1s' },
+      ],
+      returnType: 'INTEGER',
+      returnDescription: 'the number of islands',
+      constraints: ['1 ≤ m, n ≤ 300', 'grid[i][j] is either "0" or "1"'],
+    },
   ];
 
   const sqlQuestions = [
@@ -246,7 +415,20 @@ export function generateMockDatabase(): Database {
       testCases: qType === 'Coding' ? [
         { input: '[1, 2, 3, 4, 5]', output: '5' },
         { input: '[-10, -5, 0, 100, 2]', output: '100', isSecret: true }
-      ] : undefined
+      ] : undefined,
+      ...(qType === 'Coding' ? (() => {
+        const cq = codingQuestions[(i - 401) % codingQuestions.length];
+        return {
+          title: cq.title,
+          skill: cq.skill,
+          estimatedTime: cq.estimatedTime,
+          functionName: cq.functionName,
+          functionParams: cq.functionParams,
+          returnType: cq.returnType,
+          returnDescription: cq.returnDescription,
+          constraints: cq.constraints,
+        };
+      })() : {}),
     });
   }
 
@@ -356,7 +538,9 @@ export function generateMockDatabase(): Database {
       candidatesAssignedCount: 0,
       status: i <= 80 ? 'Active' : (i <= 90 ? 'Draft' : 'Closed'),
       sections: activeSections,
-      questionIds: assignedQIds
+      questionIds: assignedQIds,
+      slug: generateSlug(`${name}-${2000 + i}`),
+      accessPassword: `PRES${2000 + i}-${String(Math.floor((i * 7919) % 9000) + 1000)}`,
     });
   }
 
@@ -522,7 +706,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers };
 }
 
-const DB_VERSION = '4';
+const DB_VERSION = '6';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
 import type { Assessment, AssessmentSection } from '../../types';
-import { Plus, Trash2, ArrowUp, ArrowDown, ClipboardCopy, Settings } from 'lucide-react';
+import { generateSlug, generateAccessPassword } from '../../lib/utils';
+import { toast } from 'sonner';
+import {
+  Plus, Trash2, ArrowUp, ArrowDown, ClipboardCopy, Settings,
+  RefreshCw, Copy, CheckCircle2, Link as LinkIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +17,10 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 
 const statusVariant = (status: Assessment['status']) => {
   if (status === 'Active') return 'default';
@@ -19,16 +29,42 @@ const statusVariant = (status: Assessment['status']) => {
 };
 
 export const Assessments: React.FC = () => {
-  const { db } = useApp();
-  const [assessmentsList, setAssessmentsList] = useState<Assessment[]>(db.assessments);
+  const { db, createAssessment } = useApp();
+  const navigate = useNavigate();
+
   const [builderOpen, setBuilderOpen] = useState(false);
 
+  // Builder form state
   const [name, setName] = useState('');
   const [type, setType] = useState<Assessment['type']>('Combined');
   const [duration, setDuration] = useState('60');
   const [activeSections, setActiveSections] = useState<AssessmentSection[]>([]);
+  const [slug, setSlug] = useState('');
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  const [accessPassword, setAccessPassword] = useState('');
+
+  // Post-creation dialog
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [createdAssessment, setCreatedAssessment] = useState<Assessment | null>(null);
+
+  // Credentials-viewer dialog (for existing assessments)
+  const [credDialogOpen, setCredDialogOpen] = useState(false);
+  const [credAssessment, setCredAssessment] = useState<Assessment | null>(null);
 
   const availableSections: AssessmentSection['name'][] = ['Aptitude', 'Logical Reasoning', 'Technical', 'Coding', 'Verbal'];
+
+  // Auto-derive slug from name unless manually edited
+  useEffect(() => {
+    if (!slugManuallyEdited) {
+      setSlug(generateSlug(name));
+    }
+  }, [name, slugManuallyEdited]);
+
+  const openBuilder = () => {
+    setAccessPassword(generateAccessPassword());
+    setSlugManuallyEdited(false);
+    setBuilderOpen(true);
+  };
 
   const handleAddSection = (secName: AssessmentSection['name']) => {
     if (activeSections.some(s => s.name === secName)) return;
@@ -52,32 +88,63 @@ export const Assessments: React.FC = () => {
     setActiveSections(next);
   };
 
-  const resetBuilderForm = () => { setName(''); setType('Combined'); setDuration('60'); setActiveSections([]); };
+  const resetBuilderForm = () => {
+    setName('');
+    setType('Combined');
+    setDuration('60');
+    setActiveSections([]);
+    setSlug('');
+    setSlugManuallyEdited(false);
+    setAccessPassword('');
+  };
 
   const handleSaveAssessment = (status: Assessment['status']) => {
     if (!name || !duration || activeSections.length === 0) {
       alert('Fill all fields and add at least one section.');
       return;
     }
+    if (!slug) {
+      alert('Please provide a URL slug.');
+      return;
+    }
+    const slugExists = db.assessments.some(a => a.slug === slug);
+    if (slugExists) {
+      alert('This slug is already in use. Please choose a different one.');
+      return;
+    }
     const totalMarks = activeSections.reduce((s, sec) => s + sec.marks, 0);
-    setAssessmentsList([
-      {
-        id: `ASM-${2000 + assessmentsList.length + 1}`,
-        name, type, duration: parseInt(duration), totalMarks,
-        candidatesAssignedCount: 0, status, sections: activeSections, questionIds: [],
-      },
-      ...assessmentsList,
-    ]);
+    const newAsm = createAssessment({
+      name, type, duration: parseInt(duration), totalMarks,
+      status, sections: activeSections, questionIds: [],
+      slug, accessPassword,
+    });
     setBuilderOpen(false);
     resetBuilderForm();
+
+    if (status === 'Active') {
+      setCreatedAssessment(newAsm);
+      setSuccessDialogOpen(true);
+    } else {
+      toast.success('Draft saved successfully.');
+    }
   };
 
   const handleClone = (asm: Assessment) => {
-    setAssessmentsList([
-      { ...asm, id: `ASM-${2000 + assessmentsList.length + 1}`, name: `${asm.name} (Copy)`, candidatesAssignedCount: 0, status: 'Draft' },
-      ...assessmentsList,
-    ]);
+    createAssessment({
+      ...asm,
+      name: `${asm.name} (Copy)`,
+      status: 'Draft',
+      slug: generateSlug(`${asm.name}-copy-${Date.now()}`),
+      accessPassword: generateAccessPassword(),
+    });
+    toast.success('Assessment cloned as Draft.');
   };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
+  const testUrl = (s?: string) => s ? `${window.location.origin}/take/${s}` : '';
 
   const columns = [
     {
@@ -87,7 +154,7 @@ export const Assessments: React.FC = () => {
       render: (row: Assessment) => (
         <div>
           <p className="font-semibold text-sm">{row.name}</p>
-          <p className="text-xs text-muted-foreground">{row.id}</p>
+          <p className="text-xs text-muted-foreground">{row.id}{row.slug ? ` · /take/${row.slug}` : ''}</p>
         </div>
       ),
     },
@@ -105,10 +172,19 @@ export const Assessments: React.FC = () => {
       header: 'Actions',
       render: (row: Assessment) => (
         <div className="flex gap-1.5">
+          {row.slug && (
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7"
+              title="View credentials"
+              onClick={() => { setCredAssessment(row); setCredDialogOpen(true); }}
+            >
+              <LinkIcon className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(row)} title="Clone">
             <ClipboardCopy className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => alert(`Editor: ${row.name}`)} title="Configure">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/admin/online-assessment/${row.id}`)} title="Configure">
             <Settings className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -139,14 +215,14 @@ export const Assessments: React.FC = () => {
             Build, clone, and schedule screening exams and coding evaluations.
           </p>
         </div>
-        <Button onClick={() => setBuilderOpen(true)} className="gap-2">
+        <Button onClick={openBuilder} className="gap-2">
           <Plus className="h-4 w-4" />
           Assessment Builder
         </Button>
       </div>
 
       <Table
-        data={assessmentsList}
+        data={db.assessments}
         columns={columns}
         filters={filters}
         searchPlaceholder="Search assessments..."
@@ -155,6 +231,7 @@ export const Assessments: React.FC = () => {
         exportFileName="Assessments_Export"
       />
 
+      {/* ── Assessment Builder Modal ── */}
       <Modal
         isOpen={builderOpen}
         onClose={() => { setBuilderOpen(false); resetBuilderForm(); }}
@@ -190,6 +267,45 @@ export const Assessments: React.FC = () => {
               <Label>Duration (minutes) *</Label>
               <Input type="number" value={duration} onChange={e => setDuration(e.target.value)} />
             </div>
+
+            {/* Slug */}
+            <div className="space-y-1.5">
+              <Label>Test URL Slug *</Label>
+              <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                <span className="pl-3 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
+                <input
+                  className="flex-1 h-9 bg-transparent pr-3 text-sm outline-none"
+                  placeholder="auto-generated-from-name"
+                  value={slug}
+                  onChange={e => {
+                    setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''));
+                    setSlugManuallyEdited(true);
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Auto-generated from name. Edit to customise.</p>
+            </div>
+
+            {/* Access Password */}
+            <div className="space-y-1.5">
+              <Label>Test Access Password</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={accessPassword}
+                  readOnly
+                  className="font-mono font-semibold tracking-widest"
+                />
+                <Button
+                  type="button" variant="outline" size="icon"
+                  onClick={() => setAccessPassword(generateAccessPassword())}
+                  title="Regenerate password"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Shared password all candidates use at the test URL.</p>
+            </div>
+
             <div className="space-y-1.5">
               <Label>Add Sections</Label>
               <div className="flex flex-wrap gap-2 pt-1">
@@ -260,6 +376,130 @@ export const Assessments: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* ── Success Dialog (shown after activating a new assessment) ── */}
+      <Dialog open={successDialogOpen} onOpenChange={open => { if (!open) setSuccessDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              </div>
+              <DialogTitle>Assessment Created!</DialogTitle>
+            </div>
+            <DialogDescription>
+              Share the URL and password below with candidates so they can access this test.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createdAssessment && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Candidate Test URL
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={testUrl(createdAssessment.slug)}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline" size="icon"
+                    onClick={() => copyToClipboard(testUrl(createdAssessment.slug), 'URL')}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Test Access Password
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={createdAssessment.accessPassword ?? ''}
+                    className="font-mono font-semibold tracking-widest"
+                  />
+                  <Button
+                    variant="outline" size="icon"
+                    onClick={() => copyToClipboard(createdAssessment.accessPassword ?? '', 'Password')}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 p-3 text-xs text-amber-700 dark:text-amber-400">
+                <strong>Security note:</strong> Share these credentials only with intended candidates.
+                You can always retrieve them via the <LinkIcon className="inline h-3 w-3 mx-0.5" /> icon on the assessments table.
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSuccessDialogOpen(false)}>Close</Button>
+            <Button onClick={() => {
+              setSuccessDialogOpen(false);
+              navigate(`/admin/online-assessment/${createdAssessment?.id}`);
+            }}>
+              Open Test Setup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Credentials Viewer Dialog (for existing assessments) ── */}
+      <Dialog open={credDialogOpen} onOpenChange={open => { if (!open) setCredDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4" />
+              Access Credentials
+            </DialogTitle>
+            {credAssessment && (
+              <DialogDescription>{credAssessment.name}</DialogDescription>
+            )}
+          </DialogHeader>
+
+          {credAssessment?.slug ? (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Candidate Test URL
+                </Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={testUrl(credAssessment.slug)} className="font-mono text-xs" />
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(testUrl(credAssessment.slug), 'URL')}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Test Access Password
+                </Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={credAssessment.accessPassword ?? '—'} className="font-mono font-semibold tracking-widest" />
+                  {credAssessment.accessPassword && (
+                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(credAssessment.accessPassword!, 'Password')}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No shareable URL configured for this assessment.</p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

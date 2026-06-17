@@ -23,6 +23,7 @@ import { TestDetail } from './pages/admin/TestDetail';
 // Candidate Pages
 import { CandidatePortal } from './pages/candidate/CandidatePortal';
 import { CandidateLogin } from './pages/candidate/CandidateLogin';
+import { TakeTest } from './pages/candidate/TakeTest';
 
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -93,6 +94,9 @@ const AppRoutes: React.FC = () => {
           <Route path="/admin/settings"          element={<Settings />} />
         </Route>
       </Route>
+
+      {/* Public: candidate test-access via slug */}
+      <Route path="/take/:slug" element={<TakeTest />} />
 
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />

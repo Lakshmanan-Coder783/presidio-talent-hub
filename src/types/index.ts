@@ -12,6 +12,8 @@ export interface CampusDrive {
   description: string;
   status: 'Draft' | 'Published' | 'Completed' | 'Ongoing';
   questionIds?: string[];
+  assessmentId?: string;
+  examDate?: string;
 }
 
 export interface Candidate {
@@ -60,6 +62,8 @@ export interface Assessment {
   status: 'Draft' | 'Active' | 'Closed';
   sections: AssessmentSection[];
   questionIds: string[];
+  slug?: string;
+  accessPassword?: string;
 }
 
 export interface TestCase {
@@ -85,6 +89,14 @@ export interface Question {
     csharp?: string;
   };
   testCases?: TestCase[];
+  title?: string;
+  skill?: string;
+  estimatedTime?: number;
+  functionName?: string;
+  functionParams?: Array<{ name: string; type: string; description: string }>;
+  returnType?: string;
+  returnDescription?: string;
+  constraints?: string[];
 }
 
 export interface Interview {

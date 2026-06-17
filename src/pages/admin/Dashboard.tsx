@@ -1,55 +1,87 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { FunnelChart, LineChart, BarChart, DonutChart } from '../../components/Charts';
 import {
-  Users, School, FileCheck, CalendarDays, Award, TrendingUp, Clock,
+  Users, School, FileCheck, Award, TrendingUp, Clock,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export const Dashboard: React.FC = () => {
   const { db } = useApp();
 
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedCollege, setSelectedCollege] = useState<string>('all');
+
+  const availableYears = useMemo(() =>
+    Array.from(new Set(db.drives.map(d => new Date(d.date).getFullYear().toString())))
+      .sort((a, b) => Number(b) - Number(a)),
+    [db.drives]);
+
+  const availableColleges = useMemo(() => {
+    const base = selectedYear === 'all'
+      ? db.drives
+      : db.drives.filter(d => new Date(d.date).getFullYear().toString() === selectedYear);
+    return Array.from(new Set(base.map(d => d.college))).sort();
+  }, [db.drives, selectedYear]);
+
+  useEffect(() => {
+    if (selectedCollege !== 'all' && !availableColleges.includes(selectedCollege))
+      setSelectedCollege('all');
+  }, [availableColleges]);
+
+  const filteredDrives = useMemo(() =>
+    db.drives.filter(d => {
+      if (selectedYear !== 'all' && new Date(d.date).getFullYear().toString() !== selectedYear) return false;
+      if (selectedCollege !== 'all' && d.college !== selectedCollege) return false;
+      return true;
+    }), [db.drives, selectedYear, selectedCollege]);
+
+  const filteredCandidates = useMemo(() => {
+    const collegeSet = new Set(filteredDrives.map(d => d.college));
+    return db.candidates.filter(c => collegeSet.has(c.college));
+  }, [db.candidates, filteredDrives]);
+
   const kpiStats = useMemo(() => {
-    const totalCandidates = db.candidates.length;
-    const activeDrives = db.drives.filter(d => d.status === 'Ongoing' || d.status === 'Published').length;
+    const totalCandidates = filteredCandidates.length;
+    const activeDrives = filteredDrives.filter(d => d.status === 'Ongoing' || d.status === 'Published').length;
     const assessmentsActive = db.assessments.filter(a => a.status === 'Active').length;
-    const scheduledInterviews = db.interviews.filter(i => i.status === 'Scheduled').length;
-    const joined = db.offers.filter(o => o.status === 'Joined').length;
-    const accepted = db.offers.filter(o => o.status === 'Accepted').length;
+    const joined = filteredCandidates.filter(c => c.offerStatus === 'Joined').length;
+    const accepted = filteredCandidates.filter(c => c.offerStatus === 'Accepted').length;
     const joiningRate = Math.round((joined / ((joined + accepted) || 1)) * 100);
-    return { totalCandidates, activeDrives, assessmentsActive, scheduledInterviews, joiningRate };
-  }, [db]);
+    return { totalCandidates, activeDrives, assessmentsActive, joiningRate };
+  }, [filteredCandidates, filteredDrives, db.assessments]);
 
   const funnelData = useMemo(() => {
-    const total = db.candidates.length;
-    const passedOnlineTest = db.candidates.filter(c =>
+    const total = filteredCandidates.length;
+    const passedOnlineTest = filteredCandidates.filter(c =>
       ['Online Test', 'Interview', 'Coding Exercise', 'Whiteboard Interview', 'Offered', 'Joined'].includes(c.funnelStage)
     ).length;
-    const passedInterview = db.candidates.filter(c =>
+    const passedInterview = filteredCandidates.filter(c =>
       ['Interview', 'Coding Exercise', 'Whiteboard Interview', 'Offered', 'Joined'].includes(c.funnelStage)
     ).length;
-    const passedCoding = db.candidates.filter(c =>
+    const passedCoding = filteredCandidates.filter(c =>
       ['Coding Exercise', 'Whiteboard Interview', 'Offered', 'Joined'].includes(c.funnelStage)
     ).length;
-    const passedWhiteboard = db.candidates.filter(c =>
+    const passedWhiteboard = filteredCandidates.filter(c =>
       ['Whiteboard Interview', 'Offered', 'Joined'].includes(c.funnelStage)
     ).length;
-    const offered = db.candidates.filter(c => ['Offered', 'Joined'].includes(c.funnelStage)).length;
-    const joined = db.candidates.filter(c => c.funnelStage === 'Joined').length;
+    const offered = filteredCandidates.filter(c => ['Offered', 'Joined'].includes(c.funnelStage)).length;
+    const joined = filteredCandidates.filter(c => c.funnelStage === 'Joined').length;
     return [
       { stage: '1. Applied', count: total, pct: 100 },
-      { stage: '2. Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / total) * 100) },
+      { stage: '2. Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / (total || 1)) * 100) },
       { stage: '3. Interview', count: passedInterview, pct: Math.round((passedInterview / (passedOnlineTest || 1)) * 100) },
       { stage: '4. Coding', count: passedCoding, pct: Math.round((passedCoding / (passedInterview || 1)) * 100) },
       { stage: '5. Whiteboard', count: passedWhiteboard, pct: Math.round((passedWhiteboard / (passedCoding || 1)) * 100) },
       { stage: '6. Offered', count: offered, pct: Math.round((offered / (passedWhiteboard || 1)) * 100) },
       { stage: '7. Joined', count: joined, pct: Math.round((joined / (offered || 1)) * 100) },
     ];
-  }, [db]);
+  }, [filteredCandidates]);
 
   const drivePerformanceData = useMemo(() => {
-    const byCollege = db.drives.reduce((acc, d) => {
+    const byCollege = filteredDrives.reduce((acc, d) => {
       if (!acc[d.college]) acc[d.college] = { registered: 0, selected: 0 };
       acc[d.college].registered += d.registered;
       acc[d.college].selected += d.selected;
@@ -64,10 +96,10 @@ export const Dashboard: React.FC = () => {
         val1: vals.registered,
         val2: vals.selected,
       }));
-  }, [db]);
+  }, [filteredDrives]);
 
   const scoreDistributionData = useMemo(() => {
-    const scores = db.candidates
+    const scores = filteredCandidates
       .filter(c => c.assessmentStatus === 'Completed' && c.assessmentScore !== undefined)
       .map(c => c.assessmentScore as number);
     const ranges = [
@@ -79,10 +111,10 @@ export const Dashboard: React.FC = () => {
     ];
     scores.forEach(s => ranges.forEach(r => { if (s >= r.min && s <= r.max) r.value++; }));
     return ranges.map(r => ({ label: r.label, value: r.value }));
-  }, [db]);
+  }, [filteredCandidates]);
 
   const selectedCandidateDegrees = useMemo(() => {
-    const selected = db.candidates.filter(c =>
+    const selected = filteredCandidates.filter(c =>
       ['Offered', 'Accepted', 'Joined'].includes(c.offerStatus)
     );
     const counts: Record<string, number> = {};
@@ -90,10 +122,10 @@ export const Dashboard: React.FC = () => {
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value }));
-  }, [db]);
+  }, [filteredCandidates]);
 
   const selectedCandidateGenders = useMemo(() => {
-    const selected = db.candidates.filter(c =>
+    const selected = filteredCandidates.filter(c =>
       ['Offered', 'Accepted', 'Joined'].includes(c.offerStatus)
     );
     const counts: Record<string, number> = {};
@@ -101,23 +133,45 @@ export const Dashboard: React.FC = () => {
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value }));
-  }, [db]);
+  }, [filteredCandidates]);
 
   const kpiCards = [
     { label: 'Total Candidates', value: kpiStats.totalCandidates.toLocaleString(), trend: '+12.4% vs last drive', icon: Users, colorClass: 'text-chart-1 bg-chart-1/10' },
     { label: 'Active Campus Drives', value: kpiStats.activeDrives, trend: '+4 this month', icon: School, colorClass: 'text-chart-2 bg-chart-2/10' },
     { label: 'Active Assessments', value: kpiStats.assessmentsActive, trend: 'Running in cloud', icon: FileCheck, colorClass: 'text-chart-3 bg-chart-3/10', noTrend: true },
-    { label: 'Interviews Scheduled', value: kpiStats.scheduledInterviews, trend: '+8 panel logins', icon: CalendarDays, colorClass: 'text-chart-4 bg-chart-4/10' },
     { label: 'Joining Rate', value: `${kpiStats.joiningRate}%`, trend: '+2.3% conversion', icon: Award, colorClass: 'text-chart-5 bg-chart-5/10' },
   ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Comprehensive analytics of active campus drives and candidate funnel.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Comprehensive analytics of active campus drives and candidate funnel.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Select value={selectedYear} onValueChange={(v) => { setSelectedYear(v); }}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="All Years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {availableYears.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedCollege} onValueChange={setSelectedCollege}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="All Colleges" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Colleges</SelectItem>
+              {availableColleges.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* KPI Cards */}

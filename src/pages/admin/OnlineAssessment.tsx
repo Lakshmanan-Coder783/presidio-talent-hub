@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Button } from '@/components/ui/button';
+import { Copy, Link as LinkIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface TestRow {
   id: string;
@@ -18,6 +20,8 @@ interface TestRow {
   ownerName: string;
   ownerColor: string;
   team: string;
+  assessmentUrl: string | null;
+  assessmentPassword: string | null;
 }
 
 const OWNER = { initials: 'LM', name: 'Lakshmanan M', color: 'bg-blue-600' };
@@ -43,6 +47,10 @@ export const OnlineAssessment: React.FC = () => {
   const { db } = useApp();
   const navigate = useNavigate();
 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
   const rows = useMemo<TestRow[]>(() => {
     return db.drives.map((drive) => {
       const driveCandidates = db.candidates.filter(c => c.college === drive.college);
@@ -65,6 +73,13 @@ export const OnlineAssessment: React.FC = () => {
         year: 'numeric', month: 'short', day: 'numeric',
       });
 
+      const linkedAsmId = drive.assessmentId
+        ?? driveCandidates.find(c => c.assessmentId)?.assessmentId;
+      const linkedAsm = linkedAsmId ? db.assessments.find(a => a.id === linkedAsmId) : null;
+      const assessmentUrl = linkedAsm?.slug
+        ? `${window.location.origin}/take/${linkedAsm.slug}` : null;
+      const assessmentPassword = linkedAsm?.accessPassword ?? null;
+
       return {
         id:            drive.id,
         name:          drive.name,
@@ -79,6 +94,8 @@ export const OnlineAssessment: React.FC = () => {
         ownerName:     OWNER.name,
         ownerColor:    OWNER.color,
         team:          drive.status,
+        assessmentUrl,
+        assessmentPassword,
       };
     });
   }, [db.drives, db.candidates]);
@@ -165,6 +182,35 @@ export const OnlineAssessment: React.FC = () => {
             {row.ownerInitials}
           </span>
           <span className="text-sm truncate max-w-[140px]">{row.ownerName}</span>
+        </div>
+      ),
+    },
+    {
+      header: 'ACTIONS',
+      accessor: 'assessmentUrl' as const,
+      sortable: false,
+      render: (row: TestRow) => (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            disabled={!row.assessmentUrl}
+            title={row.assessmentUrl ? `Copy URL` : 'No assessment linked'}
+            onClick={() => row.assessmentUrl && copyToClipboard(row.assessmentUrl, 'Test URL')}
+          >
+            <LinkIcon className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            disabled={!row.assessmentPassword}
+            title={row.assessmentPassword ? 'Copy password' : 'No assessment linked'}
+            onClick={() => row.assessmentPassword && copyToClipboard(row.assessmentPassword, 'Password')}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
         </div>
       ),
     },

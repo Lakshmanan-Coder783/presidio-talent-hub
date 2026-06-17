@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, School, Users, FileText, Database,
   Calendar, Gift, BarChart3, Settings as SettingsIcon,
-  LogOut, Bell, Search, User, Send,
+  LogOut, Bell, Search, User, Send, Monitor,
 } from 'lucide-react';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
@@ -30,6 +30,7 @@ interface LayoutProps {
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'online-assessment', label: 'Online Assessment', icon: Monitor },
   { id: 'campus-drives', label: 'Campus Drives', icon: School },
   { id: 'candidates', label: 'Candidates', icon: Users },
   { id: 'assessments', label: 'Assessments', icon: FileText },

@@ -5,35 +5,25 @@ import { Table } from '../../components/Table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from '@/components/ui/sheet';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { toast } from 'sonner';
 import {
-  ArrowLeft,
-  Pencil,
-  Share2,
-  Eye,
-  Settings,
-  UserPlus,
-  AlignLeft,
-  Shield,
-  Users,
-  CheckCircle2,
-  Info,
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  X,
-  Search,
-  Tag,
-  Code,
-  HelpCircle,
+  ArrowLeft, Pencil, Share2, Eye, Settings, UserPlus, AlignLeft, Shield, Users,
+  CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
+  Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
+  TrendingUp, Award, Download,
 } from 'lucide-react';
-import type { Question } from '../../types';
+import type { Question, Candidate } from '../../types';
+import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -265,15 +255,26 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive } = useApp();
+  const { db, updateDrive, bulkInvite } = useApp();
 
+  // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('questions');
+
+  // invite tab state
+  const [selectedAssessment, setSelectedAssessment] = useState('');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [inviteSent, setInviteSent] = useState(false);
+
+  // evaluate drawer state
+  const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
+  const [evaluateOpen, setEvaluateOpen] = useState(false);
 
   const drive = useMemo(() => db.drives.find(d => d.id === id), [db.drives, id]);
 
-  // Questions directly from the drive's own question list
   const driveQuestionIds = drive?.questionIds ?? [];
   const driveQuestions = useMemo(
     () => db.questions.filter(q => driveQuestionIds.includes(q.id)),
@@ -282,7 +283,6 @@ export const TestDetail: React.FC = () => {
 
   const alreadyAddedSet = useMemo(() => new Set(driveQuestionIds), [driveQuestionIds]);
 
-  // Group questions by topic section
   const sections = useMemo(() => {
     return SECTION_ORDER
       .map(topic => ({
@@ -293,9 +293,8 @@ export const TestDetail: React.FC = () => {
   }, [driveQuestions]);
 
   const totalMarks = driveQuestions.reduce((s, q) => s + q.marks, 0);
-  const estimatedMinutes = driveQuestions.length; // ~1 min per question
+  const estimatedMinutes = driveQuestions.length;
 
-  // Candidate data for Candidates tab
   const driveCandidates = useMemo(
     () => (drive ? db.candidates.filter(c => c.college === drive.college) : []),
     [db.candidates, drive],
@@ -334,7 +333,56 @@ export const TestDetail: React.FC = () => {
     return { invited, completed, participationPct, bandPct };
   }, [candidateRows]);
 
-  // Handlers
+  // linked assessment (from drive.assessmentId or derived from candidates)
+  const linkedAssessment = useMemo(() => {
+    if (drive?.assessmentId) return db.assessments.find(a => a.id === drive.assessmentId) ?? null;
+    const c = driveCandidates.find(c => c.assessmentId);
+    return c ? db.assessments.find(a => a.id === c.assessmentId) ?? null : null;
+  }, [db.assessments, drive, driveCandidates]);
+
+  const assessmentUrl = linkedAssessment?.slug
+    ? `${window.location.origin}/take/${linkedAssessment.slug}` : null;
+
+  const activeAssessments = useMemo(
+    () => db.assessments.filter(a => a.status === 'Active'),
+    [db.assessments]
+  );
+
+  const invitedCandidates = useMemo(
+    () => driveCandidates.filter(c => c.assessmentStatus !== 'Not Invited'),
+    [driveCandidates]
+  );
+
+  const sectionAverages = useMemo(() => {
+    const completed = driveCandidates.filter(c => c.sectionScores);
+    const keys = ['aptitude', 'logical', 'technical', 'coding', 'verbal'] as const;
+    return keys.map(k => {
+      const vals = completed.filter(c => c.sectionScores?.[k] != null).map(c => c.sectionScores![k]!);
+      return {
+        section: k.charAt(0).toUpperCase() + k.slice(1),
+        avg: vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—',
+        count: vals.length,
+      };
+    }).filter(s => s.count > 0);
+  }, [driveCandidates]);
+
+  const sortedByScore = useMemo(
+    () => candidateRows.filter(r => r.status === 'Finished').sort((a, b) => b.percentage - a.percentage),
+    [candidateRows]
+  );
+
+  const scoreDistribution = useMemo(() => [
+    { label: '0–25%',   count: sortedByScore.filter(r => r.percentage < 25).length },
+    { label: '25–50%',  count: sortedByScore.filter(r => r.percentage >= 25 && r.percentage < 50).length },
+    { label: '50–75%',  count: sortedByScore.filter(r => r.percentage >= 50 && r.percentage < 75).length },
+    { label: '75–100%', count: sortedByScore.filter(r => r.percentage >= 75).length },
+  ], [sortedByScore]);
+
+  const top10 = useMemo(() => sortedByScore.slice(0, 10), [sortedByScore]);
+  const bottom10 = useMemo(() => [...sortedByScore].reverse().slice(0, 10), [sortedByScore]);
+
+  // ── handlers ────────────────────────────────────────────────────────────────
+
   const toggleSection = (topic: string) => {
     setCollapsedSections(prev => {
       const next = new Set(prev);
@@ -359,6 +407,36 @@ export const TestDetail: React.FC = () => {
     if (unique.length === 0) return;
     updateDrive({ ...drive, questionIds: [...driveQuestionIds, ...unique] });
   };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
+  const handleInvite = () => {
+    if (!selectedAssessment || !scheduleDate || !scheduleTime || !drive) return;
+    bulkInvite(selectedAssessment, scheduleDate, drive.college);
+    setInviteSent(true);
+  };
+
+  const exportCSV = () => {
+    if (!drive) return;
+    const headers = ['ID', 'Name', 'Email', 'Score', 'Percentage', 'Band', 'Aptitude', 'Logical', 'Technical', 'Coding'];
+    const csvRows = driveCandidates.filter(c => c.assessmentStatus === 'Completed').map(c => {
+      const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+      return [
+        c.id, c.name, c.email, c.assessmentScore ?? 0, pct, scoreBand(pct),
+        c.sectionScores?.aptitude ?? '', c.sectionScores?.logical ?? '',
+        c.sectionScores?.technical ?? '', c.sectionScores?.coding ?? '',
+      ];
+    });
+    const csv = [headers, ...csvRows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+    a.download = `${drive.name}_Scores.csv`;
+    a.click();
+  };
+
+  // ── column definitions ───────────────────────────────────────────────────────
 
   const candidateColumns = [
     {
@@ -413,6 +491,27 @@ export const TestDetail: React.FC = () => {
         );
       },
     },
+    {
+      header: 'EVALUATE',
+      accessor: 'id' as const,
+      sortable: false,
+      render: (row: CandidateRow) => {
+        if (row.status !== 'Finished') return <span className="text-sm text-muted-foreground">—</span>;
+        const candidate = driveCandidates.find(c => c.id === row.id);
+        if (!candidate) return null;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs gap-1 px-2"
+            onClick={() => { setEvaluateCandidate(candidate); setEvaluateOpen(true); }}
+          >
+            <FileText className="h-3 w-3" />
+            View
+          </Button>
+        );
+      },
+    },
   ];
 
   const candidateFilters = [
@@ -443,9 +542,11 @@ export const TestDetail: React.FC = () => {
     );
   }
 
+  const TAB_TRIGGER = 'flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent';
+
   return (
     <div className="flex flex-col min-h-full">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 py-3 border-b bg-background sticky top-0 z-10">
         <Button variant="ghost" size="icon" onClick={() => navigate('/admin/online-assessment')}>
           <ArrowLeft className="h-4 w-4" />
@@ -457,50 +558,96 @@ export const TestDetail: React.FC = () => {
           <Pencil className="h-3.5 w-3.5 text-muted-foreground cursor-pointer" />
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon"><Share2 className="h-4 w-4" /></Button>
+          <Button
+            variant="outline"
+            size="icon"
+            title={assessmentUrl ? 'Copy test URL' : 'No assessment linked yet'}
+            disabled={!assessmentUrl}
+            onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}
+          >
+            <Share2 className="h-4 w-4" />
+          </Button>
           <Button variant="outline" size="icon"><Eye className="h-4 w-4" /></Button>
           <Button variant="outline" size="icon"><Settings className="h-4 w-4" /></Button>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => setActiveTab('invite')}>
             <UserPlus className="h-4 w-4" />
             Invite candidates
           </Button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="questionnaire" className="flex-1">
+      {/* ── Credentials strip ── */}
+      {assessmentUrl && linkedAssessment && (
+        <div className="flex items-center gap-3 px-6 py-2 bg-muted/40 border-b text-sm flex-wrap">
+          <div className="flex items-center gap-2">
+            <LinkIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">Test URL:</span>
+            <code className="text-xs font-mono text-foreground bg-background border px-2 py-0.5 rounded truncate max-w-xs">
+              {assessmentUrl}
+            </code>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={() => copyToClipboard(assessmentUrl, 'Test URL')}
+            >
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="w-px h-4 bg-border" />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Password:</span>
+            <code className="text-xs font-mono font-semibold text-foreground bg-background border px-2 py-0.5 rounded">
+              {linkedAssessment.accessPassword}
+            </code>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={() => copyToClipboard(linkedAssessment.accessPassword!, 'Password')}
+            >
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="w-px h-4 bg-border" />
+          <span className="text-xs text-muted-foreground">
+            Assessment: <span className="font-medium text-foreground">{linkedAssessment.name}</span>
+          </span>
+        </div>
+      )}
+
+      {/* ── Tabs ── */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
         <div className="border-b bg-background">
           <TabsList className="h-auto rounded-none bg-transparent p-0 px-6 gap-0">
-            <TabsTrigger
-              value="questionnaire"
-              className="flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent"
-            >
+            <TabsTrigger value="questions" className={TAB_TRIGGER}>
               <AlignLeft className="h-4 w-4" />
-              Questionnaire
+              Questions
             </TabsTrigger>
-            <TabsTrigger
-              value="integrity"
-              className="flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent"
-            >
+            <TabsTrigger value="invite" className={TAB_TRIGGER}>
+              <UserPlus className="h-4 w-4" />
+              Invite
+            </TabsTrigger>
+            <TabsTrigger value="experience" className={TAB_TRIGGER}>
               <Shield className="h-4 w-4" />
-              Integrity &amp; experience
+              Experience
             </TabsTrigger>
-            <TabsTrigger
-              value="candidates"
-              className="flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent"
-            >
+            <TabsTrigger value="candidates" className={TAB_TRIGGER}>
               <Users className="h-4 w-4" />
               Candidates
+            </TabsTrigger>
+            <TabsTrigger value="reports" className={TAB_TRIGGER}>
+              <BarChart2 className="h-4 w-4" />
+              Reports
             </TabsTrigger>
           </TabsList>
         </div>
 
-        {/* ── Questionnaire Tab ── */}
-        <TabsContent value="questionnaire" className="m-0 p-6">
+        {/* ── Questions Tab ── */}
+        <TabsContent value="questions" className="m-0 p-6">
           <div className="flex gap-6">
             {/* Left: question list */}
             <div className="flex-1 min-w-0">
-              {/* Toolbar */}
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">
                   {driveQuestions.length} questions &middot; {totalMarks} marks &middot; ~{estimatedMinutes} min
@@ -533,7 +680,6 @@ export const TestDetail: React.FC = () => {
                     const sectionMarks = sec.questions.reduce((s, q) => s + q.marks, 0);
                     return (
                       <div key={sec.topic} className="border rounded-lg overflow-hidden">
-                        {/* Section header */}
                         <button
                           className="w-full flex items-center justify-between px-4 py-3 bg-muted/40 hover:bg-muted/60 text-left"
                           onClick={() => toggleSection(sec.topic)}
@@ -589,43 +735,80 @@ export const TestDetail: React.FC = () => {
 
             {/* Right: question preview */}
             {selectedQuestion && (
-              <div className="w-80 shrink-0 border rounded-lg p-4 space-y-4 self-start sticky top-24">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Section: {selectedQuestion.topic}</p>
-                    <h3 className="font-semibold text-sm leading-snug">{selectedQuestion.text}</h3>
+              <div className="w-80 shrink-0 border rounded-lg self-start sticky top-24 overflow-hidden">
+                <div className="flex items-start justify-between gap-2 p-4 border-b">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <p className="text-xs text-muted-foreground">Section: {selectedQuestion.topic}</p>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                        selectedQuestion.difficulty === 'Easy' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
+                        selectedQuestion.difficulty === 'Medium' ? 'text-amber-600 bg-amber-50 border-amber-200' :
+                        'text-red-600 bg-red-50 border-red-200'
+                      }`}>{selectedQuestion.difficulty}</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">
+                        {selectedQuestion.marks} pts
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-sm leading-snug">
+                      {selectedQuestion.title || selectedQuestion.text}
+                    </h3>
                   </div>
                   <button
-                    className="text-muted-foreground hover:text-foreground shrink-0 ml-2"
+                    className="text-muted-foreground hover:text-foreground shrink-0"
                     onClick={() => setSelectedQuestion(null)}
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {selectedQuestion.tags.map(tag => (
-                    <span key={tag} className="text-xs bg-muted px-2 py-0.5 rounded">{tag}</span>
-                  ))}
-                </div>
-                {selectedQuestion.options && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Options</p>
-                    {selectedQuestion.options.map((opt, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedQuestion.correctOptions?.includes(i) ? 'border-primary bg-primary' : 'border-muted-foreground'}`}>
-                          {selectedQuestion.correctOptions?.includes(i) && (
-                            <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                          )}
-                        </div>
-                        <span className="text-sm">{opt}</span>
-                      </div>
+
+                {selectedQuestion.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 px-4 py-3 border-b">
+                    {selectedQuestion.tags.map(tag => (
+                      <span key={tag} className="text-xs bg-muted px-2 py-0.5 rounded">{tag}</span>
                     ))}
                   </div>
                 )}
+
                 {selectedQuestion.type === 'Coding' && (
-                  <div className="text-xs text-muted-foreground bg-muted rounded p-3">
-                    <p className="font-medium mb-1">Coding Challenge</p>
-                    <p>{selectedQuestion.testCases?.length ?? 0} test cases</p>
+                  <div className="max-h-[60vh]">
+                    <CodingQuestionPanel question={selectedQuestion} />
+                  </div>
+                )}
+
+                {selectedQuestion.options && (
+                  <div className="p-4 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                      Options {selectedQuestion.type === 'Multiple Select' ? '(Multiple Correct)' : ''}
+                    </p>
+                    {selectedQuestion.options.map((opt, i) => {
+                      const isCorrect = selectedQuestion.correctOptions?.includes(i);
+                      return (
+                        <div
+                          key={i}
+                          className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
+                            isCorrect ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-transparent'
+                          }`}
+                        >
+                          <span className={isCorrect ? 'text-emerald-700 font-medium' : 'text-foreground'}>
+                            {opt}
+                          </span>
+                          {isCorrect && (
+                            <span className="shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
+                              ✓ Correct
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {['SQL', 'Descriptive'].includes(selectedQuestion.type) && (
+                  <div className="p-4 space-y-2">
+                    <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-2 py-0.5 rounded">
+                      {selectedQuestion.type === 'SQL' ? 'SQL Query' : 'Descriptive'}
+                    </span>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{selectedQuestion.text}</p>
                   </div>
                 )}
               </div>
@@ -633,8 +816,148 @@ export const TestDetail: React.FC = () => {
           </div>
         </TabsContent>
 
-        {/* ── Integrity & Experience Tab ── */}
-        <TabsContent value="integrity" className="m-0 p-6">
+        {/* ── Invite Tab ── */}
+        <TabsContent value="invite" className="m-0 p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Left: configurator */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Invite Configurator</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Select Assessment</Label>
+                  <Select
+                    value={selectedAssessment}
+                    onValueChange={v => { setSelectedAssessment(v); setInviteSent(false); }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Choose an active assessment…" /></SelectTrigger>
+                    <SelectContent>
+                      {activeAssessments.length === 0 ? (
+                        <SelectItem value="__none" disabled>No active assessments</SelectItem>
+                      ) : (
+                        activeAssessments.map(asm => (
+                          <SelectItem key={asm.id} value={asm.id}>
+                            {asm.name} ({asm.duration} min)
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Exam Date</Label>
+                  <Input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Start Time</Label>
+                  <Input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} />
+                </div>
+
+                <div className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                  Inviting candidates from{' '}
+                  <span className="font-semibold text-foreground">{drive.college}</span>
+                </div>
+
+                {inviteSent ? (
+                  <Alert className="border-emerald-500 bg-emerald-50 text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <AlertDescription className="font-semibold">
+                      Invitations dispatched successfully!
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Button
+                    className="w-full gap-2"
+                    disabled={!selectedAssessment || !scheduleDate || !scheduleTime}
+                    onClick={handleInvite}
+                  >
+                    <Send className="h-4 w-4" />
+                    Send Invitations
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Right: invited candidates */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-base">
+                  Invited Candidates
+                  {invitedCandidates.length > 0 && (
+                    <span className="ml-2 text-xs font-normal bg-muted text-muted-foreground rounded-full px-2 py-0.5">
+                      {invitedCandidates.length}
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {invitedCandidates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-16 text-center text-muted-foreground">
+                    <Users className="h-10 w-10 opacity-40" />
+                    <div>
+                      <p className="font-semibold text-sm">No candidates invited yet</p>
+                      <p className="text-xs mt-1">Configure and send invitations to see credentials here.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                          <th className="text-left py-2 pr-4 font-medium">Candidate</th>
+                          <th className="text-left py-2 pr-4 font-medium">ID</th>
+                          <th className="text-left py-2 pr-4 font-medium">Password</th>
+                          <th className="text-left py-2 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {invitedCandidates.map(c => (
+                          <tr key={c.id} className="hover:bg-muted/30">
+                            <td className="py-2.5 pr-4">
+                              <p className="font-medium">{c.name}</p>
+                              <p className="text-xs text-muted-foreground">{c.email}</p>
+                            </td>
+                            <td className="py-2.5 pr-4 font-mono text-xs text-muted-foreground">{c.id}</td>
+                            <td className="py-2.5 pr-4">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-semibold text-primary text-xs">
+                                  {c.assessmentPassword ?? '—'}
+                                </span>
+                                {c.assessmentPassword && (
+                                  <button
+                                    className="text-muted-foreground hover:text-foreground"
+                                    onClick={() => copyToClipboard(c.assessmentPassword!, 'Password')}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                c.assessmentStatus === 'Completed' ? 'bg-green-100 text-green-700' :
+                                c.assessmentStatus === 'InProgress' ? 'bg-amber-100 text-amber-700' :
+                                'bg-muted text-muted-foreground'
+                              }`}>
+                                {c.assessmentStatus}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ── Experience Tab ── */}
+        <TabsContent value="experience" className="m-0 p-6">
           <div className="max-w-3xl space-y-4">
             <div className="border rounded-lg p-6 flex gap-8">
               <div className="w-56 shrink-0">
@@ -739,8 +1062,12 @@ export const TestDetail: React.FC = () => {
           </div>
 
           {candidateRows.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-muted-foreground">
-              No candidates invited yet.
+            <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
+              <Users className="h-8 w-8 opacity-40" />
+              <p className="text-sm">No candidates invited yet.</p>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('invite')}>
+                Go to Invite tab
+              </Button>
             </div>
           ) : (
             <Table
@@ -753,9 +1080,158 @@ export const TestDetail: React.FC = () => {
             />
           )}
         </TabsContent>
+
+        {/* ── Reports Tab ── */}
+        <TabsContent value="reports" className="m-0 p-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Score distribution */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                  Score Distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {sortedByScore.length === 0 ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No completed assessments yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {scoreDistribution.map(band => (
+                      <div key={band.label} className="flex items-center gap-3 text-sm">
+                        <span className="w-16 text-xs text-muted-foreground shrink-0">{band.label}</span>
+                        <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary/70 rounded-full transition-all"
+                            style={{
+                              width: `${sortedByScore.length > 0 ? (band.count / sortedByScore.length) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="w-8 text-right text-xs font-semibold shrink-0">{band.count}</span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Based on {sortedByScore.length} completed submission{sortedByScore.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Section averages */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart2 className="h-4 w-4 text-primary" />
+                  Section Averages
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {sectionAverages.length === 0 ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No section data yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {sectionAverages.map(s => (
+                      <div key={s.section} className="flex items-center justify-between text-sm border rounded px-3 py-2">
+                        <span className="text-muted-foreground">{s.section}</span>
+                        <div className="text-right">
+                          <span className="font-semibold">{s.avg} pts</span>
+                          <span className="text-xs text-muted-foreground ml-2">({s.count} resp.)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top 10 / Bottom 10 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Award className="h-4 w-4 text-amber-500" />
+                  Top 10 Candidates
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {top10.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No completed assessments.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {top10.map((r, i) => (
+                      <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 text-xs text-muted-foreground shrink-0">#{i + 1}</span>
+                          <div>
+                            <p className="font-medium text-sm">{r.name}</p>
+                            <p className="text-xs text-muted-foreground">{r.email}</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded shrink-0 ${scoreBandColor(r.band)}`}>
+                          {r.percentage}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-red-400" />
+                  Bottom 10 Candidates
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {bottom10.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No completed assessments.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {bottom10.map((r, i) => (
+                      <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 text-xs text-muted-foreground shrink-0">{i + 1}</span>
+                          <div>
+                            <p className="font-medium text-sm">{r.name}</p>
+                            <p className="text-xs text-muted-foreground">{r.email}</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded shrink-0 ${scoreBandColor(r.band)}`}>
+                          {r.percentage}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Export */}
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={exportCSV}
+              disabled={sortedByScore.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export Scores CSV
+            </Button>
+          </div>
+        </TabsContent>
       </Tabs>
 
-      {/* Question picker sheet */}
+      {/* ── Question picker sheet ── */}
       <QuestionPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
@@ -763,6 +1239,105 @@ export const TestDetail: React.FC = () => {
         alreadyAdded={alreadyAddedSet}
         onAdd={addQuestions}
       />
+
+      {/* ── Evaluate drawer ── */}
+      <Sheet open={evaluateOpen} onOpenChange={open => { if (!open) { setEvaluateOpen(false); setEvaluateCandidate(null); } }}>
+        <SheetContent side="right" className="sm:max-w-md flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>{evaluateCandidate?.name ?? 'Evaluate Candidate'}</SheetTitle>
+            {evaluateCandidate && (
+              <p className="text-sm text-muted-foreground">{evaluateCandidate.email}</p>
+            )}
+          </SheetHeader>
+
+          {evaluateCandidate && (
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Score overview */}
+              <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Score</p>
+                  <p className="text-3xl font-bold">{evaluateCandidate.assessmentScore ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">out of {totalMarks}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Percentage</p>
+                  {(() => {
+                    const pct = totalMarks > 0
+                      ? Math.round(((evaluateCandidate.assessmentScore ?? 0) / totalMarks) * 100)
+                      : 0;
+                    const band = scoreBand(pct);
+                    return (
+                      <>
+                        <p className="text-3xl font-bold">{pct}%</p>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(band)}`}>
+                          {band}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Rank & percentile */}
+              {evaluateCandidate.assessmentRank != null && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border p-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Rank</p>
+                    <p className="text-2xl font-bold">#{evaluateCandidate.assessmentRank}</p>
+                  </div>
+                  <div className="rounded-lg border p-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Percentile</p>
+                    <p className="text-2xl font-bold">{evaluateCandidate.assessmentPercentile}%</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Section breakdown */}
+              {evaluateCandidate.sectionScores && (
+                <div>
+                  <p className="text-sm font-semibold mb-2">Section Breakdown</p>
+                  <div className="space-y-2">
+                    {(Object.entries(evaluateCandidate.sectionScores) as [string, number | undefined][])
+                      .filter(([, v]) => v != null)
+                      .map(([section, score]) => (
+                        <div key={section} className="flex items-center justify-between text-sm border rounded px-3 py-2">
+                          <span className="capitalize text-muted-foreground">{section}</span>
+                          <span className="font-semibold">{score} pts</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assessment meta */}
+              {linkedAssessment && (
+                <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1.5">
+                  <p className="font-semibold">{linkedAssessment.name}</p>
+                  <p className="text-muted-foreground">
+                    {linkedAssessment.duration} min &middot; {linkedAssessment.totalMarks} total marks
+                  </p>
+                  {evaluateCandidate.assessmentDurationUsed != null && (
+                    <p className="text-muted-foreground">
+                      Time used:{' '}
+                      {Math.floor(evaluateCandidate.assessmentDurationUsed / 60)} min{' '}
+                      {evaluateCandidate.assessmentDurationUsed % 60}s
+                    </p>
+                  )}
+                  {evaluateCandidate.assessmentSubmissionDate && (
+                    <p className="text-muted-foreground">
+                      Submitted:{' '}
+                      {new Date(evaluateCandidate.assessmentSubmissionDate).toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                        hour: 'numeric', minute: '2-digit', hour12: true,
+                      })}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

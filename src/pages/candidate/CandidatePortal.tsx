@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CodeEditor } from '../../components/CodeEditor';
+import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { DonutChart } from '../../components/Charts';
 import {
   Clock,
@@ -252,107 +253,38 @@ export const CandidatePortal: React.FC = () => {
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-4 h-full items-start">
 
             {/* Question Panel */}
-            <Card className="flex flex-col min-h-[520px]">
-              <CardContent className="p-6 flex flex-col flex-1 justify-between">
-                <div>
-                  <div className="flex justify-between items-center border-b pb-3 mb-5">
-                    <span className="text-xs font-bold uppercase tracking-widest text-primary">
-                      Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
-                    </span>
-                    <span className="text-xs font-semibold text-muted-foreground">
-                      Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
-                    </span>
-                  </div>
-
-                  <p className="text-base font-semibold leading-relaxed mb-6">{activeQuestion.text}</p>
-
-                  {/* MCQ */}
-                  {activeQuestion.type === 'MCQ' && activeQuestion.options && (
-                    <div className="space-y-3">
-                      {activeQuestion.options.map((opt, idx) => {
-                        const isSelected = answers[activeQuestion.id] === idx;
-                        return (
-                          <div
-                            key={idx}
-                            onClick={() => handleAnswerSelect(idx)}
-                            className={cn(
-                              'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
-                              isSelected
-                                ? 'border-primary bg-primary/5 text-primary'
-                                : 'border-border hover:bg-muted/50'
-                            )}
-                          >
-                            <div className={cn(
-                              'h-4 w-4 rounded-full border-2 shrink-0',
-                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-background'
-                            )} />
-                            <span className="text-sm font-medium">{opt}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Multiple Select */}
-                  {activeQuestion.type === 'Multiple Select' && activeQuestion.options && (
-                    <div className="space-y-3">
-                      {activeQuestion.options.map((opt, idx) => {
-                        const selectedList = (answers[activeQuestion.id] as number[]) || [];
-                        const isSelected = selectedList.includes(idx);
-                        return (
-                          <div
-                            key={idx}
-                            onClick={() => handleMultipleSelectToggle(idx)}
-                            className={cn(
-                              'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
-                              isSelected
-                                ? 'border-primary bg-primary/5 text-primary'
-                                : 'border-border hover:bg-muted/50'
-                            )}
-                          >
-                            <div className={cn(
-                              'h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center',
-                              isSelected
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'border-muted-foreground/40 bg-background'
-                            )}>
-                              {isSelected && <Check className="h-2.5 w-2.5" />}
-                            </div>
-                            <span className="text-sm font-medium">{opt}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* SQL / Descriptive */}
-                  {['SQL', 'Descriptive'].includes(activeQuestion.type) && (
-                    <div className="space-y-1.5">
-                      <Label>Your Solution Query / Text Details</Label>
-                      <Textarea
-                        rows={8}
-                        placeholder={activeQuestion.type === 'SQL' ? 'SELECT ... FROM ... WHERE ...' : 'Provide your descriptive notes here...'}
-                        value={answers[activeQuestion.id] || ''}
-                        onChange={e => handleTextAnswerChange(e.target.value)}
-                        className={activeQuestion.type === 'SQL' ? 'font-mono text-sm' : ''}
-                      />
-                    </div>
-                  )}
-
-                  {/* Coding IDE */}
-                  {activeQuestion.type === 'Coding' && (
-                    <div className="h-[400px] mt-3">
-                      <CodeEditor
-                        value={answers[activeQuestion.id] || ''}
-                        onChange={handleTextAnswerChange}
-                        languageTemplates={activeQuestion.codingTemplate}
-                      />
-                    </div>
-                  )}
+            {activeQuestion.type === 'Coding' ? (
+              /* ── Coding: split-view layout ── */
+              <Card className="flex flex-col h-[82vh]">
+                {/* Toolbar */}
+                <div className="flex items-center justify-between px-4 py-2 border-b shrink-0">
+                  <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                    Question {activeIdx + 1} of {questions.length} • Coding Section
+                  </span>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
+                  </span>
                 </div>
 
-                {/* Navigation */}
-                <div className="flex justify-between items-center border-t pt-4 mt-6">
+                {/* Split body */}
+                <div className="flex flex-1 min-h-0">
+                  {/* Left: question description */}
+                  <div className="w-[45%] border-r shrink-0 min-h-0">
+                    <CodingQuestionPanel question={activeQuestion} />
+                  </div>
+
+                  {/* Right: code editor */}
+                  <div className="flex-1 min-h-0 p-2">
+                    <CodeEditor
+                      value={answers[activeQuestion.id] || ''}
+                      onChange={handleTextAnswerChange}
+                      languageTemplates={activeQuestion.codingTemplate}
+                    />
+                  </div>
+                </div>
+
+                {/* Navigation footer */}
+                <div className="flex justify-between items-center border-t px-4 py-3 shrink-0">
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
                       <ChevronLeft className="h-4 w-4" />
@@ -383,8 +315,132 @@ export const CandidatePortal: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </Card>
+            ) : (
+              /* ── Non-coding: original layout ── */
+              <Card className="flex flex-col min-h-[520px]">
+                <CardContent className="p-6 flex flex-col flex-1 justify-between">
+                  <div>
+                    <div className="flex justify-between items-center border-b pb-3 mb-5">
+                      <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                        Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
+                      </span>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
+                      </span>
+                    </div>
+
+                    <p className="text-base font-semibold leading-relaxed mb-6">{activeQuestion.text}</p>
+
+                    {/* MCQ */}
+                    {activeQuestion.type === 'MCQ' && activeQuestion.options && (
+                      <div className="space-y-3">
+                        {activeQuestion.options.map((opt, idx) => {
+                          const isSelected = answers[activeQuestion.id] === idx;
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => handleAnswerSelect(idx)}
+                              className={cn(
+                                'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
+                                isSelected
+                                  ? 'border-primary bg-primary/5 text-primary'
+                                  : 'border-border hover:bg-muted/50'
+                              )}
+                            >
+                              <div className={cn(
+                                'h-4 w-4 rounded-full border-2 shrink-0',
+                                isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-background'
+                              )} />
+                              <span className="text-sm font-medium">{opt}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Multiple Select */}
+                    {activeQuestion.type === 'Multiple Select' && activeQuestion.options && (
+                      <div className="space-y-3">
+                        {activeQuestion.options.map((opt, idx) => {
+                          const selectedList = (answers[activeQuestion.id] as number[]) || [];
+                          const isSelected = selectedList.includes(idx);
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => handleMultipleSelectToggle(idx)}
+                              className={cn(
+                                'flex items-center gap-3 rounded-lg border p-3.5 cursor-pointer transition-all select-none',
+                                isSelected
+                                  ? 'border-primary bg-primary/5 text-primary'
+                                  : 'border-border hover:bg-muted/50'
+                              )}
+                            >
+                              <div className={cn(
+                                'h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center',
+                                isSelected
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-muted-foreground/40 bg-background'
+                              )}>
+                                {isSelected && <Check className="h-2.5 w-2.5" />}
+                              </div>
+                              <span className="text-sm font-medium">{opt}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* SQL / Descriptive */}
+                    {['SQL', 'Descriptive'].includes(activeQuestion.type) && (
+                      <div className="space-y-1.5">
+                        <Label>Your Solution Query / Text Details</Label>
+                        <Textarea
+                          rows={8}
+                          placeholder={activeQuestion.type === 'SQL' ? 'SELECT ... FROM ... WHERE ...' : 'Provide your descriptive notes here...'}
+                          value={answers[activeQuestion.id] || ''}
+                          onChange={e => handleTextAnswerChange(e.target.value)}
+                          className={activeQuestion.type === 'SQL' ? 'font-mono text-sm' : ''}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Navigation */}
+                  <div className="flex justify-between items-center border-t pt-4 mt-6">
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
+                        Save &amp; Next
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMarkReview}
+                        className={cn(
+                          'gap-1',
+                          markedForReview[activeQuestion.id]
+                            ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : ''
+                        )}
+                      >
+                        <Bookmark className="h-3.5 w-3.5" />
+                        {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
+                      </Button>
+                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
+                        Submit Assessment
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Navigator Sidebar */}
             <Card className="sticky top-4">
