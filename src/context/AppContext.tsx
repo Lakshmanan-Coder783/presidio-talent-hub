@@ -29,6 +29,7 @@ interface AppContextType {
   ) => void;
   bulkInvite: (assessmentId: string, date: string, college: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
+  updateAssessment: (assessment: Assessment) => void;
   loginCandidateByTestSlug: (slug: string, candidateId: string, testPassword: string) => { success: boolean; message: string };
 }
 
@@ -303,6 +304,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateAssessment = (updated: Assessment) => {
+    const updatedAssessments = db.assessments.map(a => a.id === updated.id ? updated : a);
+    const updatedDb = { ...db, assessments: updatedAssessments };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
   const createAssessment = (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>): Assessment => {
     const newAsm: Assessment = {
       ...data,
@@ -388,6 +396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitCandidateAssessment,
       bulkInvite,
       createAssessment,
+      updateAssessment,
       loginCandidateByTestSlug,
     }}>
       {children}

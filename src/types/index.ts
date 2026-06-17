@@ -14,6 +14,15 @@ export interface CampusDrive {
   questionIds?: string[];
   assessmentId?: string;
   examDate?: string;
+  experienceSettings?: {
+    testWindow: 'anytime' | 'scheduled';
+    reminderEnabled: boolean;
+    testAttempts: 1 | 3;
+    shareReport: boolean;
+    greetingNote: string;
+    allowedDevices: 'computers' | 'all';
+    integrityLevel: 'basic' | 'ai-proctoring' | 'custom';
+  };
 }
 
 export interface Candidate {

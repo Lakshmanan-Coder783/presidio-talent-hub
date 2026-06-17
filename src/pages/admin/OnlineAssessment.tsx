@@ -1,10 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Button } from '@/components/ui/button';
-import { Copy, Link as LinkIcon } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
+} from '@/components/ui/sheet';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Copy, Link as LinkIcon, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import type { CampusDrive } from '../../types';
 
 interface TestRow {
   id: string;
@@ -44,11 +54,56 @@ const DRIVE_STATUS_MAP: Record<string, TestRow['status']> = {
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db } = useApp();
+  const { db, updateDrive } = useApp();
   const navigate = useNavigate();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDrive, setEditDrive] = useState<CampusDrive | null>(null);
+
+  // Draft form state
+  const [draftName, setDraftName] = useState('');
+  const [draftDate, setDraftDate] = useState('');
+  const [draftLocation, setDraftLocation] = useState('');
+  const [draftStatus, setDraftStatus] = useState<CampusDrive['status']>('Draft');
+  const [draftTarget, setDraftTarget] = useState('');
+  const [draftSpocName, setDraftSpocName] = useState('');
+  const [draftSpocContact, setDraftSpocContact] = useState('');
+  const [draftDescription, setDraftDescription] = useState('');
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
+  const openEdit = (driveId: string) => {
+    const drive = db.drives.find(d => d.id === driveId);
+    if (!drive) return;
+    setEditDrive(drive);
+    setDraftName(drive.name);
+    setDraftDate(drive.date);
+    setDraftLocation(drive.location);
+    setDraftStatus(drive.status);
+    setDraftTarget(String(drive.targetHiring));
+    setDraftSpocName(drive.spocName);
+    setDraftSpocContact(drive.spocContact);
+    setDraftDescription(drive.description);
+    setEditOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!editDrive) return;
+    updateDrive({
+      ...editDrive,
+      name: draftName,
+      date: draftDate,
+      location: draftLocation,
+      status: draftStatus,
+      targetHiring: parseInt(draftTarget) || 0,
+      spocName: draftSpocName,
+      spocContact: draftSpocContact,
+      description: draftDescription,
+    });
+    setEditOpen(false);
+    toast.success('Drive updated successfully.');
   };
 
   const rows = useMemo<TestRow[]>(() => {
@@ -98,7 +153,7 @@ export const OnlineAssessment: React.FC = () => {
         assessmentPassword,
       };
     });
-  }, [db.drives, db.candidates]);
+  }, [db.drives, db.candidates, db.assessments]);
 
   const columns = [
     {
@@ -195,6 +250,15 @@ export const OnlineAssessment: React.FC = () => {
             variant="ghost"
             size="icon"
             className="h-7 w-7"
+            title="Edit drive"
+            onClick={() => openEdit(row.id)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             disabled={!row.assessmentUrl}
             title={row.assessmentUrl ? `Copy URL` : 'No assessment linked'}
             onClick={() => row.assessmentUrl && copyToClipboard(row.assessmentUrl, 'Test URL')}
@@ -243,6 +307,71 @@ export const OnlineAssessment: React.FC = () => {
         searchKey="name"
         exportFileName="Tests_Export"
       />
+
+      {/* Edit Drive Sheet */}
+      <Sheet open={editOpen} onOpenChange={v => { if (!v) setEditOpen(false); }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Edit Drive</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Drive Name</Label>
+              <Input value={draftName} onChange={e => setDraftName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Location</Label>
+              <Input value={draftLocation} onChange={e => setDraftLocation(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={draftStatus} onValueChange={v => setDraftStatus(v as CampusDrive['status'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Draft">Draft</SelectItem>
+                  <SelectItem value="Published">Published</SelectItem>
+                  <SelectItem value="Ongoing">Ongoing</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Target Hiring</Label>
+              <Input type="number" value={draftTarget} onChange={e => setDraftTarget(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>SPOC Name</Label>
+              <Input value={draftSpocName} onChange={e => setDraftSpocName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>SPOC Contact</Label>
+              <Input value={draftSpocContact} onChange={e => setDraftSpocContact(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={draftDescription}
+                onChange={e => setDraftDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSave}>
+              Save Changes
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

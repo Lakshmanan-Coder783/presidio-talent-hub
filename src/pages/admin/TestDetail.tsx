@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
@@ -6,6 +6,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -19,11 +21,12 @@ import {
   ArrowLeft, Pencil, Share2, Eye, Settings, UserPlus, AlignLeft, Shield, Users,
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
-  TrendingUp, Award, Download,
+  TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
 } from 'lucide-react';
-import type { Question, Candidate } from '../../types';
+import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { generateAccessPassword, generateSlug } from '../../lib/utils';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -250,12 +253,24 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
   );
 };
 
+// ── Default experience settings ───────────────────────────────────────────────
+
+const DEFAULT_EXP = {
+  testWindow: 'anytime' as const,
+  reminderEnabled: false,
+  testAttempts: 1 as 1 | 3,
+  shareReport: false,
+  greetingNote: '',
+  allowedDevices: 'computers' as const,
+  integrityLevel: 'basic' as const,
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, bulkInvite } = useApp();
+  const { db, updateDrive, updateAssessment, bulkInvite } = useApp();
 
   // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -273,7 +288,45 @@ export const TestDetail: React.FC = () => {
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
   const [evaluateOpen, setEvaluateOpen] = useState(false);
 
+  // inline name edit
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+
+  // edit drive sheet
+  const [driveEditOpen, setDriveEditOpen] = useState(false);
+  const [draftDriveName, setDraftDriveName] = useState('');
+  const [draftDriveDate, setDraftDriveDate] = useState('');
+  const [draftDriveLocation, setDraftDriveLocation] = useState('');
+  const [draftDriveStatus, setDraftDriveStatus] = useState<CampusDrive['status']>('Draft');
+  const [draftDriveTarget, setDraftDriveTarget] = useState('');
+  const [draftDriveSpocName, setDraftDriveSpocName] = useState('');
+  const [draftDriveSpocContact, setDraftDriveSpocContact] = useState('');
+  const [draftDriveDescription, setDraftDriveDescription] = useState('');
+
+  // edit assessment sheet
+  const [asmEditOpen, setAsmEditOpen] = useState(false);
+  const [draftAsmName, setDraftAsmName] = useState('');
+  const [draftAsmType, setDraftAsmType] = useState<Assessment['type']>('Combined');
+  const [draftAsmDuration, setDraftAsmDuration] = useState('');
+  const [draftAsmStatus, setDraftAsmStatus] = useState<Assessment['status']>('Draft');
+  const [draftSections, setDraftSections] = useState<AssessmentSection[]>([]);
+
+  // slug edit
+  const [editingSlug, setEditingSlug] = useState(false);
+  const [draftSlug, setDraftSlug] = useState('');
+
+  // experience settings
+  const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
+  const [expDirty, setExpDirty] = useState(false);
+
   const drive = useMemo(() => db.drives.find(d => d.id === id), [db.drives, id]);
+
+  // Sync experience settings when drive loads/changes
+  useEffect(() => {
+    if (drive) {
+      setExpSettings({ ...DEFAULT_EXP, ...drive.experienceSettings });
+    }
+  }, [drive?.id]);
 
   const driveQuestionIds = drive?.questionIds ?? [];
   const driveQuestions = useMemo(
@@ -333,7 +386,6 @@ export const TestDetail: React.FC = () => {
     return { invited, completed, participationPct, bandPct };
   }, [candidateRows]);
 
-  // linked assessment (from drive.assessmentId or derived from candidates)
   const linkedAssessment = useMemo(() => {
     if (drive?.assessmentId) return db.assessments.find(a => a.id === drive.assessmentId) ?? null;
     const c = driveCandidates.find(c => c.assessmentId);
@@ -434,6 +486,121 @@ export const TestDetail: React.FC = () => {
     a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
     a.download = `${drive.name}_Scores.csv`;
     a.click();
+  };
+
+  // inline name save
+  const saveInlineName = () => {
+    if (!drive || !draftName.trim()) return;
+    updateDrive({ ...drive, name: draftName.trim() });
+    setEditingName(false);
+    toast.success('Drive name updated.');
+  };
+
+  // open drive edit sheet
+  const openDriveEdit = () => {
+    if (!drive) return;
+    setDraftDriveName(drive.name);
+    setDraftDriveDate(drive.date);
+    setDraftDriveLocation(drive.location);
+    setDraftDriveStatus(drive.status);
+    setDraftDriveTarget(String(drive.targetHiring));
+    setDraftDriveSpocName(drive.spocName);
+    setDraftDriveSpocContact(drive.spocContact);
+    setDraftDriveDescription(drive.description);
+    setDriveEditOpen(true);
+  };
+
+  const saveDriveEdit = () => {
+    if (!drive) return;
+    updateDrive({
+      ...drive,
+      name: draftDriveName,
+      date: draftDriveDate,
+      location: draftDriveLocation,
+      status: draftDriveStatus,
+      targetHiring: parseInt(draftDriveTarget) || 0,
+      spocName: draftDriveSpocName,
+      spocContact: draftDriveSpocContact,
+      description: draftDriveDescription,
+    });
+    setDriveEditOpen(false);
+    toast.success('Drive details updated.');
+  };
+
+  // open assessment edit sheet
+  const openAsmEdit = () => {
+    if (!linkedAssessment) return;
+    setDraftAsmName(linkedAssessment.name);
+    setDraftAsmType(linkedAssessment.type);
+    setDraftAsmDuration(String(linkedAssessment.duration));
+    setDraftAsmStatus(linkedAssessment.status);
+    setDraftSections([...linkedAssessment.sections]);
+    setAsmEditOpen(true);
+  };
+
+  const saveAsmEdit = () => {
+    if (!linkedAssessment) return;
+    const totalMarksCalc = draftSections.reduce((s, sec) => s + sec.marks, 0);
+    updateAssessment({
+      ...linkedAssessment,
+      name: draftAsmName,
+      type: draftAsmType,
+      duration: parseInt(draftAsmDuration) || linkedAssessment.duration,
+      status: draftAsmStatus,
+      sections: draftSections,
+      totalMarks: totalMarksCalc,
+    });
+    setAsmEditOpen(false);
+    toast.success('Assessment updated.');
+  };
+
+  // section helpers for assessment edit
+  const addSection = (secName: AssessmentSection['name']) => {
+    if (draftSections.some(s => s.name === secName)) return;
+    setDraftSections([...draftSections, { name: secName, questionCount: 10, marks: 20 }]);
+  };
+  const removeSection = (idx: number) => setDraftSections(draftSections.filter((_, i) => i !== idx));
+  const changeSectionField = (idx: number, field: 'questionCount' | 'marks', value: number) => {
+    const next = [...draftSections];
+    next[idx] = { ...next[idx], [field]: value };
+    setDraftSections(next);
+  };
+  const moveSection = (idx: number, dir: 'up' | 'down') => {
+    if (dir === 'up' && idx === 0) return;
+    if (dir === 'down' && idx === draftSections.length - 1) return;
+    const next = [...draftSections];
+    const swap = dir === 'up' ? idx - 1 : idx + 1;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setDraftSections(next);
+  };
+
+  // slug save
+  const saveSlug = () => {
+    if (!linkedAssessment || !draftSlug.trim()) { setEditingSlug(false); return; }
+    updateAssessment({ ...linkedAssessment, slug: draftSlug.trim() });
+    setEditingSlug(false);
+    toast.success('Test URL updated.');
+  };
+
+  // regenerate password
+  const regeneratePassword = () => {
+    if (!linkedAssessment) return;
+    const newPass = generateAccessPassword();
+    updateAssessment({ ...linkedAssessment, accessPassword: newPass });
+    toast.success('Password regenerated.');
+  };
+
+  // experience settings
+  const updateExp = <K extends keyof typeof DEFAULT_EXP>(key: K, value: (typeof DEFAULT_EXP)[K]) => {
+    setExpSettings(prev => ({ ...prev, [key]: value }));
+    setExpDirty(true);
+  };
+
+  const saveExpSettings = () => {
+    if (!drive) return;
+    updateDrive({ ...drive, experienceSettings: expSettings });
+    setExpDirty(false);
+    toast.success('Experience settings saved.');
   };
 
   // ── column definitions ───────────────────────────────────────────────────────
@@ -542,6 +709,8 @@ export const TestDetail: React.FC = () => {
     );
   }
 
+  const AVAILABLE_SECTIONS: AssessmentSection['name'][] = ['Aptitude', 'Logical Reasoning', 'Technical', 'Coding', 'Verbal'];
+
   const TAB_TRIGGER = 'flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent';
 
   return (
@@ -554,8 +723,25 @@ export const TestDetail: React.FC = () => {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <span className="text-muted-foreground">Default Group</span>
           <span>/</span>
-          <span className="truncate max-w-[320px]">{drive.name}</span>
-          <Pencil className="h-3.5 w-3.5 text-muted-foreground cursor-pointer" />
+          {editingName ? (
+            <Input
+              autoFocus
+              value={draftName}
+              onChange={e => setDraftName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveInlineName(); if (e.key === 'Escape') setEditingName(false); }}
+              onBlur={saveInlineName}
+              className="h-7 text-sm font-medium w-64 px-2"
+            />
+          ) : (
+            <span className="truncate max-w-[320px]">{drive.name}</span>
+          )}
+          <button
+            title="Edit drive name"
+            onClick={() => { setDraftName(drive.name); setEditingName(true); }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -568,7 +754,9 @@ export const TestDetail: React.FC = () => {
             <Share2 className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="icon"><Eye className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon"><Settings className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
+            <Settings className="h-4 w-4" />
+          </Button>
           <Button className="gap-2" onClick={() => setActiveTab('invite')}>
             <UserPlus className="h-4 w-4" />
             Invite candidates
@@ -579,12 +767,36 @@ export const TestDetail: React.FC = () => {
       {/* ── Credentials strip ── */}
       {assessmentUrl && linkedAssessment && (
         <div className="flex items-center gap-3 px-6 py-2 bg-muted/40 border-b text-sm flex-wrap">
+          {/* URL / slug edit */}
           <div className="flex items-center gap-2">
             <LinkIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <span className="text-xs text-muted-foreground">Test URL:</span>
-            <code className="text-xs font-mono text-foreground bg-background border px-2 py-0.5 rounded truncate max-w-xs">
-              {assessmentUrl}
-            </code>
+            {editingSlug ? (
+              <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+                <span className="pl-2 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
+                <input
+                  autoFocus
+                  className="bg-transparent text-xs font-mono outline-none pr-2 py-1 w-40"
+                  value={draftSlug}
+                  onChange={e => setDraftSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  onKeyDown={e => { if (e.key === 'Enter') saveSlug(); if (e.key === 'Escape') setEditingSlug(false); }}
+                  onBlur={saveSlug}
+                />
+              </div>
+            ) : (
+              <code className="text-xs font-mono text-foreground bg-background border px-2 py-0.5 rounded truncate max-w-xs">
+                {assessmentUrl}
+              </code>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              title="Edit URL slug"
+              onClick={() => { setDraftSlug(linkedAssessment.slug ?? ''); setEditingSlug(true); }}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -595,6 +807,7 @@ export const TestDetail: React.FC = () => {
             </Button>
           </div>
           <div className="w-px h-4 bg-border" />
+          {/* Password edit */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Password:</span>
             <code className="text-xs font-mono font-semibold text-foreground bg-background border px-2 py-0.5 rounded">
@@ -608,10 +821,34 @@ export const TestDetail: React.FC = () => {
             >
               <Copy className="h-3 w-3" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              title="Regenerate password"
+              onClick={regeneratePassword}
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
           </div>
           <div className="w-px h-4 bg-border" />
+          {/* Assessment name → opens edit */}
           <span className="text-xs text-muted-foreground">
-            Assessment: <span className="font-medium text-foreground">{linkedAssessment.name}</span>
+            Assessment:{' '}
+            <button
+              className="font-medium text-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
+              onClick={openAsmEdit}
+              title="Edit assessment"
+            >
+              {linkedAssessment.name}
+            </button>
+            <button
+              className="ml-1.5 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={openAsmEdit}
+              title="Edit assessment"
+            >
+              <Pencil className="inline h-3 w-3" />
+            </button>
           </span>
         </div>
       )}
@@ -959,6 +1196,7 @@ export const TestDetail: React.FC = () => {
         {/* ── Experience Tab ── */}
         <TabsContent value="experience" className="m-0 p-6">
           <div className="max-w-3xl space-y-4">
+            {/* Candidate experience */}
             <div className="border rounded-lg p-6 flex gap-8">
               <div className="w-56 shrink-0">
                 <h3 className="font-semibold text-base mb-1">Candidate experience</h3>
@@ -976,24 +1214,119 @@ export const TestDetail: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex-1 space-y-3 text-sm">
-                {[
-                  { icon: <Info className="h-4 w-4 text-blue-500" />, label: 'Test window:', value: 'Candidates can take the test anytime' },
-                  { icon: <Info className="h-4 w-4 text-blue-500" />, label: 'Reminder:', value: 'No email reminder will be sent to candidates' },
-                  { icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, label: 'Test attempts:', value: 'Candidates get only one attempt' },
-                  { icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, label: 'Share Report:', value: 'Not shared with candidates' },
-                  { icon: <Info className="h-4 w-4 text-blue-500" />, label: 'Greet Candidates:', value: 'Add a personalized welcome note before candidates start' },
-                  { icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, label: 'Candidate device:', value: 'Test allowed only on computers' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-start gap-2">
-                    <span className="mt-0.5 shrink-0">{item.icon}</span>
-                    <span className="font-medium shrink-0">{item.label}</span>
-                    <span className="text-muted-foreground">{item.value}</span>
+              <div className="flex-1 space-y-4 text-sm">
+                {/* Test window */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-medium">Test window:</span>
                   </div>
-                ))}
+                  <Select
+                    value={expSettings.testWindow}
+                    onValueChange={v => updateExp('testWindow', v as 'anytime' | 'scheduled')}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="anytime">Candidates can take anytime</SelectItem>
+                      <SelectItem value="scheduled">Scheduled window only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Reminder */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-medium">Email reminder:</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={expSettings.reminderEnabled}
+                      onCheckedChange={v => updateExp('reminderEnabled', v)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {expSettings.reminderEnabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Test attempts */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    <span className="font-medium">Test attempts:</span>
+                  </div>
+                  <Select
+                    value={String(expSettings.testAttempts)}
+                    onValueChange={v => updateExp('testAttempts', parseInt(v) as 1 | 3)}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 attempt only</SelectItem>
+                      <SelectItem value="3">Up to 3 attempts</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Share Report */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    <span className="font-medium">Share report:</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={expSettings.shareReport}
+                      onCheckedChange={v => updateExp('shareReport', v)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {expSettings.shareReport ? 'Shared with candidates' : 'Not shared'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Greeting note */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-medium">Greet candidates:</span>
+                  </div>
+                  <Textarea
+                    placeholder="Add a personalized welcome note before candidates start…"
+                    value={expSettings.greetingNote}
+                    onChange={e => updateExp('greetingNote', e.target.value)}
+                    rows={2}
+                    className="text-xs resize-none"
+                  />
+                </div>
+
+                {/* Candidate device */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    <span className="font-medium">Candidate device:</span>
+                  </div>
+                  <Select
+                    value={expSettings.allowedDevices}
+                    onValueChange={v => updateExp('allowedDevices', v as 'computers' | 'all')}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="computers">Computers only</SelectItem>
+                      <SelectItem value="all">All devices</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
+            {/* Integrity experience */}
             <div className="border rounded-lg p-6 flex gap-8">
               <div className="w-56 shrink-0">
                 <h3 className="font-semibold text-base mb-1">Integrity experience</h3>
@@ -1005,16 +1338,44 @@ export const TestDetail: React.FC = () => {
                   <span>Action needed</span>
                 </div>
               </div>
-              <div className="flex-1 text-sm">
-                <div className="flex items-start gap-2 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                  <span className="font-medium">Basic integrity settings</span>
+              <div className="flex-1 text-sm space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                    <span className="font-medium">Integrity level:</span>
+                  </div>
+                  <Select
+                    value={expSettings.integrityLevel}
+                    onValueChange={v => updateExp('integrityLevel', v as 'basic' | 'ai-proctoring' | 'custom')}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="basic">Basic (fullscreen + switch alerts)</SelectItem>
+                      <SelectItem value="ai-proctoring">AI Proctoring</SelectItem>
+                      <SelectItem value="custom">Custom monitoring</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <p className="text-muted-foreground leading-relaxed">
-                  Full screen, screen switch alerts, and copy restrictions. Minimal protection.
-                  Good for low-stakes tests but easy to bypass.
+                <p className="text-muted-foreground leading-relaxed text-xs">
+                  {expSettings.integrityLevel === 'basic' && 'Full screen, screen switch alerts, and copy restrictions. Minimal protection.'}
+                  {expSettings.integrityLevel === 'ai-proctoring' && 'AI-powered webcam monitoring, suspicious behaviour detection, and automatic flagging.'}
+                  {expSettings.integrityLevel === 'custom' && 'Configure custom monitoring rules, allowed resources, and manual review workflows.'}
                 </p>
               </div>
+            </div>
+
+            {/* Save button */}
+            <div className="flex justify-end">
+              <Button
+                className="gap-2"
+                onClick={saveExpSettings}
+                disabled={!expDirty}
+              >
+                <Save className="h-4 w-4" />
+                Save Changes
+              </Button>
             </div>
           </div>
         </TabsContent>
@@ -1336,6 +1697,178 @@ export const TestDetail: React.FC = () => {
               )}
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Edit Drive Sheet ── */}
+      <Sheet open={driveEditOpen} onOpenChange={v => { if (!v) setDriveEditOpen(false); }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Edit Drive Details</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Drive Name</Label>
+              <Input value={draftDriveName} onChange={e => setDraftDriveName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={draftDriveDate} onChange={e => setDraftDriveDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Location</Label>
+              <Input value={draftDriveLocation} onChange={e => setDraftDriveLocation(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={draftDriveStatus} onValueChange={v => setDraftDriveStatus(v as CampusDrive['status'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Draft">Draft</SelectItem>
+                  <SelectItem value="Published">Published</SelectItem>
+                  <SelectItem value="Ongoing">Ongoing</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Target Hiring</Label>
+              <Input type="number" value={draftDriveTarget} onChange={e => setDraftDriveTarget(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>SPOC Name</Label>
+              <Input value={draftDriveSpocName} onChange={e => setDraftDriveSpocName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>SPOC Contact</Label>
+              <Input value={draftDriveSpocContact} onChange={e => setDraftDriveSpocContact(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={draftDriveDescription}
+                onChange={e => setDraftDriveDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDriveEditOpen(false)}>Cancel</Button>
+            <Button className="flex-1" onClick={saveDriveEdit}>Save Changes</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Edit Assessment Sheet ── */}
+      <Sheet open={asmEditOpen} onOpenChange={v => { if (!v) setAsmEditOpen(false); }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Edit Assessment</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Assessment Name</Label>
+              <Input value={draftAsmName} onChange={e => setDraftAsmName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={draftAsmType} onValueChange={v => setDraftAsmType(v as Assessment['type'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Combined">Combined Test</SelectItem>
+                  <SelectItem value="Coding">Coding Assessment</SelectItem>
+                  <SelectItem value="Aptitude">Aptitude Test</SelectItem>
+                  <SelectItem value="Technical">Technical MCQ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Duration (minutes)</Label>
+              <Input type="number" value={draftAsmDuration} onChange={e => setDraftAsmDuration(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={draftAsmStatus} onValueChange={v => setDraftAsmStatus(v as Assessment['status'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Draft">Draft</SelectItem>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Sections editor */}
+            <div className="space-y-2">
+              <Label>Sections</Label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_SECTIONS.map(secName => {
+                  const isAdded = draftSections.some(s => s.name === secName);
+                  return (
+                    <Button
+                      key={secName}
+                      size="sm"
+                      variant={isAdded ? 'secondary' : 'outline'}
+                      disabled={isAdded}
+                      className="h-7 text-xs"
+                      onClick={() => addSection(secName)}
+                    >
+                      + {secName}
+                    </Button>
+                  );
+                })}
+              </div>
+              {draftSections.length > 0 && (
+                <div className="space-y-2 mt-2">
+                  {draftSections.map((sec, idx) => (
+                    <div key={sec.name} className="flex items-center gap-2 rounded-lg border bg-card p-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{idx + 1}. {sec.name}</p>
+                        <div className="flex gap-3 mt-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">Qs:</span>
+                            <Input
+                              type="number"
+                              className="h-6 w-14 text-xs px-1"
+                              value={sec.questionCount}
+                              onChange={e => changeSectionField(idx, 'questionCount', parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">Marks:</span>
+                            <Input
+                              type="number"
+                              className="h-6 w-14 text-xs px-1"
+                              value={sec.marks}
+                              onChange={e => changeSectionField(idx, 'marks', parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === 0} onClick={() => moveSection(idx, 'up')}>
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === draftSections.length - 1} onClick={() => moveSection(idx, 'down')}>
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeSection(idx)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Total marks: {draftSections.reduce((s, sec) => s + sec.marks, 0)}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setAsmEditOpen(false)}>Cancel</Button>
+            <Button className="flex-1" onClick={saveAsmEdit}>Save Changes</Button>
+          </SheetFooter>
         </SheetContent>
       </Sheet>
     </div>
