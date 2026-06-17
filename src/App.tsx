@@ -8,6 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 // Admin Pages
 import { Dashboard } from './pages/admin/Dashboard';
+import { OnlineAssessment } from './pages/admin/OnlineAssessment';
 import { CampusDrives } from './pages/admin/CampusDrives';
 import { Candidates } from './pages/admin/Candidates';
 import { Assessments } from './pages/admin/Assessments';
@@ -17,6 +18,7 @@ import { Interviews } from './pages/admin/Interviews';
 import { Offers } from './pages/admin/Offers';
 import { Reports } from './pages/admin/Reports';
 import { Settings } from './pages/admin/Settings';
+import { TestDetail } from './pages/admin/TestDetail';
 
 // Candidate Pages
 import { CandidatePortal } from './pages/candidate/CandidatePortal';
@@ -78,6 +80,8 @@ const AppRoutes: React.FC = () => {
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route element={<Layout><Outlet /></Layout>}>
           <Route path="/admin/dashboard"         element={<Dashboard />} />
+          <Route path="/admin/online-assessment" element={<OnlineAssessment />} />
+          <Route path="/admin/online-assessment/:id" element={<TestDetail />} />
           <Route path="/admin/campus-drives"     element={<CampusDrives />} />
           <Route path="/admin/candidates"        element={<Candidates />} />
           <Route path="/admin/assessments"       element={<Assessments />} />
