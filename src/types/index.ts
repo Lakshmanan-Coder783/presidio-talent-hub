@@ -11,6 +11,7 @@ export interface CampusDrive {
   spocContact: string;
   description: string;
   status: 'Draft' | 'Published' | 'Completed' | 'Ongoing';
+  questionIds?: string[];
 }
 
 export interface Candidate {

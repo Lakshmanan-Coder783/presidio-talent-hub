@@ -256,11 +256,15 @@ export function generateMockDatabase(): Database {
     const college = COLLEGES[i - 1];
     const location = rnd.pick(LOCATIONS);
 
-    // Status distribution
-    let status: CampusDrive['status'] = 'Published';
-    if (i <= 10) status = 'Completed';
-    else if (i <= 15) status = 'Ongoing';
-    else if (i <= 20) status = 'Draft';
+    let year: number;
+    let status: CampusDrive['status'];
+    if (i <= 12)      { year = 2023; status = 'Completed'; }
+    else if (i <= 25) { year = 2024; status = 'Completed'; }
+    else if (i <= 32) { year = 2025; status = 'Completed'; }
+    else if (i <= 37) { year = 2025; status = 'Published'; }
+    else if (i <= 42) { year = 2026; status = 'Ongoing'; }
+    else if (i <= 46) { year = 2026; status = 'Draft'; }
+    else              { year = 2026; status = 'Published'; }
 
     // Date matches status: Completed=Jan–Apr, Ongoing=May–Jun, Draft=Aug–Oct, Published=Jul–Dec
     let month: number;
@@ -268,15 +272,23 @@ export function generateMockDatabase(): Database {
     else if (status === 'Ongoing') month = Math.floor(rnd.range(4, 6));
     else if (status === 'Draft') month = Math.floor(rnd.range(7, 10));
     else month = Math.floor(rnd.range(6, 12));
-    const date = new Date(2026, month, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
+    const date = new Date(year, month, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
 
     const target = Math.floor(rnd.range(10, 50));
     const registered = Math.floor(target * rnd.range(5, 12));
     const selected = Math.floor(registered * rnd.range(0.3, 0.5));
 
+    // Build a deterministic question set for this drive (18 questions across 4 topics)
+    const driveQIds: string[] = [
+      ...[0,1,2,3,4].map(k => `Q-${1001 + ((i * 17 + k) % 150)}`),         // Aptitude
+      ...[0,1,2,3,4].map(k => `Q-${1151 + ((i * 13 + k) % 100)}`),         // Logical Reasoning
+      ...[0,1,2,3,4].map(k => `Q-${1251 + ((i * 19 + k) % 150)}`),         // Technical
+      ...[0,1,2].map(k => `Q-${1401 + ((i * 11 + k) % 60)}`),              // Coding
+    ];
+
     drives.push({
-      id: `DRV-2026-${100 + i}`,
-      name: `${college} Campus Recruitment Drive 2026`,
+      id: `DRV-${year}-${100 + i}`,
+      name: `${college} Campus Recruitment Drive ${year}`,
       college,
       date,
       location,
@@ -286,7 +298,8 @@ export function generateMockDatabase(): Database {
       spocName: `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`,
       spocContact: `+91 ${Math.floor(rnd.range(7000000000, 9999999999))}`,
       description: DRIVE_DESCRIPTIONS[(i - 1) % DRIVE_DESCRIPTIONS.length](college),
-      status
+      status,
+      questionIds: driveQIds,
     });
   }
 
@@ -509,7 +522,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers };
 }
 
-const DB_VERSION = '3';
+const DB_VERSION = '4';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {
