@@ -18,6 +18,13 @@ export const TakeTest: React.FC = () => {
     [db, slug]
   );
 
+  const drive = useMemo(
+    () => assessment ? db.drives.find(d => d.assessmentId === assessment.id) : undefined,
+    [db.drives, assessment]
+  );
+
+  const isRemote = drive?.accessMode === 'remote';
+
   const [candidateId, setCandidateId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -68,7 +75,10 @@ export const TakeTest: React.FC = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!candidateId.trim() || !password.trim()) {
-      setErrorMsg('Please enter both your Candidate ID and the test password.');
+      setErrorMsg(isRemote
+        ? 'Please enter your Candidate ID and your individual password.'
+        : 'Please enter both your Candidate ID and the test password.'
+      );
       return;
     }
     setLoading(true);
@@ -125,20 +135,24 @@ export const TakeTest: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="test-password">Test Password</Label>
+                <Label htmlFor="test-password">
+                  {isRemote ? 'Your Password' : 'Test Password'}
+                </Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="test-password"
                     type="password"
-                    placeholder="Shared test password"
+                    placeholder={isRemote ? 'Your individual password (e.g. PRES1234)' : 'Shared test password'}
                     className="pl-9"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Enter the password shared by your exam coordinator — not your individual password.
+                  {isRemote
+                    ? 'Enter your individual password sent to your email.'
+                    : 'Enter the shared password given by your exam coordinator in the lab.'}
                 </p>
               </div>
 

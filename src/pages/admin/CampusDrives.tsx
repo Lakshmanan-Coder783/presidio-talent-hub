@@ -42,7 +42,7 @@ export const CampusDrives: React.FC = () => {
       alert('Please fill all required fields.');
       return;
     }
-    createDrive({ name, college, date, location, targetHiring: parseInt(targetHiring), spocName, spocContact, description, status });
+    createDrive({ name, college, date, location, targetHiring: parseInt(targetHiring), spocName, spocContact, description, status, accessMode: 'in-person' });
     resetForm();
     setModalOpen(false);
   };

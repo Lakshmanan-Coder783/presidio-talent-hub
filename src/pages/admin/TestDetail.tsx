@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
@@ -22,16 +22,23 @@ import {
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
+  Upload, UserCheck, UserX, Mail,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { generateAccessPassword, generateSlug } from '../../lib/utils';
+import { generateAccessPassword } from '../../lib/utils';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const SECTION_ORDER: Question['topic'][] = [
-  'Aptitude', 'Logical Reasoning', 'Technical', 'Coding', 'Verbal',
+  'Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS',
+  'Subjective', 'SQL Query', 'Coding',
+  'Aptitude', 'Logical Reasoning', 'Technical', 'Verbal',
+];
+
+const SESSIONS: { name: string; topics: Question['topic'][] }[] = [
+  { name: 'Session 1 – MCQ Round',      topics: ['Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS', 'Aptitude', 'Logical Reasoning', 'Technical', 'Verbal'] },
+  { name: 'Session 2 – Practical Round', topics: ['Subjective', 'SQL Query', 'Coding'] },
 ];
 
 const difficultyColor = (d: Question['difficulty']) => {
@@ -47,6 +54,14 @@ const topicColor = (t: Question['topic']) => {
     Technical: 'bg-cyan-100 text-cyan-700',
     Coding: 'bg-orange-100 text-orange-700',
     Verbal: 'bg-pink-100 text-pink-700',
+    Quants: 'bg-purple-100 text-purple-700',
+    Logical: 'bg-blue-100 text-blue-700',
+    'C/C++': 'bg-green-100 text-green-700',
+    OOPs: 'bg-indigo-100 text-indigo-700',
+    SQL: 'bg-teal-100 text-teal-700',
+    'HTML/CSS/JS': 'bg-yellow-100 text-yellow-700',
+    Subjective: 'bg-rose-100 text-rose-700',
+    'SQL Query': 'bg-emerald-100 text-emerald-700',
   };
   return map[t] ?? 'bg-gray-100 text-gray-700';
 };
@@ -152,7 +167,7 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
               <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Topic" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Topics</SelectItem>
-                {(['Aptitude', 'Logical Reasoning', 'Technical', 'Coding', 'Verbal'] as const).map(t => (
+                {(['Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS', 'Subjective', 'SQL Query', 'Coding', 'Aptitude', 'Logical Reasoning', 'Technical', 'Verbal'] as const).map(t => (
                   <SelectItem key={t} value={t}>{t}</SelectItem>
                 ))}
               </SelectContent>
@@ -255,14 +270,22 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
 
 // ── Default experience settings ───────────────────────────────────────────────
 
-const DEFAULT_EXP = {
-  testWindow: 'anytime' as const,
+const DEFAULT_EXP: {
+  testWindow: 'anytime' | 'scheduled';
+  reminderEnabled: boolean;
+  testAttempts: 1 | 3;
+  shareReport: boolean;
+  greetingNote: string;
+  allowedDevices: 'computers' | 'all';
+  integrityLevel: 'basic' | 'ai-proctoring' | 'custom';
+} = {
+  testWindow: 'anytime',
   reminderEnabled: false,
-  testAttempts: 1 as 1 | 3,
+  testAttempts: 1,
   shareReport: false,
   greetingNote: '',
-  allowedDevices: 'computers' as const,
-  integrityLevel: 'basic' as const,
+  allowedDevices: 'computers',
+  integrityLevel: 'basic',
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -270,7 +293,7 @@ const DEFAULT_EXP = {
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, bulkInvite } = useApp();
+  const { db, updateDrive, updateAssessment, updateQuestion, bulkInvite, bulkImportCandidates, markAttendance, sendRemoteInvites } = useApp();
 
   // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -292,12 +315,19 @@ export const TestDetail: React.FC = () => {
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
 
+  // question inline edit
+  const [editingQuestion, setEditingQuestion] = useState(false);
+  const [editDraft, setEditDraft] = useState<Partial<Question>>({});
+
   // edit drive sheet
   const [driveEditOpen, setDriveEditOpen] = useState(false);
   const [draftDriveName, setDraftDriveName] = useState('');
   const [draftDriveDate, setDraftDriveDate] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
   const [draftDriveStatus, setDraftDriveStatus] = useState<CampusDrive['status']>('Draft');
+  const [draftDriveAccessMode, setDraftDriveAccessMode] = useState<CampusDrive['accessMode']>('in-person');
+  const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
+  const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
   const [draftDriveTarget, setDraftDriveTarget] = useState('');
   const [draftDriveSpocName, setDraftDriveSpocName] = useState('');
   const [draftDriveSpocContact, setDraftDriveSpocContact] = useState('');
@@ -314,6 +344,12 @@ export const TestDetail: React.FC = () => {
   // slug edit
   const [editingSlug, setEditingSlug] = useState(false);
   const [draftSlug, setDraftSlug] = useState('');
+
+  // CSV import
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
+  const [csvPreviewRows, setCsvPreviewRows] = useState<{ name: string; email: string; degree: string; registrationNumber: string }[]>([]);
+  const [csvParsedData, setCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
 
   // experience settings
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
@@ -488,6 +524,77 @@ export const TestDetail: React.FC = () => {
     a.click();
   };
 
+  const handleCsvFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!drive) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      const lines = text.split('\n').filter(l => l.trim());
+      // Skip header row if first cell is non-numeric (e.g. "S.No")
+      const dataLines = isNaN(Number(lines[0]?.split(',')[0]?.trim())) ? lines.slice(1) : lines;
+
+      const parsed: Parameters<typeof bulkImportCandidates>[1] = [];
+      const preview: { name: string; email: string; degree: string; registrationNumber: string }[] = [];
+
+      dataLines.forEach(line => {
+        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        if (cols.length < 4) return;
+        const [, regNum, name, email, phone, degree, specialization, gender, dateOfBirth,
+               githubUrl, linkedinUrl, resumeUrl, codingPlatformUrls,
+               tenthStr, twelfthStr, diplomaStr, ugStr, pgStr, backlogHistStr, currentBacklogStr] = cols;
+
+        const genderNorm = gender === 'Female' ? 'Female' : gender === 'Other' ? 'Other' : 'Male';
+
+        parsed.push({
+          name: name || '',
+          email: email || '',
+          phone: phone || '',
+          degree: degree || '',
+          cgpa: parseFloat(ugStr) || 0,
+          college: drive.college,
+          gender: genderNorm as 'Male' | 'Female' | 'Other',
+          registrationNumber: regNum,
+          specialization,
+          dateOfBirth,
+          githubUrl,
+          linkedinUrl,
+          resumeUrl,
+          codingPlatformUrls,
+          tenth: parseFloat(tenthStr) || undefined,
+          twelfth: parseFloat(twelfthStr) || undefined,
+          diploma: parseFloat(diplomaStr) || undefined,
+          ugMarks: parseFloat(ugStr) || undefined,
+          pgMarks: parseFloat(pgStr) || undefined,
+          backlogHistory: parseInt(backlogHistStr) || undefined,
+          currentBacklogs: parseInt(currentBacklogStr) || undefined,
+        });
+        preview.push({ name: name || '', email: email || '', degree: degree || '', registrationNumber: regNum || '' });
+      });
+
+      setCsvParsedData(parsed);
+      setCsvPreviewRows(preview);
+      setCsvPreviewOpen(true);
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmCsvImport = () => {
+    if (!drive) return;
+    const imported = bulkImportCandidates(drive.id, csvParsedData);
+    setCsvPreviewOpen(false);
+    setCsvParsedData([]);
+    setCsvPreviewRows([]);
+    if (imported > 0) {
+      toast.success(`${imported} student${imported !== 1 ? 's' : ''} imported successfully.`);
+    } else {
+      toast.info('No new students added — all emails already exist in the system.');
+    }
+  };
+
   // inline name save
   const saveInlineName = () => {
     if (!drive || !draftName.trim()) return;
@@ -503,6 +610,9 @@ export const TestDetail: React.FC = () => {
     setDraftDriveDate(drive.date);
     setDraftDriveLocation(drive.location);
     setDraftDriveStatus(drive.status);
+    setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
+    setDraftDriveExamStart(drive.examStartTime ?? '');
+    setDraftDriveExamEnd(drive.examEndTime ?? '');
     setDraftDriveTarget(String(drive.targetHiring));
     setDraftDriveSpocName(drive.spocName);
     setDraftDriveSpocContact(drive.spocContact);
@@ -518,6 +628,9 @@ export const TestDetail: React.FC = () => {
       date: draftDriveDate,
       location: draftDriveLocation,
       status: draftDriveStatus,
+      accessMode: draftDriveAccessMode,
+      examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
+      examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
       targetHiring: parseInt(draftDriveTarget) || 0,
       spocName: draftDriveSpocName,
       spocContact: draftDriveSpocContact,
@@ -658,6 +771,27 @@ export const TestDetail: React.FC = () => {
         );
       },
     },
+    ...(drive?.accessMode === 'in-person' ? [{
+      header: 'ATTENDANCE',
+      accessor: 'id' as const,
+      sortable: false,
+      render: (row: CandidateRow) => {
+        const candidate = driveCandidates.find(c => c.id === row.id);
+        if (!candidate) return null;
+        const present = candidate.attendanceMarked === true;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-7 text-xs gap-1 px-2 ${present ? 'text-green-600' : 'text-muted-foreground'}`}
+            onClick={() => markAttendance(candidate.id, !present)}
+          >
+            {present ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+            {present ? 'Present' : 'Absent'}
+          </Button>
+        );
+      },
+    }] : []),
     {
       header: 'EVALUATE',
       accessor: 'id' as const,
@@ -709,7 +843,11 @@ export const TestDetail: React.FC = () => {
     );
   }
 
-  const AVAILABLE_SECTIONS: AssessmentSection['name'][] = ['Aptitude', 'Logical Reasoning', 'Technical', 'Coding', 'Verbal'];
+  const AVAILABLE_SECTIONS: AssessmentSection['name'][] = [
+    'Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS',
+    'Subjective', 'SQL Query', 'Coding',
+    'Aptitude', 'Logical Reasoning', 'Technical', 'Verbal',
+  ];
 
   const TAB_TRIGGER = 'flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent';
 
@@ -735,6 +873,13 @@ export const TestDetail: React.FC = () => {
           ) : (
             <span className="truncate max-w-[320px]">{drive.name}</span>
           )}
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            drive.status === 'Published' || drive.status === 'Ongoing'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : drive.status === 'Completed'
+              ? 'bg-gray-100 text-gray-500 border-gray-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>{drive.status}</span>
           <button
             title="Edit drive name"
             onClick={() => { setDraftName(drive.name); setEditingName(true); }}
@@ -757,10 +902,44 @@ export const TestDetail: React.FC = () => {
           <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
             <Settings className="h-4 w-4" />
           </Button>
-          <Button className="gap-2" onClick={() => setActiveTab('invite')}>
-            <UserPlus className="h-4 w-4" />
-            Invite candidates
-          </Button>
+          {drive.status === 'Draft' ? (
+            <Button
+              size="sm"
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                updateDrive({ ...drive, status: 'Published' });
+                if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
+                toast.success('Test published — candidates can now take the assessment');
+              }}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Done
+            </Button>
+          ) : (drive.status === 'Published' || drive.status === 'Ongoing') ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          ) : (
+            <>
+              <span className="text-xs font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+                Completed
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => {
+                  updateDrive({ ...drive, status: 'Published' });
+                  if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
+                  toast.success('Test reopened — candidates can take the assessment again');
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Reopen
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -831,25 +1010,6 @@ export const TestDetail: React.FC = () => {
               <RefreshCw className="h-3 w-3" />
             </Button>
           </div>
-          <div className="w-px h-4 bg-border" />
-          {/* Assessment name → opens edit */}
-          <span className="text-xs text-muted-foreground">
-            Assessment:{' '}
-            <button
-              className="font-medium text-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
-              onClick={openAsmEdit}
-              title="Edit assessment"
-            >
-              {linkedAssessment.name}
-            </button>
-            <button
-              className="ml-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={openAsmEdit}
-              title="Edit assessment"
-            >
-              <Pencil className="inline h-3 w-3" />
-            </button>
-          </span>
         </div>
       )}
 
@@ -911,58 +1071,96 @@ export const TestDetail: React.FC = () => {
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {sections.map((sec, sIdx) => {
-                    const collapsed = collapsedSections.has(sec.topic);
-                    const sectionMarks = sec.questions.reduce((s, q) => s + q.marks, 0);
+                <div className="space-y-4">
+                  {SESSIONS.map(session => {
+                    const sessionSections = sections.filter(s => session.topics.includes(s.topic));
+                    if (sessionSections.length === 0) return null;
+                    const sessionMarks = sessionSections.reduce((sum, s) => sum + s.questions.reduce((a, q) => a + q.marks, 0), 0);
+                    const sessionQCount = sessionSections.reduce((sum, s) => sum + s.questions.length, 0);
                     return (
-                      <div key={sec.topic} className="border rounded-lg overflow-hidden">
-                        <button
-                          className="w-full flex items-center justify-between px-4 py-3 bg-muted/40 hover:bg-muted/60 text-left"
-                          onClick={() => toggleSection(sec.topic)}
-                        >
-                          <div className="flex items-center gap-3">
-                            {collapsed
-                              ? <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                            <span className="font-semibold text-sm">{sIdx + 1}. {sec.topic}</span>
-                          </div>
+                      <div key={session.name} className="border rounded-xl overflow-hidden">
+                        <div className="px-4 py-3 bg-slate-100 dark:bg-slate-800 flex items-center justify-between">
+                          <span className="font-bold text-sm">{session.name}</span>
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>Total Marks: {sectionMarks}</span>
-                            <span>{sec.questions.length} question{sec.questions.length !== 1 ? 's' : ''}</span>
+                            <span>{sessionMarks} marks</span>
+                            <span>{sessionQCount} question{sessionQCount !== 1 ? 's' : ''}</span>
                           </div>
-                        </button>
-
-                        {!collapsed && (
-                          <div className="divide-y">
-                            {sec.questions.map((q, qIdx) => (
-                              <div
-                                key={q.id}
-                                className={`group flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer
-                                  ${selectedQuestion?.id === q.id ? 'bg-primary/5 border-l-2 border-primary' : 'hover:bg-muted/30'}`}
-                                onClick={() => setSelectedQuestion(q)}
-                              >
-                                <span className="text-xs text-muted-foreground w-6 shrink-0">#{qIdx + 1}</span>
-                                <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${topicColor(q.topic)}`}>
-                                  {q.topic}
-                                </span>
-                                <span className="text-sm flex-1 truncate">{q.text}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">{q.type}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">{q.marks} pts</span>
-                                <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${difficultyColor(q.difficulty)}`}>
-                                  {q.difficulty}
-                                </span>
+                        </div>
+                        <div className="space-y-0 divide-y">
+                          {sessionSections.map((sec, sIdx) => {
+                            const collapsed = collapsedSections.has(sec.topic);
+                            const sectionMarks = sec.questions.reduce((s, q) => s + q.marks, 0);
+                            return (
+                              <div key={sec.topic}>
                                 <button
-                                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 hover:text-red-500"
-                                  title="Remove question"
-                                  onClick={e => { e.stopPropagation(); removeQuestion(q.id); }}
+                                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/40 hover:bg-muted/60 text-left"
+                                  onClick={() => toggleSection(sec.topic)}
                                 >
-                                  <X className="h-3.5 w-3.5" />
+                                  <div className="flex items-center gap-3">
+                                    {collapsed
+                                      ? <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                      : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                                    <span className="font-semibold text-sm">{sIdx + 1}. {sec.topic}</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                    <span>Total Marks: {sectionMarks}</span>
+                                    <span>{sec.questions.length} question{sec.questions.length !== 1 ? 's' : ''}</span>
+                                  </div>
                                 </button>
+
+                                {!collapsed && (
+                                  <div className="divide-y">
+                                    {sec.questions.map((q, qIdx) => (
+                                      <div
+                                        key={q.id}
+                                        className={`group flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer
+                                          ${selectedQuestion?.id === q.id ? 'bg-primary/5 border-l-2 border-primary' : 'hover:bg-muted/30'}`}
+                                        onClick={() => { setSelectedQuestion(q); setEditingQuestion(false); }}
+                                      >
+                                        <span className="text-xs text-muted-foreground w-6 shrink-0">#{qIdx + 1}</span>
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${topicColor(q.topic)}`}>
+                                          {q.topic}
+                                        </span>
+                                        <span className="text-sm flex-1 truncate">{q.text}</span>
+                                        <span className="text-xs text-muted-foreground shrink-0">{q.type}</span>
+                                        <span className="text-xs text-muted-foreground shrink-0">{q.marks} pts</span>
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${difficultyColor(q.difficulty)}`}>
+                                          {q.difficulty}
+                                        </span>
+                                        <button
+                                          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50 hover:text-blue-500"
+                                          title="Edit question"
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            setSelectedQuestion(q);
+                                            setEditDraft({
+                                              text: q.text,
+                                              difficulty: q.difficulty,
+                                              marks: q.marks,
+                                              tags: [...q.tags],
+                                              options: q.options ? [...q.options] : undefined,
+                                              correctOptions: q.correctOptions ? [...q.correctOptions] : undefined,
+                                            });
+                                            setEditingQuestion(true);
+                                          }}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 hover:text-red-500"
+                                          title="Remove question"
+                                          onClick={e => { e.stopPropagation(); removeQuestion(q.id); }}
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
@@ -970,83 +1168,203 @@ export const TestDetail: React.FC = () => {
               )}
             </div>
 
-            {/* Right: question preview */}
+            {/* Right: question preview / edit */}
             {selectedQuestion && (
               <div className="w-80 shrink-0 border rounded-lg self-start sticky top-24 overflow-hidden">
-                <div className="flex items-start justify-between gap-2 p-4 border-b">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <p className="text-xs text-muted-foreground">Section: {selectedQuestion.topic}</p>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
-                        selectedQuestion.difficulty === 'Easy' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
-                        selectedQuestion.difficulty === 'Medium' ? 'text-amber-600 bg-amber-50 border-amber-200' :
-                        'text-red-600 bg-red-50 border-red-200'
-                      }`}>{selectedQuestion.difficulty}</span>
-                      <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">
-                        {selectedQuestion.marks} pts
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-sm leading-snug">
-                      {selectedQuestion.title || selectedQuestion.text}
-                    </h3>
+                {/* Panel header */}
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-b bg-muted/30">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {editingQuestion ? 'Editing Question' : 'Question Preview'}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {!editingQuestion && (
+                      <button
+                        title="Edit this question"
+                        className="text-muted-foreground hover:text-primary transition-colors p-1 rounded"
+                        onClick={() => {
+                          setEditDraft({
+                            text: selectedQuestion.text,
+                            difficulty: selectedQuestion.difficulty,
+                            marks: selectedQuestion.marks,
+                            tags: [...selectedQuestion.tags],
+                            options: selectedQuestion.options ? [...selectedQuestion.options] : undefined,
+                            correctOptions: selectedQuestion.correctOptions ? [...selectedQuestion.correctOptions] : undefined,
+                          });
+                          setEditingQuestion(true);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      className="text-muted-foreground hover:text-foreground shrink-0 p-1 rounded"
+                      onClick={() => { setSelectedQuestion(null); setEditingQuestion(false); }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    className="text-muted-foreground hover:text-foreground shrink-0"
-                    onClick={() => setSelectedQuestion(null)}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
 
-                {selectedQuestion.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 px-4 py-3 border-b">
-                    {selectedQuestion.tags.map(tag => (
-                      <span key={tag} className="text-xs bg-muted px-2 py-0.5 rounded">{tag}</span>
-                    ))}
-                  </div>
-                )}
-
-                {selectedQuestion.type === 'Coding' && (
-                  <div className="max-h-[60vh]">
-                    <CodingQuestionPanel question={selectedQuestion} />
-                  </div>
-                )}
-
-                {selectedQuestion.options && (
-                  <div className="p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                      Options {selectedQuestion.type === 'Multiple Select' ? '(Multiple Correct)' : ''}
-                    </p>
-                    {selectedQuestion.options.map((opt, i) => {
-                      const isCorrect = selectedQuestion.correctOptions?.includes(i);
-                      return (
-                        <div
-                          key={i}
-                          className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
-                            isCorrect ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-transparent'
-                          }`}
+                {editingQuestion ? (
+                  /* ── Edit form ── */
+                  <div className="p-4 space-y-3 overflow-y-auto max-h-[75vh]">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Question Text</Label>
+                      <Textarea
+                        rows={4}
+                        value={editDraft.text ?? ''}
+                        onChange={e => setEditDraft(d => ({ ...d, text: e.target.value }))}
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Difficulty</Label>
+                        <Select
+                          value={editDraft.difficulty ?? selectedQuestion.difficulty}
+                          onValueChange={v => setEditDraft(d => ({ ...d, difficulty: v as Question['difficulty'] }))}
                         >
-                          <span className={isCorrect ? 'text-emerald-700 font-medium' : 'text-foreground'}>
-                            {opt}
-                          </span>
-                          {isCorrect && (
-                            <span className="shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
-                              ✓ Correct
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Easy">Easy</SelectItem>
+                            <SelectItem value="Medium">Medium</SelectItem>
+                            <SelectItem value="Hard">Hard</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Marks</Label>
+                        <Input
+                          type="number"
+                          className="h-8 text-xs"
+                          value={editDraft.marks ?? selectedQuestion.marks}
+                          onChange={e => setEditDraft(d => ({ ...d, marks: parseInt(e.target.value) || 1 }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Tags (comma separated)</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        value={(editDraft.tags ?? selectedQuestion.tags).join(', ')}
+                        onChange={e => setEditDraft(d => ({ ...d, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))}
+                      />
+                    </div>
+                    {editDraft.options && (
+                      <div className="space-y-2">
+                        <Label className="text-xs">Options (click radio to set correct)</Label>
+                        {editDraft.options.map((opt, i) => {
+                          const isCorrect = (editDraft.correctOptions ?? []).includes(i);
+                          return (
+                            <div key={i} className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditDraft(d => ({ ...d, correctOptions: [i] }))}
+                                className={`h-4 w-4 rounded-full border-2 shrink-0 transition-colors ${isCorrect ? 'border-emerald-600 bg-emerald-600' : 'border-muted-foreground'}`}
+                              />
+                              <Input
+                                className="h-7 text-xs"
+                                value={opt}
+                                onChange={e => setEditDraft(d => {
+                                  const opts = [...(d.options ?? [])];
+                                  opts[i] = e.target.value;
+                                  return { ...d, options: opts };
+                                })}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          updateQuestion(selectedQuestion.id, editDraft);
+                          setEditingQuestion(false);
+                          toast.success('Question updated — live for all candidates');
+                        }}
+                      >
+                        <Save className="h-3.5 w-3.5 mr-1.5" />
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingQuestion(false)}>
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                )}
+                ) : (
+                  /* ── View mode ── */
+                  <>
+                    <div className="p-4 border-b">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <p className="text-xs text-muted-foreground">Section: {selectedQuestion.topic}</p>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                          selectedQuestion.difficulty === 'Easy' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
+                          selectedQuestion.difficulty === 'Medium' ? 'text-amber-600 bg-amber-50 border-amber-200' :
+                          'text-red-600 bg-red-50 border-red-200'
+                        }`}>{selectedQuestion.difficulty}</span>
+                        <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">
+                          {selectedQuestion.marks} pts
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-sm leading-snug">
+                        {selectedQuestion.title || selectedQuestion.text}
+                      </h3>
+                    </div>
 
-                {['SQL', 'Descriptive'].includes(selectedQuestion.type) && (
-                  <div className="p-4 space-y-2">
-                    <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-2 py-0.5 rounded">
-                      {selectedQuestion.type === 'SQL' ? 'SQL Query' : 'Descriptive'}
-                    </span>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{selectedQuestion.text}</p>
-                  </div>
+                    {selectedQuestion.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 px-4 py-3 border-b">
+                        {selectedQuestion.tags.map(tag => (
+                          <span key={tag} className="text-xs bg-muted px-2 py-0.5 rounded">{tag}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {selectedQuestion.type === 'Coding' && (
+                      <div className="max-h-[60vh]">
+                        <CodingQuestionPanel question={selectedQuestion} />
+                      </div>
+                    )}
+
+                    {selectedQuestion.options && (
+                      <div className="p-4 space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                          Options {selectedQuestion.type === 'Multiple Select' ? '(Multiple Correct)' : ''}
+                        </p>
+                        {selectedQuestion.options.map((opt, i) => {
+                          const isCorrect = selectedQuestion.correctOptions?.includes(i);
+                          return (
+                            <div
+                              key={i}
+                              className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
+                                isCorrect ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-transparent'
+                              }`}
+                            >
+                              <span className={isCorrect ? 'text-emerald-700 font-medium' : 'text-foreground'}>
+                                {opt}
+                              </span>
+                              {isCorrect && (
+                                <span className="shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                  ✓ Correct
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {['SQL', 'Descriptive'].includes(selectedQuestion.type) && (
+                      <div className="p-4 space-y-2">
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-2 py-0.5 rounded">
+                          {selectedQuestion.type === 'SQL' ? 'SQL Query' : 'Descriptive'}
+                        </span>
+                        <p className="text-sm text-muted-foreground leading-relaxed">{selectedQuestion.text}</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1098,13 +1416,41 @@ export const TestDetail: React.FC = () => {
                   <span className="font-semibold text-foreground">{drive.college}</span>
                 </div>
 
+                {/* Access mode indicator */}
+                <div className={`rounded-lg px-3 py-2 text-xs flex items-start gap-2 ${drive.accessMode === 'remote' ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-800'}`}>
+                  <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  {drive.accessMode === 'remote'
+                    ? 'Remote drive — each candidate receives the test link + their individual password via email.'
+                    : 'In-Person drive — share the test link and shared password verbally in the lab.'
+                  }
+                </div>
+
                 {inviteSent ? (
-                  <Alert className="border-emerald-500 bg-emerald-50 text-emerald-800">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <AlertDescription className="font-semibold">
-                      Invitations dispatched successfully!
-                    </AlertDescription>
-                  </Alert>
+                  <div className="space-y-2">
+                    <Alert className="border-emerald-500 bg-emerald-50 text-emerald-800">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <AlertDescription className="font-semibold">
+                        Invitations dispatched successfully!
+                      </AlertDescription>
+                    </Alert>
+                    {drive.accessMode === 'remote' && (
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2 text-sm"
+                        onClick={() => {
+                          const count = sendRemoteInvites(drive.id);
+                          if (count > 0) {
+                            toast.success(`Test invite emails sent to ${count} candidate${count !== 1 ? 's' : ''}.`);
+                          } else {
+                            toast.info('All candidates already have emails sent.');
+                          }
+                        }}
+                      >
+                        <Mail className="h-4 w-4" />
+                        Send Test Invites via Email
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   <Button
                     className="w-full gap-2"
@@ -1112,7 +1458,7 @@ export const TestDetail: React.FC = () => {
                     onClick={handleInvite}
                   >
                     <Send className="h-4 w-4" />
-                    Send Invitations
+                    {drive.accessMode === 'remote' ? 'Generate Individual Passwords' : 'Send Invitations'}
                   </Button>
                 )}
               </CardContent>
@@ -1147,6 +1493,9 @@ export const TestDetail: React.FC = () => {
                           <th className="text-left py-2 pr-4 font-medium">Candidate</th>
                           <th className="text-left py-2 pr-4 font-medium">ID</th>
                           <th className="text-left py-2 pr-4 font-medium">Password</th>
+                          {drive.accessMode === 'remote' && (
+                            <th className="text-left py-2 pr-4 font-medium">Email</th>
+                          )}
                           <th className="text-left py-2 font-medium">Status</th>
                         </tr>
                       </thead>
@@ -1173,6 +1522,17 @@ export const TestDetail: React.FC = () => {
                                 )}
                               </div>
                             </td>
+                            {drive.accessMode === 'remote' && (
+                              <td className="py-2.5 pr-4">
+                                {c.inviteEmailSentAt ? (
+                                  <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                    <Mail className="h-3 w-3" /> Sent
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Pending</span>
+                                )}
+                              </td>
+                            )}
                             <td className="py-2.5">
                               <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
                                 c.assessmentStatus === 'Completed' ? 'bg-green-100 text-green-700' :
@@ -1382,6 +1742,46 @@ export const TestDetail: React.FC = () => {
 
         {/* ── Candidates Tab ── */}
         <TabsContent value="candidates" className="m-0 p-6 space-y-6">
+          {/* Toolbar: Import + attendance controls */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              {drive?.accessMode === 'in-person' && driveCandidates.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={() => {
+                    driveCandidates.forEach(c => {
+                      if (!c.attendanceMarked) markAttendance(c.id, true);
+                    });
+                    toast.success('All candidates marked as present.');
+                  }}
+                >
+                  <UserCheck className="h-3.5 w-3.5" />
+                  Mark All Present
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleCsvFileSelect}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-xs"
+                onClick={() => csvInputRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Import Students (CSV)
+              </Button>
+            </div>
+          </div>
+
           <div className="border rounded-lg p-4">
             <h3 className="font-semibold text-sm mb-4">Overview</h3>
             <div className="grid grid-cols-3 gap-6">
@@ -1700,6 +2100,41 @@ export const TestDetail: React.FC = () => {
         </SheetContent>
       </Sheet>
 
+      {/* ── CSV Import Preview Sheet ── */}
+      <Sheet open={csvPreviewOpen} onOpenChange={v => { if (!v) setCsvPreviewOpen(false); }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Import Students</SheetTitle>
+            <p className="text-sm text-muted-foreground">
+              {csvPreviewRows.length} student{csvPreviewRows.length !== 1 ? 's' : ''} found in CSV. Review before importing.
+            </p>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+            {csvPreviewRows.map((r, i) => (
+              <div key={i} className="flex items-start justify-between border rounded px-3 py-2 text-sm">
+                <div>
+                  <p className="font-medium">{r.name}</p>
+                  <p className="text-xs text-muted-foreground">{r.email}</p>
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  <p>{r.degree}</p>
+                  {r.registrationNumber && <p>#{r.registrationNumber}</p>}
+                </div>
+              </div>
+            ))}
+            {csvPreviewRows.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-8">No valid rows found in CSV.</p>
+            )}
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setCsvPreviewOpen(false)}>Cancel</Button>
+            <Button className="flex-1" disabled={csvPreviewRows.length === 0} onClick={confirmCsvImport}>
+              Import {csvPreviewRows.length} Student{csvPreviewRows.length !== 1 ? 's' : ''}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
       {/* ── Edit Drive Sheet ── */}
       <Sheet open={driveEditOpen} onOpenChange={v => { if (!v) setDriveEditOpen(false); }}>
         <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
@@ -1732,6 +2167,37 @@ export const TestDetail: React.FC = () => {
               </Select>
             </div>
             <div className="space-y-1.5">
+              <Label>Access Mode</Label>
+              <Select value={draftDriveAccessMode} onValueChange={v => setDraftDriveAccessMode(v as CampusDrive['accessMode'])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="in-person">In-Person (team visits college)</SelectItem>
+                  <SelectItem value="remote">Remote (online pre-placement)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {draftDriveAccessMode === 'in-person'
+                  ? 'Students log in with the shared test password given in the lab.'
+                  : 'Students receive the test link via email and log in with their individual password.'}
+              </p>
+            </div>
+            {draftDriveAccessMode === 'in-person' && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Test Window (optional)</p>
+                <p className="text-xs text-muted-foreground">If set, the test link will only be accessible on the exam date within this time range.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Start Time</Label>
+                    <Input type="time" value={draftDriveExamStart} onChange={e => setDraftDriveExamStart(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">End Time</Label>
+                    <Input type="time" value={draftDriveExamEnd} onChange={e => setDraftDriveExamEnd(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
               <Label>Target Hiring</Label>
               <Input type="number" value={draftDriveTarget} onChange={e => setDraftDriveTarget(e.target.value)} />
             </div>
@@ -1760,7 +2226,7 @@ export const TestDetail: React.FC = () => {
       </Sheet>
 
       {/* ── Edit Assessment Sheet ── */}
-      <Sheet open={asmEditOpen} onOpenChange={v => { if (!v) setAsmEditOpen(false); }}>
+      <Sheet open={asmEditOpen} onOpenChange={v => { if (v) openAsmEdit(); else setAsmEditOpen(false); }}>
         <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Edit Assessment</SheetTitle>

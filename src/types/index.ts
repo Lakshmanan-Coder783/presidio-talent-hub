@@ -11,9 +11,12 @@ export interface CampusDrive {
   spocContact: string;
   description: string;
   status: 'Draft' | 'Published' | 'Completed' | 'Ongoing';
+  accessMode: 'in-person' | 'remote';
   questionIds?: string[];
   assessmentId?: string;
   examDate?: string;
+  examStartTime?: string; // HH:mm, used for in-person time-window enforcement
+  examEndTime?: string;   // HH:mm
   experienceSettings?: {
     testWindow: 'anytime' | 'scheduled';
     reminderEnabled: boolean;
@@ -47,16 +50,43 @@ export interface Candidate {
     technical?: number;
     coding?: number;
     verbal?: number;
+    quants?: number;
+    cpp?: number;
+    oops?: number;
+    sql?: number;
+    htmlcssjs?: number;
+    subjective?: number;
+    sqlQuery?: number;
   };
   gender: 'Male' | 'Female' | 'Other';
   interviewStatus: 'Not Scheduled' | 'Scheduled' | 'Ongoing' | 'Passed' | 'Failed';
   interviewFeedback?: string;
   offerStatus: 'None' | 'Offered' | 'Accepted' | 'Declined' | 'Joined';
   funnelStage: 'Applied' | 'Online Test' | 'Interview' | 'Coding Exercise' | 'Whiteboard Interview' | 'Offered' | 'Joined';
+  // Extended fields from student database import (PDF format)
+  registrationNumber?: string;
+  specialization?: string;
+  dateOfBirth?: string;
+  githubUrl?: string;
+  linkedinUrl?: string;
+  resumeUrl?: string;
+  codingPlatformUrls?: string;
+  tenth?: number;
+  twelfth?: number;
+  diploma?: number;
+  ugMarks?: number;
+  pgMarks?: number;
+  backlogHistory?: number;
+  currentBacklogs?: number;
+  // Attendance & invite tracking
+  attendanceMarked?: boolean;
+  inviteEmailSentAt?: string;
 }
 
 export interface AssessmentSection {
-  name: 'Aptitude' | 'Logical Reasoning' | 'Technical' | 'Coding' | 'Verbal';
+  name: 'Aptitude' | 'Logical Reasoning' | 'Technical' | 'Coding' | 'Verbal'
+      | 'Quants' | 'Logical' | 'C/C++' | 'OOPs' | 'SQL' | 'HTML/CSS/JS'
+      | 'Subjective' | 'SQL Query';
   questionCount: number;
   marks: number;
 }
@@ -85,7 +115,9 @@ export interface Question {
   id: string;
   text: string;
   type: 'MCQ' | 'Multiple Select' | 'Coding' | 'SQL' | 'Descriptive';
-  topic: 'Aptitude' | 'Logical Reasoning' | 'Technical' | 'Coding' | 'Verbal';
+  topic: 'Aptitude' | 'Logical Reasoning' | 'Technical' | 'Coding' | 'Verbal'
+       | 'Quants' | 'Logical' | 'C/C++' | 'OOPs' | 'SQL' | 'HTML/CSS/JS'
+       | 'Subjective' | 'SQL Query';
   difficulty: 'Easy' | 'Medium' | 'Hard';
   marks: number;
   tags: string[];

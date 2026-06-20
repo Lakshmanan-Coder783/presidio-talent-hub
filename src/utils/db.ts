@@ -432,40 +432,187 @@ export function generateMockDatabase(): Database {
     });
   }
 
+  // ── Blueprint question bank ──────────────────────────────────────────────────
+  const quantsQ = [
+    { text: 'A man walks 4 km north, then 3 km east. How far is he from the start?', opt: ['5 km', '7 km', '4 km', '6 km'], ans: [0] },
+    { text: 'The ratio of A\'s age to B\'s age is 3:5. If B is 25 years old, what is A\'s age?', opt: ['15 years', '12 years', '18 years', '20 years'], ans: [0] },
+    { text: 'A sum of Rs 8000 amounts to Rs 9261 in 3 years at compound interest. Find the rate per annum.', opt: ['5%', '4%', '6%', '3%'], ans: [0] },
+    { text: 'If x + y = 10 and xy = 21, find x² + y²?', opt: ['58', '60', '52', '64'], ans: [0] },
+    { text: 'A car travels 240 km at 60 km/h and returns at 80 km/h. What is the average speed?', opt: ['68.57 km/h', '70 km/h', '72 km/h', '66 km/h'], ans: [0] },
+    { text: 'In how many ways can 5 students be seated in a row?', opt: ['120', '60', '24', '100'], ans: [0] },
+    { text: 'Find the simple interest on Rs 5000 at 6% per annum for 2 years.', opt: ['Rs 600', 'Rs 500', 'Rs 700', 'Rs 550'], ans: [0] },
+    { text: 'A tap fills a tank in 20 minutes and drains it in 30 minutes. If both are open, how long to fill?', opt: ['60 min', '50 min', '40 min', '45 min'], ans: [0] },
+    { text: 'What is the smallest prime number greater than 50?', opt: ['53', '51', '57', '59'], ans: [0] },
+    { text: 'If 3x + 7 = 22, what is x?', opt: ['5', '4', '6', '3'], ans: [0] },
+  ];
+
+  const logicalQ = [
+    { text: 'If CAT = 24, then DOG = ?', opt: ['26', '25', '27', '28'], ans: [0] },
+    { text: 'Choose the odd one out: Apple, Mango, Potato, Grapes.', opt: ['Apple', 'Mango', 'Potato', 'Grapes'], ans: [2] },
+    { text: 'If DOCTOR is coded as FQEVQT, how is NURSE coded?', opt: ['PWUUG', 'PVUUG', 'PWTTG', 'PVTTG'], ans: [0] },
+    { text: 'A is taller than B. B is taller than C. Who is the shortest?', opt: ['A', 'B', 'C', 'Cannot determine'], ans: [2] },
+    { text: 'In a row of 10 students, Arun is 4th from left. What is his position from the right?', opt: ['7th', '6th', '8th', '5th'], ans: [0] },
+    { text: 'All birds can fly. Penguin is a bird. Therefore?', opt: ['Penguin can fly', 'Penguin cannot fly', 'Some birds cannot fly', 'Cannot conclude'], ans: [0] },
+    { text: 'Find the missing number: 4, 9, 16, 25, ?', opt: ['36', '30', '32', '34'], ans: [0] },
+    { text: 'Tuesday falls 3 days after Sunday. What day falls 2 days before Friday?', opt: ['Wednesday', 'Thursday', 'Tuesday', 'Monday'], ans: [0] },
+    { text: 'If + means ×, × means ÷, ÷ means −, what is 6 + 3 × 2 ÷ 1?', opt: ['8', '10', '9', '7'], ans: [0] },
+    { text: 'P is the father of Q. Q is the mother of R. What is P to R?', opt: ['Grandfather', 'Uncle', 'Father', 'Brother'], ans: [0] },
+  ];
+
+  const cppQ = [
+    { text: 'Which of the following is the correct syntax for a pointer declaration in C++?', opt: ['int *p;', 'int p*;', '*int p;', 'pointer int p;'], ans: [0] },
+    { text: 'What is the output of: int x = 5; cout << x++;?', opt: ['5', '6', '4', 'Error'], ans: [0] },
+    { text: 'Which storage class in C has the default lifetime for local variables?', opt: ['auto', 'static', 'register', 'extern'], ans: [0] },
+    { text: 'What does the "static" keyword do when applied to a local variable in C?', opt: ['Preserves value between calls', 'Makes it global', 'Doubles its size', 'Makes it constant'], ans: [0] },
+    { text: 'Which operator is used to access members of a structure through a pointer?', opt: ['->', '.', '::', '*'], ans: [0] },
+    { text: 'What is the size of an int on a 32-bit system (in bytes)?', opt: ['4', '2', '8', '1'], ans: [0] },
+    { text: 'Which header file is required for using printf and scanf in C?', opt: ['<stdio.h>', '<stdlib.h>', '<string.h>', '<math.h>'], ans: [0] },
+    { text: 'What does malloc() return if memory allocation fails?', opt: ['NULL', '0', '-1', 'Error'], ans: [0] },
+    { text: 'Which of the following is NOT a valid loop in C?', opt: ['foreach', 'for', 'while', 'do-while'], ans: [0] },
+    { text: 'What is the output of: printf("%d", sizeof(char));?', opt: ['1', '2', '4', '8'], ans: [0] },
+  ];
+
+  const oopsQ = [
+    { text: 'Which OOP principle allows a subclass to provide a specific implementation of a method already defined in the parent class?', opt: ['Overriding', 'Overloading', 'Encapsulation', 'Abstraction'], ans: [0] },
+    { text: 'Which of the following best describes Encapsulation?', opt: ['Binding data and methods together', 'Creating multiple objects', 'Inheriting properties', 'Hiding implementation details only'], ans: [0] },
+    { text: 'What is the difference between method overloading and method overriding?', opt: ['Overloading: same name, diff params; Overriding: redefine in subclass', 'Overloading: redefine in subclass; Overriding: same name, diff params', 'Both are the same', 'Overloading is compile-time; Overriding is static'], ans: [0] },
+    { text: 'Which keyword is used to prevent inheritance in Java?', opt: ['final', 'static', 'private', 'abstract'], ans: [0] },
+    { text: 'What is Polymorphism in OOP?', opt: ['Ability to take multiple forms', 'Hiding data', 'Single inheritance', 'Multiple constructors'], ans: [0] },
+    { text: 'In C++, which type of inheritance leads to the Diamond Problem?', opt: ['Multiple Inheritance', 'Single Inheritance', 'Multilevel Inheritance', 'Hierarchical Inheritance'], ans: [0] },
+    { text: 'Which OOP concept is used to hide the internal state and require all interaction through methods?', opt: ['Encapsulation', 'Polymorphism', 'Abstraction', 'Inheritance'], ans: [0] },
+    { text: 'What is a constructor?', opt: ['Special method called when object is created', 'A method to destroy objects', 'A static method only', 'An abstract method'], ans: [0] },
+    { text: 'Which of the following is an example of runtime polymorphism?', opt: ['Virtual functions', 'Function overloading', 'Constructor overloading', 'Operator overloading'], ans: [0] },
+    { text: 'What does the "abstract" keyword indicate in a class?', opt: ['Class cannot be instantiated', 'Class is private', 'Class has no methods', 'Class is final'], ans: [0] },
+  ];
+
+  const sqlMcqQ = [
+    { text: 'Which SQL statement is used to retrieve data from a database?', opt: ['SELECT', 'GET', 'FETCH', 'READ'], ans: [0] },
+    { text: 'What is the 3rd Normal Form (3NF) in database design concerned with?', opt: ['Removing transitive dependencies', 'Removing partial dependencies', 'Adding primary keys', 'Normalising foreign keys'], ans: [0] },
+    { text: 'Which of the following is a necessary condition for a deadlock to occur?', opt: ['Circular wait', 'Mutual exclusion only', 'Preemption', 'Resource release'], ans: [0] },
+    { text: 'Which SQL clause is used to filter groups?', opt: ['HAVING', 'WHERE', 'GROUP BY', 'ORDER BY'], ans: [0] },
+    { text: 'What does the DISTINCT keyword do in SQL?', opt: ['Removes duplicate rows', 'Sorts data', 'Filters rows', 'Groups data'], ans: [0] },
+    { text: 'Which JOIN returns only matching rows from both tables?', opt: ['INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN'], ans: [0] },
+    { text: 'What is the purpose of a PRIMARY KEY?', opt: ['Uniquely identify each row', 'Link two tables', 'Sort data', 'Create indexes'], ans: [0] },
+    { text: 'Which SQL aggregate function counts the number of rows?', opt: ['COUNT()', 'SUM()', 'AVG()', 'MAX()'], ans: [0] },
+    { text: 'What does a FOREIGN KEY constraint enforce?', opt: ['Referential integrity', 'Uniqueness', 'Not null', 'Default value'], ans: [0] },
+    { text: 'Which SQL command removes all rows from a table without logging individual row deletions?', opt: ['TRUNCATE', 'DELETE', 'DROP', 'REMOVE'], ans: [0] },
+  ];
+
+  const htmljsQ = [
+    { text: 'Which HTML tag is used to create a hyperlink?', opt: ['<a>', '<link>', '<href>', '<url>'], ans: [0] },
+    { text: 'Which CSS property changes the text color?', opt: ['color', 'font-color', 'text-color', 'foreground'], ans: [0] },
+    { text: 'What does the "===  " operator do in JavaScript?', opt: ['Strict equality (value + type)', 'Assigns a value', 'Loose equality', 'Compares only type'], ans: [0] },
+    { text: 'Which HTML attribute specifies an alternate text for an image?', opt: ['alt', 'title', 'src', 'name'], ans: [0] },
+    { text: 'In CSS, which selector targets an element with id="main"?', opt: ['#main', '.main', '*main', 'main'], ans: [0] },
+    { text: 'What does DOM stand for in JavaScript?', opt: ['Document Object Model', 'Data Object Method', 'Display Object Module', 'Document Oriented Method'], ans: [0] },
+    { text: 'Which JavaScript method adds an element to the end of an array?', opt: ['push()', 'pop()', 'shift()', 'unshift()'], ans: [0] },
+    { text: 'What is the correct HTML5 doctype declaration?', opt: ['<!DOCTYPE html>', '<!DOCTYPE HTML5>', '<html doctype>', '<DOCTYPE html>'], ans: [0] },
+    { text: 'Which CSS property is used to make an element invisible but still occupy space?', opt: ['visibility: hidden', 'display: none', 'opacity: 0', 'z-index: -1'], ans: [0] },
+    { text: 'Which of the following is NOT a JavaScript data type?', opt: ['Float', 'String', 'Boolean', 'Number'], ans: [0] },
+  ];
+
+  const subjectiveQ = [
+    'Explain the concept of time complexity and space complexity with an example each. Why is it important to consider both?',
+    'Describe the SOLID principles of object-oriented design. Give a real-world example for any two of them.',
+    'What is the difference between synchronous and asynchronous programming? Give an example of each in any language of your choice.',
+    'Explain the concept of recursion. Write a recursive solution to compute the factorial of a number and trace its execution.',
+    'What is a RESTful API? Describe the key HTTP methods and when each is used.',
+    'Explain how a web browser renders a web page from the moment a URL is typed in the address bar.',
+    'What is the difference between a process and a thread? How does multithreading improve application performance?',
+    'Describe how TCP/IP works. What is the role of the handshake in establishing a connection?',
+  ];
+
+  const sqlQueryQ = [
+    'Write a SQL query to find the second highest salary from an Employee table.',
+    'Write a SQL query to find all employees who earn more than the average salary in their department.',
+    'Write a SQL query using JOIN to list all customers who placed at least one order, along with their total order amount.',
+    'Write a SQL query to find departments where the total headcount exceeds 5 and the average salary is above 50,000.',
+    'Write a SQL query using a window function to rank employees by salary within each department.',
+    'Write a SQL query to find all students who have not submitted any assignment (using NOT EXISTS or LEFT JOIN).',
+    'Write a SQL query to update the status of all orders placed before 2024-01-01 that are still "Pending" to "Closed".',
+    'Write a SQL query to find duplicate records in a table based on a specific column value.',
+  ];
+
+  let nextId = 1501;
+
+  const pushMcq = (topic: Question['topic'], bank: typeof quantsQ, count: number) => {
+    for (let j = 0; j < count; j++) {
+      const q = bank[j % bank.length];
+      const diff: Question['difficulty'] = j % 3 === 0 ? 'Easy' : j % 3 === 1 ? 'Medium' : 'Hard';
+      questions.push({
+        id: `Q-${nextId++}`,
+        text: q.text,
+        type: 'MCQ',
+        topic,
+        difficulty: diff,
+        marks: 1,
+        tags: [topic],
+        options: [...q.opt],
+        correctOptions: [...q.ans],
+      });
+    }
+  };
+
+  pushMcq('Quants', quantsQ, 30);
+  pushMcq('Logical', logicalQ, 30);
+  pushMcq('C/C++', cppQ, 30);
+  pushMcq('OOPs', oopsQ, 20);
+  pushMcq('SQL', sqlMcqQ, 20);
+  pushMcq('HTML/CSS/JS', htmljsQ, 20);
+
+  for (let j = 0; j < 20; j++) {
+    questions.push({
+      id: `Q-${nextId++}`,
+      text: subjectiveQ[j % subjectiveQ.length],
+      type: 'Descriptive',
+      topic: 'Subjective',
+      difficulty: j % 2 === 0 ? 'Medium' : 'Hard',
+      marks: 5,
+      tags: ['Subjective', 'Theory'],
+    });
+  }
+
+  for (let j = 0; j < 20; j++) {
+    questions.push({
+      id: `Q-${nextId++}`,
+      text: sqlQueryQ[j % sqlQueryQ.length],
+      type: 'SQL',
+      topic: 'SQL Query',
+      difficulty: j % 3 === 0 ? 'Easy' : j % 3 === 1 ? 'Medium' : 'Hard',
+      marks: 10,
+      tags: ['SQL', 'Database', 'Query'],
+    });
+  }
+
   // 2. Generate 50 Campus Drives
   const drives: CampusDrive[] = [];
   for (let i = 1; i <= 50; i++) {
     const college = COLLEGES[i - 1];
     const location = rnd.pick(LOCATIONS);
 
-    let year: number;
-    let status: CampusDrive['status'];
-    if (i <= 12)      { year = 2023; status = 'Completed'; }
-    else if (i <= 25) { year = 2024; status = 'Completed'; }
-    else if (i <= 32) { year = 2025; status = 'Completed'; }
-    else if (i <= 37) { year = 2025; status = 'Published'; }
-    else if (i <= 42) { year = 2026; status = 'Ongoing'; }
-    else if (i <= 46) { year = 2026; status = 'Draft'; }
-    else              { year = 2026; status = 'Published'; }
+    const year = 2026;
+    const status: CampusDrive['status'] = 'Draft';
 
-    // Date matches status: Completed=Jan–Apr, Ongoing=May–Jun, Draft=Aug–Oct, Published=Jul–Dec
-    let month: number;
-    if (status === 'Completed') month = Math.floor(rnd.range(0, 4));
-    else if (status === 'Ongoing') month = Math.floor(rnd.range(4, 6));
-    else if (status === 'Draft') month = Math.floor(rnd.range(7, 10));
-    else month = Math.floor(rnd.range(6, 12));
+    const month = Math.floor(rnd.range(7, 12));
     const date = new Date(year, month, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
 
     const target = Math.floor(rnd.range(10, 50));
     const registered = Math.floor(target * rnd.range(5, 12));
     const selected = Math.floor(registered * rnd.range(0.3, 0.5));
 
-    // Build a deterministic question set for this drive (18 questions across 4 topics)
+    // Build a deterministic question set per the campus blueprint (22 questions, 75 marks)
     const driveQIds: string[] = [
-      ...[0,1,2,3,4].map(k => `Q-${1001 + ((i * 17 + k) % 150)}`),         // Aptitude
-      ...[0,1,2,3,4].map(k => `Q-${1151 + ((i * 13 + k) % 100)}`),         // Logical Reasoning
-      ...[0,1,2,3,4].map(k => `Q-${1251 + ((i * 19 + k) % 150)}`),         // Technical
-      ...[0,1,2].map(k => `Q-${1401 + ((i * 11 + k) % 60)}`),              // Coding
+      // Session 1 – MCQ Round (15 questions, 1 mark each)
+      ...[0,1,2].map(k => `Q-${1501 + ((i * 7  + k) % 30)}`),  // Quants (3)
+      ...[0,1,2].map(k => `Q-${1531 + ((i * 11 + k) % 30)}`),  // Logical (3)
+      ...[0,1,2].map(k => `Q-${1561 + ((i * 13 + k) % 30)}`),  // C/C++ (3)
+      ...[0,1  ].map(k => `Q-${1591 + ((i * 9  + k) % 20)}`),  // OOPs (2)
+      ...[0,1  ].map(k => `Q-${1611 + ((i * 5  + k) % 20)}`),  // SQL MCQ (2)
+      ...[0,1  ].map(k => `Q-${1631 + ((i * 3  + k) % 20)}`),  // HTML/CSS/JS (2)
+      // Session 2 – Practical Round (7 questions, 60 marks)
+      ...[0,1  ].map(k => `Q-${1651 + ((i * 17 + k) % 20)}`),  // Subjective (2)
+      ...[0,1  ].map(k => `Q-${1671 + ((i * 19 + k) % 20)}`),  // SQL Query (2)
+      ...[0,1,2].map(k => `Q-${1401 + ((i * 11 + k) % 60)}`),  // Coding/Programming (3)
     ];
 
     drives.push({
@@ -481,6 +628,7 @@ export function generateMockDatabase(): Database {
       spocContact: `+91 ${Math.floor(rnd.range(7000000000, 9999999999))}`,
       description: DRIVE_DESCRIPTIONS[(i - 1) % DRIVE_DESCRIPTIONS.length](college),
       status,
+      accessMode: i % 3 === 0 ? 'remote' : 'in-person',
       questionIds: driveQIds,
     });
   }
@@ -706,7 +854,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers };
 }
 
-const DB_VERSION = '6';
+const DB_VERSION = '9';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

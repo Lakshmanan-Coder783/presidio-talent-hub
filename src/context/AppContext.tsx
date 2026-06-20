@@ -30,7 +30,11 @@ interface AppContextType {
   bulkInvite: (assessmentId: string, date: string, college: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
   updateAssessment: (assessment: Assessment) => void;
-  loginCandidateByTestSlug: (slug: string, candidateId: string, testPassword: string) => { success: boolean; message: string };
+  updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
+  loginCandidateByTestSlug: (slug: string, candidateId: string, password: string) => { success: boolean; message: string };
+  bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => number;
+  sendRemoteInvites: (driveId: string) => number;
+  markAttendance: (candidateId: string, present: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -220,7 +224,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!candidate || !assessment) return;
 
     let score = 0;
-    const scoresBreakdown = { aptitude: 0, logical: 0, technical: 0, coding: 0, verbal: 0 };
+    const scoresBreakdown = { aptitude: 0, logical: 0, technical: 0, coding: 0, verbal: 0, quants: 0, cpp: 0, oops: 0, sql: 0, htmlcssjs: 0, subjective: 0, sqlQuery: 0 };
 
     assessment.questionIds.forEach(qId => {
       const question = db.questions.find(q => q.id === qId);
@@ -249,10 +253,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         score += question.marks;
         const topic = question.topic;
         if (topic === 'Aptitude') scoresBreakdown.aptitude += question.marks;
-        else if (topic === 'Logical Reasoning') scoresBreakdown.logical += question.marks;
+        else if (topic === 'Logical Reasoning' || topic === 'Logical') scoresBreakdown.logical += question.marks;
         else if (topic === 'Technical') scoresBreakdown.technical += question.marks;
         else if (topic === 'Coding') scoresBreakdown.coding += question.marks;
         else if (topic === 'Verbal') scoresBreakdown.verbal += question.marks;
+        else if (topic === 'Quants') scoresBreakdown.quants += question.marks;
+        else if (topic === 'C/C++') scoresBreakdown.cpp += question.marks;
+        else if (topic === 'OOPs') scoresBreakdown.oops += question.marks;
+        else if (topic === 'SQL') scoresBreakdown.sql += question.marks;
+        else if (topic === 'HTML/CSS/JS') scoresBreakdown.htmlcssjs += question.marks;
+        else if (topic === 'Subjective') scoresBreakdown.subjective += question.marks;
+        else if (topic === 'SQL Query') scoresBreakdown.sqlQuery += question.marks;
       }
     });
 
@@ -311,6 +322,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveDatabase(updatedDb);
   };
 
+  const updateQuestion = (id: string, updates: Partial<Omit<Question, 'id'>>) => {
+    const updatedDb = {
+      ...db,
+      questions: db.questions.map(q => q.id === id ? { ...q, ...updates } : q),
+    };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
   const createAssessment = (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>): Assessment => {
     const newAsm: Assessment = {
       ...data,
@@ -323,16 +343,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newAsm;
   };
 
-  const loginCandidateByTestSlug = (slug: string, candidateId: string, testPassword: string) => {
+  const loginCandidateByTestSlug = (slug: string, candidateId: string, password: string) => {
     const asm = db.assessments.find(a => a.slug === slug);
     if (!asm) return { success: false, message: 'Test not found. Check the URL.' };
-    if (asm.accessPassword !== testPassword) return { success: false, message: 'Incorrect test password.' };
     if (asm.status !== 'Active') return { success: false, message: 'This test is not currently active.' };
 
     const candidate = db.candidates.find(c => c.id === candidateId);
     if (!candidate) return { success: false, message: 'Invalid Candidate ID.' };
     if (candidate.assessmentId !== asm.id) return { success: false, message: 'You are not registered for this test.' };
     if (candidate.assessmentStatus === 'Completed') return { success: false, message: 'Assessment already completed.' };
+
+    // Determine drive access mode to decide which password to validate
+    const drive = db.drives.find(d => d.assessmentId === asm.id);
+    const isRemote = drive?.accessMode === 'remote';
+
+    if (isRemote) {
+      // Remote drive: validate against the candidate's individual password
+      if (candidate.assessmentPassword !== password) {
+        return { success: false, message: 'Incorrect password.' };
+      }
+    } else {
+      // In-person drive: validate against the shared test password
+      if (asm.accessPassword !== password) {
+        return { success: false, message: 'Incorrect test password.' };
+      }
+      // In-person: check attendance if it has been enabled for this drive
+      const attendanceUsed = db.candidates.some(c => c.college === candidate.college && c.attendanceMarked !== undefined);
+      if (attendanceUsed && !candidate.attendanceMarked) {
+        return { success: false, message: 'You are not marked as present for this test. Please contact your coordinator.' };
+      }
+      // In-person: check exam time window if drive has one set
+      if (drive?.examDate && drive?.examStartTime && drive?.examEndTime) {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        if (todayStr !== drive.examDate) {
+          return { success: false, message: `Test is only accessible on ${drive.examDate}.` };
+        }
+        const [sh, sm] = drive.examStartTime.split(':').map(Number);
+        const [eh, em] = drive.examEndTime.split(':').map(Number);
+        const startMin = sh * 60 + sm;
+        const endMin = eh * 60 + em;
+        const nowMin = now.getHours() * 60 + now.getMinutes();
+        if (nowMin < startMin) {
+          return { success: false, message: `Test window opens at ${drive.examStartTime}.` };
+        }
+        if (nowMin > endMin) {
+          return { success: false, message: `Test window closed at ${drive.examEndTime}.` };
+        }
+      }
+    }
 
     const session: UserSession = { role: 'candidate', id: candidateId, candidate };
     setCurrentUser(session);
@@ -380,6 +439,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveDatabase(updatedDb);
   };
 
+  const bulkImportCandidates = (
+    driveId: string,
+    rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]
+  ): number => {
+    const drive = db.drives.find(d => d.id === driveId);
+    if (!drive) return 0;
+
+    const existing = new Set(db.candidates.map(c => c.email.toLowerCase()));
+    const newCandidates: Candidate[] = [];
+
+    rows.forEach((row, idx) => {
+      if (existing.has(row.email.toLowerCase())) return; // skip duplicates
+      newCandidates.push({
+        ...row,
+        id: `PRES2026-${20000 + db.candidates.length + idx + 1}`,
+        college: drive.college,
+        assessmentStatus: 'Not Invited',
+        interviewStatus: 'Not Scheduled',
+        offerStatus: 'None',
+        funnelStage: 'Applied',
+      });
+    });
+
+    if (newCandidates.length === 0) return 0;
+
+    const updatedDb = { ...db, candidates: [...db.candidates, ...newCandidates] };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+    return newCandidates.length;
+  };
+
+  const sendRemoteInvites = (driveId: string): number => {
+    const drive = db.drives.find(d => d.id === driveId);
+    if (!drive || drive.accessMode !== 'remote') return 0;
+
+    const now = new Date().toISOString();
+    let count = 0;
+
+    const updatedCandidates = db.candidates.map(c => {
+      if (c.college === drive.college && c.assessmentStatus === 'Pending' && !c.inviteEmailSentAt) {
+        count++;
+        return { ...c, inviteEmailSentAt: now };
+      }
+      return c;
+    });
+
+    const updatedDb = { ...db, candidates: updatedCandidates };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+    return count;
+  };
+
+  const markAttendance = (candidateId: string, present: boolean) => {
+    const updatedCandidates = db.candidates.map(c =>
+      c.id === candidateId ? { ...c, attendanceMarked: present } : c
+    );
+    const updatedDb = { ...db, candidates: updatedCandidates };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
   return (
     <AppContext.Provider value={{
       db,
@@ -397,7 +517,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bulkInvite,
       createAssessment,
       updateAssessment,
+      updateQuestion,
       loginCandidateByTestSlug,
+      bulkImportCandidates,
+      sendRemoteInvites,
+      markAttendance,
     }}>
       {children}
     </AppContext.Provider>

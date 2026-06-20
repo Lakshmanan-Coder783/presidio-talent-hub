@@ -112,6 +112,10 @@ export const QuestionBank: React.FC = () => {
     {
       key: 'topic', label: 'Topic',
       options: [
+        { label: 'Quants', value: 'Quants' }, { label: 'Logical', value: 'Logical' },
+        { label: 'C/C++', value: 'C/C++' }, { label: 'OOPs', value: 'OOPs' },
+        { label: 'SQL', value: 'SQL' }, { label: 'HTML/CSS/JS', value: 'HTML/CSS/JS' },
+        { label: 'Subjective', value: 'Subjective' }, { label: 'SQL Query', value: 'SQL Query' },
         { label: 'Aptitude', value: 'Aptitude' }, { label: 'Logical Reasoning', value: 'Logical Reasoning' },
         { label: 'Technical', value: 'Technical' }, { label: 'Coding', value: 'Coding' }, { label: 'Verbal', value: 'Verbal' },
       ],
@@ -201,6 +205,14 @@ export const QuestionBank: React.FC = () => {
               <Select value={topic} onValueChange={v => setTopic(v as Question['topic'])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="Quants">Quants</SelectItem>
+                  <SelectItem value="Logical">Logical</SelectItem>
+                  <SelectItem value="C/C++">C/C++</SelectItem>
+                  <SelectItem value="OOPs">OOPs</SelectItem>
+                  <SelectItem value="SQL">SQL (MCQ)</SelectItem>
+                  <SelectItem value="HTML/CSS/JS">HTML/CSS/JS</SelectItem>
+                  <SelectItem value="Subjective">Subjective</SelectItem>
+                  <SelectItem value="SQL Query">SQL Query</SelectItem>
                   <SelectItem value="Aptitude">Aptitude</SelectItem>
                   <SelectItem value="Logical Reasoning">Logical Reasoning</SelectItem>
                   <SelectItem value="Technical">Technical MCQ</SelectItem>
