@@ -18,6 +18,7 @@ interface AppContextType {
   createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => void;
   updateDrive: (drive: CampusDrive) => void;
   updateCandidate: (candidate: Candidate) => void;
+  bulkUpdateCandidates: (updates: Candidate[]) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
   createInterview: (interview: Omit<Interview, 'id'>) => void;
   updateOfferStatus: (candidateId: string, status: Candidate['offerStatus']) => void;
@@ -127,6 +128,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCandidate = (updatedCandidate: Candidate) => {
     const updatedCandidates = db.candidates.map(c => c.id === updatedCandidate.id ? updatedCandidate : c);
+    const updatedDb = { ...db, candidates: updatedCandidates };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
+  const bulkUpdateCandidates = (updates: Candidate[]) => {
+    const map = new Map(updates.map(c => [c.id, c]));
+    const updatedCandidates = db.candidates.map(c => map.get(c.id) ?? c);
     const updatedDb = { ...db, candidates: updatedCandidates };
     setDb(updatedDb);
     saveDatabase(updatedDb);
@@ -522,6 +531,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bulkImportCandidates,
       sendRemoteInvites,
       markAttendance,
+      bulkUpdateCandidates,
     }}>
       {children}
     </AppContext.Provider>

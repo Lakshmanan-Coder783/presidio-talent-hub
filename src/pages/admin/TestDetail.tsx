@@ -92,6 +92,58 @@ interface CandidateRow {
   band: string;
 }
 
+interface InterviewDraft {
+  panel: string;
+  panelMembers: string;
+  timeSlot: string;
+  aptitudeScore: string;
+  aptitudeComments: string;
+  technicalScore: string;
+  technicalComments: string;
+  problemSolvingScore: string;
+  problemSolvingComments: string;
+  communicationScore: string;
+  communicationComments: string;
+  anyOther: string;
+  overallFeedback: string;
+}
+
+interface CodingDraft {
+  panel: string;
+  panelMembers: string;
+  timeSlot: string;
+  exerciseStartTime: string;
+  techStack: string;
+  exerciseGiven: string;
+  exerciseReview: string;
+  checkpoint1: string;
+  checkpoint2: string;
+  checkpoint3: string;
+}
+
+interface WhiteboardDraft {
+  culturalFit: string;
+  comments: string;
+  finalResult: string;
+}
+
+const BLANK_IV: InterviewDraft = {
+  panel: '', panelMembers: '', timeSlot: '',
+  aptitudeScore: '', aptitudeComments: '',
+  technicalScore: '', technicalComments: '',
+  problemSolvingScore: '', problemSolvingComments: '',
+  communicationScore: '', communicationComments: '',
+  anyOther: '', overallFeedback: '',
+};
+
+const BLANK_CD: CodingDraft = {
+  panel: '', panelMembers: '', timeSlot: '',
+  exerciseStartTime: '', techStack: '', exerciseGiven: '',
+  exerciseReview: '', checkpoint1: '', checkpoint2: '', checkpoint3: '',
+};
+
+const BLANK_WB: WhiteboardDraft = { culturalFit: '', comments: '', finalResult: '' };
+
 // ── Question picker sheet ─────────────────────────────────────────────────────
 
 interface QuestionPickerProps {
@@ -293,7 +345,7 @@ const DEFAULT_EXP: {
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, updateQuestion, bulkInvite, bulkImportCandidates, markAttendance, sendRemoteInvites } = useApp();
+  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, bulkInvite, bulkImportCandidates, markAttendance, sendRemoteInvites } = useApp();
 
   // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -355,12 +407,33 @@ export const TestDetail: React.FC = () => {
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
   const [expDirty, setExpDirty] = useState(false);
 
+  // OA shortlisting
+  const [cutoffInput, setCutoffInput] = useState('40');
+  const [shortlistSelection, setShortlistSelection] = useState<Set<string>>(new Set());
+  const [aiEvaluating, setAiEvaluating] = useState(false);
+
+  // Interview Round sheet
+  const [interviewSheetOpen, setInterviewSheetOpen] = useState(false);
+  const [interviewCandidate, setInterviewCandidate] = useState<Candidate | null>(null);
+  const [ivDraft, setIvDraft] = useState<InterviewDraft>({ ...BLANK_IV });
+
+  // Coding Round sheet
+  const [codingSheetOpen, setCodingSheetOpen] = useState(false);
+  const [codingCandidate, setCodingCandidate] = useState<Candidate | null>(null);
+  const [cdDraft, setCdDraft] = useState<CodingDraft>({ ...BLANK_CD });
+
+  // Whiteboarding sheet
+  const [wbSheetOpen, setWbSheetOpen] = useState(false);
+  const [wbCandidate, setWbCandidate] = useState<Candidate | null>(null);
+  const [wbDraft, setWbDraft] = useState<WhiteboardDraft>({ ...BLANK_WB });
+
   const drive = useMemo(() => db.drives.find(d => d.id === id), [db.drives, id]);
 
   // Sync experience settings when drive loads/changes
   useEffect(() => {
     if (drive) {
       setExpSettings({ ...DEFAULT_EXP, ...drive.experienceSettings });
+      setCutoffInput(String(drive.cutoffPercentage ?? 40));
     }
   }, [drive?.id]);
 
@@ -469,6 +542,20 @@ export const TestDetail: React.FC = () => {
   const top10 = useMemo(() => sortedByScore.slice(0, 10), [sortedByScore]);
   const bottom10 = useMemo(() => [...sortedByScore].reverse().slice(0, 10), [sortedByScore]);
 
+  // Recruitment pipeline candidate sets
+  const interviewCandidates = useMemo(
+    () => driveCandidates.filter(c => c.oaShortlisted === true),
+    [driveCandidates],
+  );
+  const codingRoundCandidates = useMemo(
+    () => driveCandidates.filter(c => c.interviewShortlisted === true),
+    [driveCandidates],
+  );
+  const whiteboardCandidates = useMemo(
+    () => driveCandidates.filter(c => c.codingShortlisted === true),
+    [driveCandidates],
+  );
+
   // ── handlers ────────────────────────────────────────────────────────────────
 
   const toggleSection = (topic: string) => {
@@ -522,6 +609,214 @@ export const TestDetail: React.FC = () => {
     a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
     a.download = `${drive.name}_Scores.csv`;
     a.click();
+  };
+
+  // ── OA shortlisting handlers ─────────────────────────────────────────────────
+
+  const applyCutoff = () => {
+    const pct = parseInt(cutoffInput) || 0;
+    if (drive) updateDrive({ ...drive, cutoffPercentage: pct });
+    const ids = new Set(
+      candidateRows
+        .filter(r => r.status === 'Finished' && r.percentage >= pct)
+        .map(r => r.id)
+    );
+    setShortlistSelection(ids);
+    toast.success(`Cutoff applied — ${ids.size} candidate${ids.size !== 1 ? 's' : ''} auto-selected.`);
+  };
+
+  const toggleShortlistCandidate = (id: string) => {
+    setShortlistSelection(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const confirmOaShortlist = () => {
+    if (!drive) return;
+    const count = shortlistSelection.size;
+    const updates = driveCandidates
+      .filter(c => shortlistSelection.has(c.id))
+      .map(c => ({ ...c, oaShortlisted: true, funnelStage: 'Interview' as const }));
+    bulkUpdateCandidates(updates);
+    setShortlistSelection(new Set());
+    toast.success(`${count} candidate${count !== 1 ? 's' : ''} shortlisted for Interview Round.`);
+  };
+
+  const generateAiEvaluation = (candidate: Candidate) => {
+    const coding = candidate.sectionScores?.coding ?? 0;
+    const sql = candidate.sectionScores?.sqlQuery ?? candidate.sectionScores?.sql ?? 0;
+    const subjective = candidate.sectionScores?.subjective ?? 0;
+
+    const toRating = (score: number, max = 20) => Math.min(10, Math.max(1, Math.round((score / max) * 10)));
+    const codingRating = toRating(coding);
+    const sqlRating = toRating(sql);
+    const subjectiveRating = toRating(subjective);
+    const overall = Math.round((codingRating + sqlRating + subjectiveRating) / 3);
+
+    const codingFeedback =
+      codingRating >= 8 ? 'Demonstrates strong algorithmic thinking with clean, well-optimised solutions. Edge cases are handled properly and the code is readable.' :
+      codingRating >= 5 ? 'Shows adequate coding ability. Working solutions are present but some edge cases are missed. Readability and efficiency could be improved.' :
+      'Basic attempts present but struggles with complex logic and edge case handling. Foundational practice recommended.';
+
+    const sqlFeedback =
+      sqlRating >= 8 ? 'Excellent command of SQL — joins, subqueries, and aggregations are used correctly and efficiently.' :
+      sqlRating >= 5 ? 'Functional SQL knowledge demonstrated. Some queries could be optimised; complex joins need refinement.' :
+      'Limited SQL proficiency. Simple queries attempted but multi-table operations need improvement.';
+
+    const subjectiveFeedback =
+      subjectiveRating >= 8 ? 'Articulate and structured responses that show deep conceptual understanding and strong communication skills.' :
+      subjectiveRating >= 5 ? 'Responses show reasonable understanding of concepts but could benefit from more precise and structured explanations.' :
+      'Responses lack depth and clarity. Conceptual understanding needs strengthening.';
+
+    const summaries = [
+      `Overall, this candidate shows ${overall >= 7 ? 'strong' : overall >= 5 ? 'moderate' : 'limited'} practical skills. `,
+      overall >= 7
+        ? 'A confident recommendation for the interview round based on practical performance.'
+        : overall >= 5
+        ? 'Consider for interview with specific focus areas to probe during the discussion.'
+        : 'Recommend careful consideration; practical round performance is below average.',
+    ];
+
+    return {
+      codingScore: codingRating,
+      codingFeedback,
+      sqlScore: sqlRating,
+      sqlFeedback,
+      subjectiveScore: subjectiveRating,
+      subjectiveFeedback,
+      overallPracticalScore: overall,
+      summary: summaries.join(''),
+      evaluatedAt: new Date().toISOString(),
+    };
+  };
+
+  const runAiEvaluation = () => {
+    if (!evaluateCandidate) return;
+    setAiEvaluating(true);
+    setTimeout(() => {
+      const evaluation = generateAiEvaluation(evaluateCandidate);
+      const updated = { ...evaluateCandidate, practicalAiEvaluation: evaluation };
+      updateCandidate(updated);
+      setEvaluateCandidate(updated);
+      setAiEvaluating(false);
+      toast.success('AI evaluation complete.');
+    }, 1800);
+  };
+
+  // ── Interview Round handlers ──────────────────────────────────────────────────
+
+  const openInterviewSheet = (candidate: Candidate) => {
+    setInterviewCandidate(candidate);
+    setIvDraft({
+      panel: candidate.interviewPanel ?? '',
+      panelMembers: candidate.interviewPanelMembers ?? '',
+      timeSlot: candidate.interviewTimeSlot ?? '',
+      aptitudeScore: String(candidate.interviewAptitudeScore ?? ''),
+      aptitudeComments: candidate.interviewAptitudeComments ?? '',
+      technicalScore: String(candidate.interviewTechnicalScore ?? ''),
+      technicalComments: candidate.interviewTechnicalComments ?? '',
+      problemSolvingScore: String(candidate.interviewProblemSolvingScore ?? ''),
+      problemSolvingComments: candidate.interviewProblemSolvingComments ?? '',
+      communicationScore: String(candidate.interviewCommunicationScore ?? ''),
+      communicationComments: candidate.interviewCommunicationComments ?? '',
+      anyOther: candidate.interviewAnyOther ?? '',
+      overallFeedback: candidate.interviewOverallFeedback ?? '',
+    });
+    setInterviewSheetOpen(true);
+  };
+
+  const saveInterviewFeedback = (decision: 'shortlist' | 'reject') => {
+    if (!interviewCandidate) return;
+    updateCandidate({
+      ...interviewCandidate,
+      interviewPanel: ivDraft.panel,
+      interviewPanelMembers: ivDraft.panelMembers,
+      interviewTimeSlot: ivDraft.timeSlot,
+      interviewAptitudeScore: parseFloat(ivDraft.aptitudeScore) || undefined,
+      interviewAptitudeComments: ivDraft.aptitudeComments,
+      interviewTechnicalScore: parseFloat(ivDraft.technicalScore) || undefined,
+      interviewTechnicalComments: ivDraft.technicalComments,
+      interviewProblemSolvingScore: parseFloat(ivDraft.problemSolvingScore) || undefined,
+      interviewProblemSolvingComments: ivDraft.problemSolvingComments,
+      interviewCommunicationScore: parseFloat(ivDraft.communicationScore) || undefined,
+      interviewCommunicationComments: ivDraft.communicationComments,
+      interviewAnyOther: ivDraft.anyOther,
+      interviewOverallFeedback: ivDraft.overallFeedback,
+      interviewShortlisted: decision === 'shortlist',
+      interviewStatus: decision === 'shortlist' ? 'Passed' : 'Failed',
+      funnelStage: decision === 'shortlist' ? 'Coding Exercise' : interviewCandidate.funnelStage,
+    });
+    setInterviewSheetOpen(false);
+    toast.success(decision === 'shortlist' ? 'Shortlisted for Coding Round.' : 'Candidate rejected.');
+  };
+
+  // ── Coding Round handlers ────────────────────────────────────────────────────
+
+  const openCodingSheet = (candidate: Candidate) => {
+    setCodingCandidate(candidate);
+    setCdDraft({
+      panel: candidate.codingPanel ?? '',
+      panelMembers: candidate.codingPanelMembers ?? '',
+      timeSlot: candidate.codingTimeSlot ?? '',
+      exerciseStartTime: candidate.codingExerciseStartTime ?? '',
+      techStack: candidate.codingTechStack ?? '',
+      exerciseGiven: candidate.codingExerciseGiven === true ? 'yes' : candidate.codingExerciseGiven === false ? 'no' : '',
+      exerciseReview: candidate.codingExerciseReview ?? '',
+      checkpoint1: candidate.codingCheckpoint1 ?? '',
+      checkpoint2: candidate.codingCheckpoint2 ?? '',
+      checkpoint3: candidate.codingCheckpoint3 ?? '',
+    });
+    setCodingSheetOpen(true);
+  };
+
+  const saveCodingFeedback = (decision: 'shortlist' | 'reject') => {
+    if (!codingCandidate) return;
+    updateCandidate({
+      ...codingCandidate,
+      codingPanel: cdDraft.panel,
+      codingPanelMembers: cdDraft.panelMembers,
+      codingTimeSlot: cdDraft.timeSlot,
+      codingExerciseStartTime: cdDraft.exerciseStartTime,
+      codingTechStack: cdDraft.techStack,
+      codingExerciseGiven: cdDraft.exerciseGiven === 'yes' ? true : cdDraft.exerciseGiven === 'no' ? false : undefined,
+      codingExerciseReview: cdDraft.exerciseReview,
+      codingCheckpoint1: cdDraft.checkpoint1,
+      codingCheckpoint2: cdDraft.checkpoint2,
+      codingCheckpoint3: cdDraft.checkpoint3,
+      codingShortlisted: decision === 'shortlist',
+      funnelStage: decision === 'shortlist' ? 'Whiteboard Interview' : codingCandidate.funnelStage,
+    });
+    setCodingSheetOpen(false);
+    toast.success(decision === 'shortlist' ? 'Shortlisted for Whiteboarding.' : 'Candidate rejected.');
+  };
+
+  // ── Whiteboarding handlers ────────────────────────────────────────────────────
+
+  const openWbSheet = (candidate: Candidate) => {
+    setWbCandidate(candidate);
+    setWbDraft({
+      culturalFit: candidate.whiteboardSelectedForCulturalFit === true ? 'yes' : candidate.whiteboardSelectedForCulturalFit === false ? 'no' : '',
+      comments: candidate.whiteboardComments ?? '',
+      finalResult: candidate.whiteboardFinalResult ?? '',
+    });
+    setWbSheetOpen(true);
+  };
+
+  const saveWbFeedback = () => {
+    if (!wbCandidate) return;
+    const result = wbDraft.finalResult as Candidate['whiteboardFinalResult'] | '';
+    updateCandidate({
+      ...wbCandidate,
+      whiteboardSelectedForCulturalFit: wbDraft.culturalFit === 'yes' ? true : wbDraft.culturalFit === 'no' ? false : undefined,
+      whiteboardComments: wbDraft.comments,
+      whiteboardFinalResult: result || undefined,
+      funnelStage: result === 'Selected' ? 'Offered' : wbCandidate.funnelStage,
+      offerStatus: result === 'Selected' ? 'None' : wbCandidate.offerStatus,
+    });
+    setWbSheetOpen(false);
+    toast.success('Whiteboarding result saved.');
   };
 
   const handleCsvFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -719,6 +1014,32 @@ export const TestDetail: React.FC = () => {
   // ── column definitions ───────────────────────────────────────────────────────
 
   const candidateColumns = [
+    {
+      header: 'SHORTLIST',
+      accessor: 'id' as const,
+      sortable: false,
+      render: (row: CandidateRow) => {
+        if (row.status !== 'Finished') return null;
+        const alreadyShortlisted = driveCandidates.find(c => c.id === row.id)?.oaShortlisted;
+        const checked = shortlistSelection.has(row.id);
+        return (
+          <div className="flex items-center justify-center">
+            {alreadyShortlisted ? (
+              <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                Confirmed
+              </span>
+            ) : (
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
+                checked={checked}
+                onChange={() => toggleShortlistCandidate(row.id)}
+              />
+            )}
+          </div>
+        );
+      },
+    },
     {
       header: 'CANDIDATE',
       accessor: 'name' as const,
@@ -1036,6 +1357,33 @@ export const TestDetail: React.FC = () => {
             <TabsTrigger value="reports" className={TAB_TRIGGER}>
               <BarChart2 className="h-4 w-4" />
               Reports
+            </TabsTrigger>
+            <TabsTrigger value="interview" className={TAB_TRIGGER}>
+              <Users className="h-4 w-4" />
+              Interview Round
+              {interviewCandidates.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                  {interviewCandidates.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="coding" className={TAB_TRIGGER}>
+              <Code className="h-4 w-4" />
+              Coding Round
+              {codingRoundCandidates.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                  {codingRoundCandidates.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="whiteboard" className={TAB_TRIGGER}>
+              <FileText className="h-4 w-4" />
+              Whiteboarding
+              {whiteboardCandidates.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                  {whiteboardCandidates.length}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
         </div>
@@ -1822,6 +2170,38 @@ export const TestDetail: React.FC = () => {
             </div>
           </div>
 
+          {/* Cutoff & shortlisting toolbar */}
+          {candidateRows.some(r => r.status === 'Finished') && (
+            <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex-wrap">
+              <span className="text-sm font-medium text-amber-900">OA Shortlisting Cutoff:</span>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={cutoffInput}
+                  onChange={e => setCutoffInput(e.target.value)}
+                  className="h-8 w-20 text-sm"
+                />
+                <span className="text-sm text-amber-800">%</span>
+              </div>
+              <Button size="sm" variant="outline" className="h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-100" onClick={applyCutoff}>
+                Apply Cutoff
+              </Button>
+              {shortlistSelection.size > 0 && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="text-sm text-amber-800 font-medium">{shortlistSelection.size} selected</span>
+                  <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={confirmOaShortlist}>
+                    Confirm Shortlist for Interview Round
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShortlistSelection(new Set())}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {candidateRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
               <Users className="h-8 w-8 opacity-40" />
@@ -1990,6 +2370,222 @@ export const TestDetail: React.FC = () => {
             </Button>
           </div>
         </TabsContent>
+
+        {/* ── Interview Round Tab ── */}
+        <TabsContent value="interview" className="m-0 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-base">Interview Round</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Candidates shortlisted from Online Assessment ({interviewCandidates.length} total)
+              </p>
+            </div>
+          </div>
+
+          {interviewCandidates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground border rounded-lg">
+              <Users className="h-8 w-8 opacity-40" />
+              <p className="text-sm">No candidates shortlisted yet.</p>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('candidates')}>
+                Go to Candidates tab to shortlist
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Candidate</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">OA Score</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Panel</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {interviewCandidates.map(c => {
+                    const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+                    const statusLabel = c.interviewShortlisted === true ? 'Shortlisted' : c.interviewShortlisted === false ? 'Rejected' : c.interviewPanel ? 'In Progress' : 'Pending';
+                    const statusCls = statusLabel === 'Shortlisted' ? 'bg-green-100 text-green-700' : statusLabel === 'Rejected' ? 'bg-red-100 text-red-700' : statusLabel === 'In Progress' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                    const avgScore = [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter((v): v is number => v != null);
+                    return (
+                      <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(scoreBand(pct))}`}>{pct}%</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm">{c.interviewPanel || '—'}</p>
+                          {avgScore.length > 0 && (
+                            <p className="text-xs text-muted-foreground">Avg: {(avgScore.reduce((a: number, b: number) => a + b, 0) / avgScore.length).toFixed(1)}/10</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusCls}`}>{statusLabel}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => openInterviewSheet(c)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            {c.interviewPanel ? 'Edit Feedback' : 'Fill Feedback'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Coding Round Tab ── */}
+        <TabsContent value="coding" className="m-0 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-base">Coding Round</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Candidates shortlisted from Interview Round ({codingRoundCandidates.length} total)
+              </p>
+            </div>
+          </div>
+
+          {codingRoundCandidates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground border rounded-lg">
+              <Code className="h-8 w-8 opacity-40" />
+              <p className="text-sm">No candidates shortlisted from Interview Round yet.</p>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('interview')}>
+                Go to Interview Round tab
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Candidate</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interview Score</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tech Stack</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {codingRoundCandidates.map(c => {
+                    const ivScores = [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter(Boolean) as number[];
+                    const avgIv = ivScores.length > 0 ? (ivScores.reduce((a, b) => a + b, 0) / ivScores.length).toFixed(1) : '—';
+                    const statusLabel = c.codingShortlisted === true ? 'Shortlisted' : c.codingShortlisted === false ? 'Rejected' : c.codingPanel ? 'In Progress' : 'Pending';
+                    const statusCls = statusLabel === 'Shortlisted' ? 'bg-green-100 text-green-700' : statusLabel === 'Rejected' ? 'bg-red-100 text-red-700' : statusLabel === 'In Progress' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                    return (
+                      <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm font-semibold">{avgIv !== '—' ? `${avgIv}/10` : '—'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm">{c.codingTechStack || '—'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusCls}`}>{statusLabel}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => openCodingSheet(c)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            {c.codingPanel ? 'Update' : 'Fill Details'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Whiteboarding Tab ── */}
+        <TabsContent value="whiteboard" className="m-0 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-base">Whiteboarding Round</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Candidates shortlisted from Coding Round ({whiteboardCandidates.length} total)
+              </p>
+            </div>
+          </div>
+
+          {whiteboardCandidates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground border rounded-lg">
+              <FileText className="h-8 w-8 opacity-40" />
+              <p className="text-sm">No candidates shortlisted from Coding Round yet.</p>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('coding')}>
+                Go to Coding Round tab
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Candidate</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cultural Fit</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Final Result</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {whiteboardCandidates.map(c => {
+                    const fitLabel = c.whiteboardSelectedForCulturalFit === true ? 'Yes' : c.whiteboardSelectedForCulturalFit === false ? 'No' : '—';
+                    const fitCls = c.whiteboardSelectedForCulturalFit === true ? 'text-green-600' : c.whiteboardSelectedForCulturalFit === false ? 'text-red-500' : 'text-muted-foreground';
+                    const resultCls = c.whiteboardFinalResult === 'Selected' ? 'bg-green-100 text-green-700' : c.whiteboardFinalResult === 'Rejected' ? 'bg-red-100 text-red-700' : c.whiteboardFinalResult === 'Waitlisted' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                    return (
+                      <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`font-medium text-sm ${fitCls}`}>{fitLabel}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${resultCls}`}>
+                            {c.whiteboardFinalResult ?? 'Pending'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => openWbSheet(c)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Update
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* ── Question picker sheet ── */}
@@ -2092,6 +2688,88 @@ export const TestDetail: React.FC = () => {
                         hour: 'numeric', minute: '2-digit', hour12: true,
                       })}
                     </p>
+                  )}
+                </div>
+              )}
+
+              {/* AI Practical Round Evaluation */}
+              {(evaluateCandidate.sectionScores?.coding != null ||
+                evaluateCandidate.sectionScores?.subjective != null ||
+                evaluateCandidate.sectionScores?.sqlQuery != null) && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Practical Round AI Evaluation</p>
+                    {!evaluateCandidate.practicalAiEvaluation && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
+                        onClick={runAiEvaluation}
+                        disabled={aiEvaluating}
+                      >
+                        {aiEvaluating ? (
+                          <>
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            Evaluating…
+                          </>
+                        ) : (
+                          <>
+                            <Award className="h-3 w-3" />
+                            AI Evaluate
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+
+                  {evaluateCandidate.practicalAiEvaluation ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 p-3">
+                        <span className="text-xs font-medium text-violet-700">Overall Practical Score</span>
+                        <span className="text-xl font-bold text-violet-800">
+                          {evaluateCandidate.practicalAiEvaluation.overallPracticalScore}/10
+                        </span>
+                      </div>
+
+                      {[
+                        { label: 'Coding', score: evaluateCandidate.practicalAiEvaluation.codingScore, feedback: evaluateCandidate.practicalAiEvaluation.codingFeedback },
+                        { label: 'SQL / Query', score: evaluateCandidate.practicalAiEvaluation.sqlScore, feedback: evaluateCandidate.practicalAiEvaluation.sqlFeedback },
+                        { label: 'Subjective', score: evaluateCandidate.practicalAiEvaluation.subjectiveScore, feedback: evaluateCandidate.practicalAiEvaluation.subjectiveFeedback },
+                      ].map(item => item.score != null && (
+                        <div key={item.label} className="rounded-lg border p-3 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">{item.label}</span>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-100 text-violet-700">{item.score}/10</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{item.feedback}</p>
+                        </div>
+                      ))}
+
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                        <p className="text-xs font-semibold text-blue-800 mb-1">AI Summary</p>
+                        <p className="text-xs text-blue-700 leading-relaxed">{evaluateCandidate.practicalAiEvaluation.summary}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-muted-foreground">
+                          Evaluated {new Date(evaluateCandidate.practicalAiEvaluation.evaluatedAt!).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-[10px] text-muted-foreground gap-1"
+                          onClick={runAiEvaluation}
+                          disabled={aiEvaluating}
+                        >
+                          <RefreshCw className="h-2.5 w-2.5" />
+                          Re-evaluate
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                      Click "AI Evaluate" to generate an automated assessment of the candidate's practical round submissions.
+                    </div>
                   )}
                 </div>
               )}
@@ -2334,6 +3012,248 @@ export const TestDetail: React.FC = () => {
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setAsmEditOpen(false)}>Cancel</Button>
             <Button className="flex-1" onClick={saveAsmEdit}>Save Changes</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Interview Round Sheet ── */}
+      <Sheet open={interviewSheetOpen} onOpenChange={open => { if (!open) { setInterviewSheetOpen(false); setInterviewCandidate(null); } }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>{interviewCandidate?.name ?? 'Interview Feedback'}</SheetTitle>
+            {interviewCandidate && (
+              <p className="text-sm text-muted-foreground">{interviewCandidate.email}</p>
+            )}
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {/* Panel info */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Panel</Label>
+                <Input value={ivDraft.panel} onChange={e => setIvDraft(d => ({ ...d, panel: e.target.value }))} placeholder="Panel name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Time Slot</Label>
+                <Input value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 10:00 AM – 11:00 AM" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Panel Members</Label>
+              <Input value={ivDraft.panelMembers} onChange={e => setIvDraft(d => ({ ...d, panelMembers: e.target.value }))} placeholder="Names of interviewers" />
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Evaluation Scores (1–10)</p>
+              <div className="space-y-4">
+                {([
+                  { label: 'Aptitude', scoreKey: 'aptitudeScore', commKey: 'aptitudeComments' },
+                  { label: 'Technical Skills', scoreKey: 'technicalScore', commKey: 'technicalComments' },
+                  { label: 'Problem Solving & Logical Thinking', scoreKey: 'problemSolvingScore', commKey: 'problemSolvingComments' },
+                  { label: 'Communication', scoreKey: 'communicationScore', commKey: 'communicationComments' },
+                ] as { label: string; scoreKey: keyof InterviewDraft; commKey: keyof InterviewDraft }[]).map(item => (
+                  <div key={item.label} className="space-y-2 rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">{item.label}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        className="h-7 w-16 text-sm text-center"
+                        value={ivDraft[item.scoreKey]}
+                        onChange={e => setIvDraft(d => ({ ...d, [item.scoreKey]: e.target.value }))}
+                        placeholder="—"
+                      />
+                    </div>
+                    <Textarea
+                      rows={2}
+                      className="text-xs resize-none"
+                      placeholder="Comments…"
+                      value={ivDraft[item.commKey] as string}
+                      onChange={e => setIvDraft(d => ({ ...d, [item.commKey]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Any Other Observations</Label>
+              <Textarea
+                rows={2}
+                className="text-xs resize-none"
+                placeholder="Additional notes…"
+                value={ivDraft.anyOther}
+                onChange={e => setIvDraft(d => ({ ...d, anyOther: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Overall Feedback</Label>
+              <Textarea
+                rows={3}
+                className="text-xs resize-none"
+                placeholder="Overall impression and recommendation…"
+                value={ivDraft.overallFeedback}
+                onChange={e => setIvDraft(d => ({ ...d, overallFeedback: e.target.value }))}
+              />
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+              onClick={() => saveInterviewFeedback('reject')}
+            >
+              Reject
+            </Button>
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => saveInterviewFeedback('shortlist')}
+            >
+              Shortlist → Coding Round
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Coding Round Sheet ── */}
+      <Sheet open={codingSheetOpen} onOpenChange={open => { if (!open) { setCodingSheetOpen(false); setCodingCandidate(null); } }}>
+        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>{codingCandidate?.name ?? 'Coding Round'}</SheetTitle>
+            {codingCandidate && (
+              <p className="text-sm text-muted-foreground">{codingCandidate.email}</p>
+            )}
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Panel</Label>
+                <Input value={cdDraft.panel} onChange={e => setCdDraft(d => ({ ...d, panel: e.target.value }))} placeholder="Panel name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Time Slot</Label>
+                <Input value={cdDraft.timeSlot} onChange={e => setCdDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 2:00 PM – 4:00 PM" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Panel Members</Label>
+              <Input value={cdDraft.panelMembers} onChange={e => setCdDraft(d => ({ ...d, panelMembers: e.target.value }))} placeholder="Names" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Exercise Start Time</Label>
+                <Input type="time" value={cdDraft.exerciseStartTime} onChange={e => setCdDraft(d => ({ ...d, exerciseStartTime: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tech Stack</Label>
+                <Input value={cdDraft.techStack} onChange={e => setCdDraft(d => ({ ...d, techStack: e.target.value }))} placeholder="e.g. Java, React" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Exercise Given?</Label>
+              <Select value={cdDraft.exerciseGiven} onValueChange={v => setCdDraft(d => ({ ...d, exerciseGiven: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Yes</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Coding Exercise Review</Label>
+              <Textarea
+                rows={3}
+                className="text-xs resize-none"
+                placeholder="Overall review of the coding exercise…"
+                value={cdDraft.exerciseReview}
+                onChange={e => setCdDraft(d => ({ ...d, exerciseReview: e.target.value }))}
+              />
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Checkpoints</p>
+              <div className="space-y-3">
+                {([1, 2, 3] as const).map(n => (
+                  <div key={n} className="space-y-1.5">
+                    <Label className="text-xs">Checkpoint {n}</Label>
+                    <Textarea
+                      rows={2}
+                      className="text-xs resize-none"
+                      placeholder={`Checkpoint ${n} notes…`}
+                      value={cdDraft[`checkpoint${n}` as keyof CodingDraft] as string}
+                      onChange={e => setCdDraft(d => ({ ...d, [`checkpoint${n}`]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+              onClick={() => saveCodingFeedback('reject')}
+            >
+              Reject
+            </Button>
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => saveCodingFeedback('shortlist')}
+            >
+              Shortlist → Whiteboarding
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Whiteboarding Sheet ── */}
+      <Sheet open={wbSheetOpen} onOpenChange={open => { if (!open) { setWbSheetOpen(false); setWbCandidate(null); } }}>
+        <SheetContent side="right" className="sm:max-w-md flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>{wbCandidate?.name ?? 'Whiteboarding'}</SheetTitle>
+            {wbCandidate && (
+              <p className="text-sm text-muted-foreground">{wbCandidate.email}</p>
+            )}
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Selected for Cultural Fit?</Label>
+              <Select value={wbDraft.culturalFit} onValueChange={v => setWbDraft(d => ({ ...d, culturalFit: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Yes</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Comments</Label>
+              <Textarea
+                rows={4}
+                className="text-sm resize-none"
+                placeholder="Whiteboarding session notes and observations…"
+                value={wbDraft.comments}
+                onChange={e => setWbDraft(d => ({ ...d, comments: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Final Result</Label>
+              <Select value={wbDraft.finalResult} onValueChange={v => setWbDraft(d => ({ ...d, finalResult: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select result…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Selected">Selected</SelectItem>
+                  <SelectItem value="Waitlisted">Waitlisted</SelectItem>
+                  <SelectItem value="Rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+              {wbDraft.finalResult === 'Selected' && (
+                <p className="text-xs text-green-600 mt-1">Candidate will be moved to the Offered stage.</p>
+              )}
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setWbSheetOpen(false)}>Cancel</Button>
+            <Button className="flex-1" onClick={saveWbFeedback}>Save Result</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

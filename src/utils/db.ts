@@ -155,7 +155,7 @@ const LAST_NAMES = [
   'Dubey', 'Jha', 'Bose', 'Choudhury', 'Banerjee', 'Chatterjee', 'Roy', 'Narayanan', 'Shenoy', 'Prabhu'
 ];
 
-const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 'Mumbai', 'Kolkata', 'Coimbatore', 'Delhi'];
+export const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 'Mumbai', 'Kolkata', 'Coimbatore', 'Delhi'];
 
 const DEGREES = ['B.Tech CSE', 'B.Tech ECE', 'B.Tech IT', 'M.Tech CSE', 'MCA', 'M.Sc Software Engg'];
 

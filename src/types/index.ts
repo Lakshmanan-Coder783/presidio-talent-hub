@@ -17,6 +17,7 @@ export interface CampusDrive {
   examDate?: string;
   examStartTime?: string; // HH:mm, used for in-person time-window enforcement
   examEndTime?: string;   // HH:mm
+  cutoffPercentage?: number; // OA shortlisting cutoff (default 40)
   experienceSettings?: {
     testWindow: 'anytime' | 'scheduled';
     reminderEnabled: boolean;
@@ -81,6 +82,54 @@ export interface Candidate {
   // Attendance & invite tracking
   attendanceMarked?: boolean;
   inviteEmailSentAt?: string;
+
+  // OA shortlisting
+  oaShortlisted?: boolean;
+  practicalAiEvaluation?: {
+    codingScore?: number;
+    codingFeedback?: string;
+    sqlScore?: number;
+    sqlFeedback?: string;
+    subjectiveScore?: number;
+    subjectiveFeedback?: string;
+    overallPracticalScore?: number;
+    summary?: string;
+    evaluatedAt?: string;
+  };
+
+  // Interview Round
+  interviewPanel?: string;
+  interviewPanelMembers?: string;
+  interviewTimeSlot?: string;
+  interviewAptitudeScore?: number;
+  interviewAptitudeComments?: string;
+  interviewTechnicalScore?: number;
+  interviewTechnicalComments?: string;
+  interviewProblemSolvingScore?: number;
+  interviewProblemSolvingComments?: string;
+  interviewCommunicationScore?: number;
+  interviewCommunicationComments?: string;
+  interviewAnyOther?: string;
+  interviewOverallFeedback?: string;
+  interviewShortlisted?: boolean;
+
+  // Coding Round
+  codingPanel?: string;
+  codingPanelMembers?: string;
+  codingTimeSlot?: string;
+  codingExerciseStartTime?: string;
+  codingTechStack?: string;
+  codingExerciseGiven?: boolean;
+  codingExerciseReview?: string;
+  codingCheckpoint1?: string;
+  codingCheckpoint2?: string;
+  codingCheckpoint3?: string;
+  codingShortlisted?: boolean;
+
+  // Whiteboarding Round
+  whiteboardSelectedForCulturalFit?: boolean;
+  whiteboardComments?: string;
+  whiteboardFinalResult?: 'Selected' | 'Rejected' | 'Waitlisted';
 }
 
 export interface AssessmentSection {

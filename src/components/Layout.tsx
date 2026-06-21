@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
-  LayoutDashboard, School, Users, FileText, Database,
+  LayoutDashboard, Users, FileText, Database,
   Calendar, Gift, BarChart3, Settings as SettingsIcon,
   LogOut, Bell, Search, User, Send, Monitor,
 } from 'lucide-react';
@@ -30,8 +30,7 @@ interface LayoutProps {
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'online-assessment', label: 'Online Assessment', icon: Monitor },
-  { id: 'campus-drives', label: 'Campus Drives', icon: School },
+  { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'candidates', label: 'Candidates', icon: Users },
   { id: 'assessments', label: 'Assessments', icon: FileText },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
