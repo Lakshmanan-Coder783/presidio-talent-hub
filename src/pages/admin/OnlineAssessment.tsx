@@ -12,9 +12,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Copy, Link as LinkIcon, Pencil, Upload, Mail, UserCheck, UserX } from 'lucide-react';
+import { Pencil, Upload, Mail, UserCheck, UserX, Eye, ExternalLink, FileText, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import type { CampusDrive, Candidate } from '../../types';
+import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
+import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
 
 interface TestRow {
   id: string;
@@ -24,7 +25,7 @@ interface TestRow {
   group: string;
   createdOn: string;
   lastActivity: string;
-  studentCount: number;
+  registered: number;
   invited: number | null;
   participationPct: number;
   finishedPct: number;
@@ -65,31 +66,33 @@ const DRIVE_STATUS_MAP: Record<string, TestRow['status']> = {
   Draft:     'Deactivated',
 };
 
-type CsvPreviewRow = { name: string; email: string; degree: string; registrationNumber: string };
-
 export const OnlineAssessment: React.FC = () => {
-  const { db, updateDrive, bulkImportCandidates, sendRemoteInvites, markAttendance } = useApp();
+  const { db, updateDrive, createDrive, sendRemoteInvites, markAttendance, importCollegeStudents } = useApp();
   const navigate = useNavigate();
 
-  // ── Edit drive state ─────────────────────────────────────────────────────────
+  // ── Edit / Create drive state ────────────────────────────────────────────────
   const [editOpen, setEditOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [editDrive, setEditDrive] = useState<CampusDrive | null>(null);
   const [draftName, setDraftName] = useState('');
+  const [draftCollege, setDraftCollege] = useState('');
   const [draftDate, setDraftDate] = useState('');
+  const [draftDay2Date, setDraftDay2Date] = useState('');
   const [draftLocation, setDraftLocation] = useState('');
   const [draftStatus, setDraftStatus] = useState<CampusDrive['status']>('Draft');
   const [draftAccessMode, setDraftAccessMode] = useState<CampusDrive['accessMode']>('in-person');
-  const [draftTarget, setDraftTarget] = useState('');
+
   const [draftSpocName, setDraftSpocName] = useState('');
   const [draftSpocContact, setDraftSpocContact] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
 
-  // ── CSV import state ─────────────────────────────────────────────────────────
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  const [importingDriveId, setImportingDriveId] = useState<string | null>(null);
-  const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
-  const [csvPreviewRows, setCsvPreviewRows] = useState<CsvPreviewRow[]>([]);
-  const [csvParsedData, setCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
+  // ── College student pool state ───────────────────────────────────────────────
+  const collegeFileInputRef = useRef<HTMLInputElement>(null);
+  const [activeImportCollege, setActiveImportCollege] = useState<string | null>(null);
+  const [viewStudentsCollege, setViewStudentsCollege] = useState<string | null>(null);
+  const [collegeCsvPreview, setCollegeCsvPreview] = useState<ParsedStudentRow[]>([]);
+  const [collegeCsvPreviewOpen, setCollegeCsvPreviewOpen] = useState(false);
+  const [pendingImportCollege, setPendingImportCollege] = useState<string | null>(null);
 
   // ── Attendance sheet state ───────────────────────────────────────────────────
   const [attendanceDriveId, setAttendanceDriveId] = useState<string | null>(null);
@@ -104,115 +107,149 @@ export const OnlineAssessment: React.FC = () => {
   const openEdit = (driveId: string) => {
     const drive = db.drives.find(d => d.id === driveId);
     if (!drive) return;
+    setIsCreating(false);
     setEditDrive(drive);
     setDraftName(drive.name);
+    setDraftCollege(drive.college);
     setDraftDate(drive.date);
+    setDraftDay2Date(drive.day2Date ?? '');
     setDraftLocation(drive.location);
     setDraftStatus(drive.status);
     setDraftAccessMode(drive.accessMode ?? 'in-person');
-    setDraftTarget(String(drive.targetHiring));
+
     setDraftSpocName(drive.spocName);
     setDraftSpocContact(drive.spocContact);
     setDraftDescription(drive.description);
     setEditOpen(true);
   };
 
-  const handleSave = () => {
-    if (!editDrive) return;
-    updateDrive({
-      ...editDrive,
-      name: draftName,
-      date: draftDate,
-      location: draftLocation,
-      status: draftStatus,
-      accessMode: draftAccessMode,
-      targetHiring: parseInt(draftTarget) || 0,
-      spocName: draftSpocName,
-      spocContact: draftSpocContact,
-      description: draftDescription,
-    });
-    setEditOpen(false);
-    toast.success('Drive updated successfully.');
+  const openCreate = () => {
+    setIsCreating(true);
+    setEditDrive(null);
+    setDraftName('');
+    setDraftCollege('');
+    setDraftDate('');
+    setDraftDay2Date('');
+    setDraftLocation('');
+    setDraftStatus('Draft');
+    setDraftAccessMode('in-person');
+
+    setDraftSpocName('');
+    setDraftSpocContact('');
+    setDraftDescription('');
+    setEditOpen(true);
   };
 
-  // ── CSV import ───────────────────────────────────────────────────────────────
-  const openCsvPicker = (driveId: string) => {
-    setImportingDriveId(driveId);
-    setTimeout(() => csvInputRef.current?.click(), 0);
-  };
-
-  const handleCsvFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !importingDriveId) return;
-    e.target.value = '';
-
-    const drive = db.drives.find(d => d.id === importingDriveId);
-    if (!drive) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      const lines = text.split('\n').filter(l => l.trim());
-      const dataLines = isNaN(Number(lines[0]?.split(',')[0]?.trim())) ? lines.slice(1) : lines;
-
-      const parsed: Parameters<typeof bulkImportCandidates>[1] = [];
-      const preview: CsvPreviewRow[] = [];
-
-      dataLines.forEach(line => {
-        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        if (cols.length < 4) return;
-        const [, regNum, name, email, phone, degree, specialization, gender, dateOfBirth,
-               githubUrl, linkedinUrl, resumeUrl, codingPlatformUrls,
-               tenthStr, twelfthStr, diplomaStr, ugStr, pgStr, backlogHistStr, currentBacklogStr] = cols;
-
-        const genderNorm = gender === 'Female' ? 'Female' : gender === 'Other' ? 'Other' : 'Male';
-
-        parsed.push({
-          name: name || '',
-          email: email || '',
-          phone: phone || '',
-          degree: degree || '',
-          cgpa: parseFloat(ugStr) || 0,
-          college: drive.college,
-          gender: genderNorm as 'Male' | 'Female' | 'Other',
-          registrationNumber: regNum,
-          specialization,
-          dateOfBirth,
-          githubUrl,
-          linkedinUrl,
-          resumeUrl,
-          codingPlatformUrls,
-          tenth: parseFloat(tenthStr) || undefined,
-          twelfth: parseFloat(twelfthStr) || undefined,
-          diploma: parseFloat(diplomaStr) || undefined,
-          ugMarks: parseFloat(ugStr) || undefined,
-          pgMarks: parseFloat(pgStr) || undefined,
-          backlogHistory: parseInt(backlogHistStr) || undefined,
-          currentBacklogs: parseInt(currentBacklogStr) || undefined,
-        });
-        preview.push({ name: name || '', email: email || '', degree: degree || '', registrationNumber: regNum || '' });
+  const handleSave = (statusOverride?: CampusDrive['status']) => {
+    const effectiveStatus = statusOverride ?? draftStatus;
+    if (isCreating) {
+      if (!draftName || !draftCollege || !draftDate || !draftLocation) {
+        toast.error('Please fill all required fields.');
+        return;
+      }
+      createDrive({
+        name: draftName,
+        college: draftCollege,
+        date: draftDate,
+        day2Date: draftDay2Date || undefined,
+        location: draftLocation,
+        spocName: draftSpocName,
+        spocContact: draftSpocContact,
+        description: draftDescription,
+        status: effectiveStatus,
+        accessMode: draftAccessMode,
       });
-
-      setCsvParsedData(parsed);
-      setCsvPreviewRows(preview);
-      setCsvPreviewOpen(true);
-    };
-    reader.readAsText(file);
+      toast.success('Drive created successfully.');
+    } else {
+      if (!editDrive) return;
+      updateDrive({
+        ...editDrive,
+        name: draftName,
+        date: draftDate,
+        day2Date: draftDay2Date || undefined,
+        location: draftLocation,
+        status: effectiveStatus,
+        accessMode: draftAccessMode,
+        spocName: draftSpocName,
+        spocContact: draftSpocContact,
+        description: draftDescription,
+      });
+      toast.success('Drive updated successfully.');
+    }
+    setEditOpen(false);
+    setIsCreating(false);
   };
 
-  const confirmCsvImport = () => {
-    if (!importingDriveId) return;
-    const imported = bulkImportCandidates(importingDriveId, csvParsedData);
-    setCsvPreviewOpen(false);
-    setCsvParsedData([]);
-    setCsvPreviewRows([]);
-    setImportingDriveId(null);
-    if (imported > 0) {
-      toast.success(`${imported} student${imported !== 1 ? 's' : ''} imported successfully.`);
-    } else {
-      toast.info('No new students added — all emails already exist in the system.');
+  // ── College student pool import ──────────────────────────────────────────────
+  const openCollegeFilePicker = (college: string) => {
+    setActiveImportCollege(college);
+    setTimeout(() => collegeFileInputRef.current?.click(), 0);
+  };
+
+  const handleCollegeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeImportCollege) return;
+    e.target.value = '';
+    const college = activeImportCollege;
+    try {
+      const rows = await parseStudentFile(file);
+      setCollegeCsvPreview(rows);
+      setPendingImportCollege(college);
+      setCollegeCsvPreviewOpen(true);
+    } catch {
+      toast.error('Failed to parse file. Please check the format.');
+      setActiveImportCollege(null);
     }
   };
+
+  const confirmCollegeImport = () => {
+    if (!pendingImportCollege) return;
+    const count = importCollegeStudents(pendingImportCollege, collegeCsvPreview);
+    setCollegeCsvPreviewOpen(false);
+    setCollegeCsvPreview([]);
+    setPendingImportCollege(null);
+    setActiveImportCollege(null);
+    if (count > 0) {
+      toast.success(`${count} student${count !== 1 ? 's' : ''} added to ${pendingImportCollege} pool.`);
+    } else {
+      toast.info('No new students — all emails already exist in this college pool.');
+    }
+  };
+
+  const studentColumns = [
+    { header: 'Name', accessor: 'name' as const, sortable: true },
+    { header: 'Reg. No', accessor: 'registrationNumber' as const },
+    { header: 'Email', accessor: 'email' as const },
+    { header: 'Degree', accessor: 'degree' as const },
+    { header: 'CGPA / UG%', accessor: 'cgpa' as const, sortable: true },
+    {
+      header: 'GitHub',
+      render: (row: CollegeStudent) =>
+        row.githubUrl ? (
+          <a href={row.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />GitHub
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'LinkedIn',
+      render: (row: CollegeStudent) =>
+        row.linkedinUrl ? (
+          <a href={row.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />LinkedIn
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'Resume',
+      render: (row: CollegeStudent) =>
+        row.resumeUrl ? (
+          <a href={row.resumeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-emerald-600 hover:underline">
+            <FileText className="h-3.5 w-3.5" />Open
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+  ];
 
   // ── Attendance sheet ─────────────────────────────────────────────────────────
   const openAttendance = (driveId: string) => {
@@ -267,7 +304,7 @@ export const OnlineAssessment: React.FC = () => {
         group:            'Default Group',
         createdOn,
         lastActivity:     relativeTime(lastTs),
-        studentCount:     driveCandidates.length,
+        registered:       drive.registered,
         invited:          invited.length || null,
         participationPct,
         finishedPct,
@@ -305,12 +342,12 @@ export const OnlineAssessment: React.FC = () => {
       ),
     },
     {
-      header: 'STUDENTS',
-      accessor: 'studentCount' as const,
+      header: 'REGISTERED',
+      accessor: 'registered' as const,
       sortable: true,
       render: (row: TestRow) => (
         <div className="space-y-0.5">
-          <p className="text-sm font-semibold">{row.studentCount}</p>
+          <p className="text-sm font-semibold">{row.registered}</p>
           <p className="text-xs text-muted-foreground">
             {row.invited != null ? `${row.invited} invited` : 'none invited'}
           </p>
@@ -393,43 +430,6 @@ export const OnlineAssessment: React.FC = () => {
             <Pencil className="h-3.5 w-3.5" />
           </Button>
 
-          {/* Copy test URL */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            disabled={!row.assessmentUrl}
-            title={row.assessmentUrl ? 'Copy test URL' : 'No assessment linked'}
-            onClick={() => row.assessmentUrl && copyToClipboard(row.assessmentUrl, 'Test URL')}
-          >
-            <LinkIcon className="h-3.5 w-3.5" />
-          </Button>
-
-          {/* Copy password (in-person shared password) */}
-          {row.accessMode === 'in-person' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              disabled={!row.assessmentPassword}
-              title={row.assessmentPassword ? 'Copy shared test password' : 'No assessment linked'}
-              onClick={() => row.assessmentPassword && copyToClipboard(row.assessmentPassword, 'Password')}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          )}
-
-          {/* Import students CSV */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            title="Import students from CSV"
-            onClick={() => openCsvPicker(row.id)}
-          >
-            <Upload className="h-3.5 w-3.5" />
-          </Button>
-
           {/* Send email invites (remote only) */}
           {row.accessMode === 'remote' && (
             <Button
@@ -453,19 +453,28 @@ export const OnlineAssessment: React.FC = () => {
             </Button>
           )}
 
-          {/* Mark attendance (in-person only) */}
-          {row.accessMode === 'in-person' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              title="Mark attendance"
-              disabled={!row.invited}
-              onClick={() => openAttendance(row.id)}
-            >
-              <UserCheck className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          {/* Import to college student pool */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title={`Import students to ${row.college} pool`}
+            disabled={activeImportCollege === row.college}
+            onClick={() => openCollegeFilePicker(row.college)}
+          >
+            <Upload className="h-3.5 w-3.5 text-emerald-600" />
+          </Button>
+
+          {/* View college student pool */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title={`View ${row.college} student pool (${(db.collegeStudents ?? []).filter(s => s.college === row.college).length})`}
+            onClick={() => setViewStudentsCollege(row.college)}
+          >
+            <Eye className="h-3.5 w-3.5 text-blue-600" />
+          </Button>
         </div>
       ),
     },
@@ -483,15 +492,14 @@ export const OnlineAssessment: React.FC = () => {
     },
   ];
 
-  // ── Attendance candidates (memoised off open state) ──────────────────────────
-  const importingDriveName = importingDriveId
-    ? (db.drives.find(d => d.id === importingDriveId)?.college ?? '')
-    : '';
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Tests</h1>
+        <Button onClick={openCreate} className="gap-2">
+          <Plus className="h-4 w-4" />
+          New Drive
+        </Button>
       </div>
 
       <Table
@@ -503,30 +511,53 @@ export const OnlineAssessment: React.FC = () => {
         exportFileName="Tests_Export"
       />
 
-      {/* Hidden CSV file input */}
+      {/* Hidden file input for college student pool import */}
       <input
-        ref={csvInputRef}
+        ref={collegeFileInputRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         className="hidden"
-        onChange={handleCsvFileSelect}
+        onChange={handleCollegeFileChange}
       />
 
-      {/* ── Edit Drive Sheet ── */}
-      <Sheet open={editOpen} onOpenChange={v => { if (!v) setEditOpen(false); }}>
+      {/* ── Edit / Create Drive Sheet ── */}
+      <Sheet open={editOpen} onOpenChange={v => { if (!v) { setEditOpen(false); setIsCreating(false); } }}>
         <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle>Edit Drive</SheetTitle>
+            <SheetTitle>{isCreating ? 'Create New Drive' : 'Edit Drive'}</SheetTitle>
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-1.5">
-              <Label>Drive Name</Label>
-              <Input value={draftName} onChange={e => setDraftName(e.target.value)} />
+              <Label>Drive Name {isCreating && '*'}</Label>
+              <Input
+                placeholder={isCreating ? 'e.g. IIT Madras Campus Recruitment 2026' : ''}
+                value={draftName}
+                onChange={e => setDraftName(e.target.value)}
+              />
             </div>
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} />
+
+            {isCreating && (
+              <div className="space-y-1.5">
+                <Label>College Name *</Label>
+                <Input
+                  placeholder="e.g. Kongu Engineering College"
+                  value={draftCollege}
+                  onChange={e => setDraftCollege(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Day 1 Date</Label>
+                <p className="text-xs text-muted-foreground -mt-1">Pre-placement & Online Test</p>
+                <Input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Day 2 Date</Label>
+                <p className="text-xs text-muted-foreground -mt-1">Interview, Coding & Whiteboarding</p>
+                <Input type="date" value={draftDay2Date} onChange={e => setDraftDay2Date(e.target.value)} />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Location</Label>
@@ -560,10 +591,6 @@ export const OnlineAssessment: React.FC = () => {
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Target Hiring</Label>
-              <Input type="number" value={draftTarget} onChange={e => setDraftTarget(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
               <Label>SPOC Name</Label>
               <Input value={draftSpocName} onChange={e => setDraftSpocName(e.target.value)} />
             </div>
@@ -582,31 +609,44 @@ export const OnlineAssessment: React.FC = () => {
           </div>
 
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>
-              Cancel
-            </Button>
-            <Button className="flex-1" onClick={handleSave}>
-              Save Changes
-            </Button>
+            {isCreating ? (
+              <>
+                <Button variant="outline" className="flex-1" onClick={() => handleSave('Draft')}>
+                  Save as Draft
+                </Button>
+                <Button className="flex-1" onClick={() => handleSave('Published')}>
+                  Publish Drive
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </Button>
+                <Button className="flex-1" onClick={() => handleSave()}>
+                  Save Changes
+                </Button>
+              </>
+            )}
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
-      {/* ── CSV Import Preview Sheet ── */}
-      <Sheet open={csvPreviewOpen} onOpenChange={v => { if (!v) { setCsvPreviewOpen(false); setImportingDriveId(null); } }}>
+      {/* ── College Import Preview Sheet ── */}
+      <Sheet open={collegeCsvPreviewOpen} onOpenChange={v => { if (!v) { setCollegeCsvPreviewOpen(false); setPendingImportCollege(null); setCollegeCsvPreview([]); setActiveImportCollege(null); } }}>
         <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle>Import Students</SheetTitle>
+            <SheetTitle>Import to College Pool</SheetTitle>
             <p className="text-sm text-muted-foreground">
-              {importingDriveName && <span className="font-medium text-foreground">{importingDriveName} · </span>}
-              {csvPreviewRows.length} student{csvPreviewRows.length !== 1 ? 's' : ''} found in CSV
+              {pendingImportCollege && <span className="font-medium text-foreground">{pendingImportCollege} · </span>}
+              {collegeCsvPreview.length} student{collegeCsvPreview.length !== 1 ? 's' : ''} found in file
             </p>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-            {csvPreviewRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No valid rows found in CSV.</p>
+            {collegeCsvPreview.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No valid rows found in file.</p>
             ) : (
-              csvPreviewRows.map((r, i) => (
+              collegeCsvPreview.map((r, i) => (
                 <div key={i} className="flex items-start justify-between border rounded px-3 py-2 text-sm">
                   <div>
                     <p className="font-medium">{r.name}</p>
@@ -621,11 +661,39 @@ export const OnlineAssessment: React.FC = () => {
             )}
           </div>
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => { setCsvPreviewOpen(false); setImportingDriveId(null); }}>
+            <Button variant="outline" className="flex-1" onClick={() => { setCollegeCsvPreviewOpen(false); setPendingImportCollege(null); setCollegeCsvPreview([]); setActiveImportCollege(null); }}>
               Cancel
             </Button>
-            <Button className="flex-1" disabled={csvPreviewRows.length === 0} onClick={confirmCsvImport}>
-              Import {csvPreviewRows.length} Student{csvPreviewRows.length !== 1 ? 's' : ''}
+            <Button className="flex-1" disabled={collegeCsvPreview.length === 0} onClick={confirmCollegeImport}>
+              Import {collegeCsvPreview.length} Student{collegeCsvPreview.length !== 1 ? 's' : ''}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── College Student Pool Sheet ── */}
+      <Sheet open={!!viewStudentsCollege} onOpenChange={v => { if (!v) setViewStudentsCollege(null); }}>
+        <SheetContent side="right" className="sm:max-w-4xl flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Student Pool — {viewStudentsCollege}</SheetTitle>
+            <p className="text-sm text-muted-foreground">
+              {(db.collegeStudents ?? []).filter(s => s.college === viewStudentsCollege).length} students imported
+            </p>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {viewStudentsCollege && (
+              <Table
+                data={(db.collegeStudents ?? []).filter(s => s.college === viewStudentsCollege)}
+                columns={studentColumns}
+                searchPlaceholder="Search students..."
+                searchKey={s => `${s.name} ${s.email} ${s.degree} ${s.registrationNumber ?? ''}`}
+                exportFileName={`${viewStudentsCollege}_Students`}
+              />
+            )}
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0">
+            <Button className="w-full" variant="outline" onClick={() => setViewStudentsCollege(null)}>
+              Close
             </Button>
           </SheetFooter>
         </SheetContent>
