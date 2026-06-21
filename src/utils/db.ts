@@ -27,18 +27,118 @@ export interface Database {
   offers: Offer[];
 }
 
-const COLLEGES = [
-  'IIT Madras', 'IIT Bombay', 'IIT Delhi', 'IIT Kharagpur', 'IIT Roorkee',
-  'BITS Pilani', 'NIT Trichy', 'NIT Surathkal', 'VIT Vellore', 'PSG Tech Coimbatore',
-  'Amrita Vishwa Vidyapeetham', 'MIT Manipal', 'RV College of Engineering', 'COEP Pune',
-  'DTU Delhi', 'NSUT Delhi', 'IIIT Hyderabad', 'IIIT Bangalore', 'Jadavpur University',
-  'Anna University', 'SRM University', 'PES University', 'MS Ramaiah Institute', 'BMSCE Bangalore',
-  'SSN College of Engineering', 'Sastra University', 'Thapar Institute', 'PEC Chandigarh',
-  'VNIT Nagpur', 'MANIT Bhopal', 'MNNIT Allahabad', 'NIT Warangal', 'NIT Calicut',
-  'VJTI Mumbai', 'LPU Jalandhar', 'Kalinga Institute', 'Chitkara University', 'Nirma University',
-  'LD College of Engineering', 'IIEST Shibpur', 'BIT Mesra', 'Dhirubhai Ambani IICT',
-  'Hindustan Institute', 'Sathyabama University', 'Karunya Institute', 'Cochin University',
-  'Gitam University', 'KL University', 'VNR Vignana Jyothi', 'CBIT Hyderabad'
+const DRIVE_DATA: { college: string; year: number }[] = [
+  // 2020 — 16 drives
+  { college: 'R.M.K. Group of Colleges',                               year: 2020 },
+  { college: 'Kongu Engineering College',                               year: 2020 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2020 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2020 },
+  { college: 'Velammal College of Engineering and Technology',          year: 2020 },
+  { college: 'Sastra Deemed University',                                year: 2020 },
+  { college: 'Coimbatore Institute of Technology',                      year: 2020 },
+  { college: 'IMS Engineering College',                                 year: 2020 },
+  { college: 'KGiSL College',                                          year: 2020 },
+  { college: 'Kumaraguru College of Technology',                        year: 2020 },
+  { college: 'SIBAR, Pune',                                            year: 2020 },
+  { college: 'SSN College of Engineering',                              year: 2020 },
+  { college: 'TCS College',                                            year: 2020 },
+  { college: 'Thiagarajar College of Engineering',                      year: 2020 },
+  { college: 'NIT Trichy',                                             year: 2020 },
+  { college: 'PSG College of Arts and Science',                         year: 2020 },
+  // 2021 — 17 drives
+  { college: 'R.M.K. Group of Colleges',                               year: 2021 },
+  { college: 'Kongu Engineering College',                               year: 2021 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2021 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2021 },
+  { college: 'Velammal College of Engineering and Technology',          year: 2021 },
+  { college: 'Sastra Deemed University',                                year: 2021 },
+  { college: 'Coimbatore Institute of Technology',                      year: 2021 },
+  { college: 'Kumaraguru College of Technology',                        year: 2021 },
+  { college: 'SSN College of Engineering',                              year: 2021 },
+  { college: 'Sri Eshwar College of Engineering',                       year: 2021 },
+  { college: 'Meenakshi Sundararajan Engineering College',              year: 2021 },
+  { college: 'Institute of Computer Technology, Ganpat University',     year: 2021 },
+  { college: 'Pondicherry University',                                  year: 2021 },
+  { college: 'Rajalakshmi College of Engineering and Technology',       year: 2021 },
+  { college: 'Sri Ramakrishna Institute of Technology',                 year: 2021 },
+  { college: 'Maharaja Institute of Technology Mysore',                 year: 2021 },
+  { college: "St. Joseph's College of Engineering and Technology",      year: 2021 },
+  // 2022 — 13 drives
+  { college: 'R.M.K. Group of Colleges',                               year: 2022 },
+  { college: 'Kongu Engineering College',                               year: 2022 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2022 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2022 },
+  { college: 'Velammal College of Engineering and Technology',          year: 2022 },
+  { college: 'Sastra Deemed University',                                year: 2022 },
+  { college: 'Loyola ICAM',                                            year: 2022 },
+  { college: 'Chennai Institute of Technologies',                       year: 2022 },
+  { college: 'SA Engineering College',                                  year: 2022 },
+  { college: 'Saveetha Engineering College',                            year: 2022 },
+  { college: 'SNS College of Technology',                               year: 2022 },
+  { college: 'Sona College of Technology',                              year: 2022 },
+  { college: 'Sathyabama Institute of Science and Technology',          year: 2022 },
+  // 2023 — 16 drives
+  { college: 'R.M.K. Group of Colleges',                               year: 2023 },
+  { college: 'Kongu Engineering College',                               year: 2023 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2023 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2023 },
+  { college: 'Velammal College of Engineering and Technology',          year: 2023 },
+  { college: 'Sastra Deemed University',                                year: 2023 },
+  { college: 'Sri Eshwar College of Engineering',                       year: 2023 },
+  { college: 'Saveetha Engineering College',                            year: 2023 },
+  { college: 'SNS College of Technology',                               year: 2023 },
+  { college: 'NIT Trichy',                                             year: 2023 },
+  { college: 'Sona College of Technology',                              year: 2023 },
+  { college: 'NIT Warangal (Prograd - Chennai)',                        year: 2023 },
+  { college: 'Sathyabama Institute of Science and Technology',          year: 2023 },
+  { college: 'Meenakshi Sundararajan Engineering College',              year: 2023 },
+  { college: "St. Joseph's College of Engineering and Technology",      year: 2023 },
+  { college: 'Rajalakshmi College of Engineering and Technology',       year: 2023 },
+  // 2024 — 15 drives
+  { college: 'R.M.K. Group of Colleges',                               year: 2024 },
+  { college: 'Kongu Engineering College',                               year: 2024 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2024 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2024 },
+  { college: 'Velammal College of Engineering and Technology',          year: 2024 },
+  { college: 'Sastra Deemed University',                                year: 2024 },
+  { college: 'SSN College of Engineering',                              year: 2024 },
+  { college: 'Sri Eshwar College of Engineering',                       year: 2024 },
+  { college: 'Loyola ICAM',                                            year: 2024 },
+  { college: 'Chennai Institute of Technologies',                       year: 2024 },
+  { college: 'Meenakshi Sundararajan Engineering College',              year: 2024 },
+  { college: "St. Joseph's College of Engineering and Technology",      year: 2024 },
+  { college: 'Rajalakshmi College of Engineering and Technology',       year: 2024 },
+  { college: 'Sri Shakthi Institute of Engineering and Technology',     year: 2024 },
+  { college: 'Erode Sengunthar Engineering College',                    year: 2024 },
+  // 2025 — 16 drives
+  { college: 'Kongu Engineering College',                               year: 2025 },
+  { college: 'Sri Eshwar College of Engineering',                       year: 2025 },
+  { college: 'Bannari Amman Institute of Technology',                   year: 2025 },
+  { college: 'Sri Krishna College of Engineering & Technology',         year: 2025 },
+  { college: "St. Joseph's Engineering College - Chennai",              year: 2025 },
+  { college: 'Meenakshi Sundararajan College',                          year: 2025 },
+  { college: 'Velammal Groups of College',                              year: 2025 },
+  { college: 'Sastra Deemed University - Thanjavur',                    year: 2025 },
+  { college: 'Vellore Institute of Technology',                         year: 2025 },
+  { college: 'Sri Sivasubramaniya Nadar College of Engineering',        year: 2025 },
+  { college: 'Pool Drive',                                              year: 2025 },
+  { college: 'RV College of Engineering',                               year: 2025 },
+  { college: 'Jawaharlal Nehru Technological University',               year: 2025 },
+  { college: 'New Horizon College of Engineering',                      year: 2025 },
+  { college: 'Anna University',                                         year: 2025 },
+  { college: 'Pooled Drive - Hyderabad',                                year: 2025 },
+  // 2026 — 11 drives
+  { college: 'Kongu Engineering College, Erode',                        year: 2026 },
+  { college: 'BIT, KPR, Karpagam & Hindustan',                         year: 2026 },
+  { college: "St. Joseph's College, Chennai",                           year: 2026 },
+  { college: 'Sri Eshwar College, Coimbatore',                          year: 2026 },
+  { college: 'Amrita Vidya Peetham, Chennai (PRIME)',                   year: 2026 },
+  { college: 'New Horizon College, Bangalore',                          year: 2026 },
+  { college: 'CIT College, Chennai',                                    year: 2026 },
+  { college: 'Sri Krishna, KIT & Sri Sakthi',                           year: 2026 },
+  { college: 'KL University, Hyderabad',                                year: 2026 },
+  { college: 'Rajalakshmi Engineering College',                         year: 2026 },
+  { college: 'Pooled Drive - Velammal, MSN, Saveetha & LICT',          year: 2026 },
 ];
 
 const FIRST_NAMES = [
@@ -584,13 +684,24 @@ export function generateMockDatabase(): Database {
     });
   }
 
-  // 2. Generate 50 Campus Drives
-  const drives: CampusDrive[] = [];
-  for (let i = 1; i <= 50; i++) {
-    const college = COLLEGES[i - 1];
-    const location = rnd.pick(LOCATIONS);
+  const deriveLocation = (college: string): string => {
+    const c = college.toLowerCase();
+    if (c.includes('bangalore'))   return 'Bangalore';
+    if (c.includes('hyderabad'))   return 'Hyderabad';
+    if (c.includes('pune'))        return 'Pune';
+    if (c.includes('mysore'))      return 'Mysore';
+    if (c.includes('pondicherry')) return 'Pondicherry';
+    if (c.includes('thanjavur'))   return 'Thanjavur';
+    if (c.includes('coimbatore') || c.includes('erode') || c.includes('kpr') || c.includes('karpagam')) return 'Coimbatore';
+    if (c.includes('madurai'))     return 'Madurai';
+    return 'Chennai';
+  };
 
-    const year = 2026;
+  // 2. Generate Campus Drives from real Presidio history (104 drives, 2020–2026)
+  const drives: CampusDrive[] = [];
+  for (let i = 0; i < DRIVE_DATA.length; i++) {
+    const { college, year } = DRIVE_DATA[i];
+    const location = deriveLocation(college);
     const status: CampusDrive['status'] = 'Draft';
 
     const month = Math.floor(rnd.range(7, 12));
@@ -626,7 +737,7 @@ export function generateMockDatabase(): Database {
       selected,
       spocName: `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`,
       spocContact: `+91 ${Math.floor(rnd.range(7000000000, 9999999999))}`,
-      description: DRIVE_DESCRIPTIONS[(i - 1) % DRIVE_DESCRIPTIONS.length](college),
+      description: DRIVE_DESCRIPTIONS[i % DRIVE_DESCRIPTIONS.length](college),
       status,
       accessMode: i % 3 === 0 ? 'remote' : 'in-person',
       questionIds: driveQIds,
@@ -854,7 +965,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers };
 }
 
-const DB_VERSION = '9';
+const DB_VERSION = '10';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

@@ -301,13 +301,6 @@ export const OnlineAssessment: React.FC = () => {
             <p className="font-semibold text-sm group-hover:text-primary transition-colors leading-snug">{row.name}</p>
           </button>
           <p className="text-xs text-muted-foreground">{row.college}</p>
-          <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded mt-0.5 ${
-            row.accessMode === 'remote'
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-amber-100 text-amber-700'
-          }`}>
-            {row.accessMode === 'remote' ? 'Remote' : 'In-Person'}
-          </span>
         </div>
       ),
     },
@@ -486,14 +479,6 @@ export const OnlineAssessment: React.FC = () => {
         { label: 'Ongoing',     value: 'Ongoing' },
         { label: 'Deactivated', value: 'Deactivated' },
         { label: 'Finished',    value: 'Finished' },
-      ],
-    },
-    {
-      key:   'accessMode',
-      label: 'Mode',
-      options: [
-        { label: 'In-Person', value: 'in-person' },
-        { label: 'Remote',    value: 'remote' },
       ],
     },
   ];
