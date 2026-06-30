@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Modal } from '../../components/Modal';
-import type { CampusDrive } from '../../types';
-import { Plus, Calendar, MapPin } from 'lucide-react';
+import type { CampusDrive, CollegeStudent } from '../../types';
+import {
+  Plus, Calendar, MapPin, Upload, Eye, Users,
+  ExternalLink, FileText, ChevronDown, ChevronRight, Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { parseStudentFile } from '../../utils/parseStudentFile';
+import { toast } from 'sonner';
 
 const driveStatusVariant = (status: CampusDrive['status']) => {
   switch (status) {
@@ -21,33 +26,88 @@ const driveStatusVariant = (status: CampusDrive['status']) => {
 };
 
 export const CampusDrives: React.FC = () => {
-  const { db, createDrive } = useApp();
+  const { db, createDrive, importCollegeStudents, deleteCollegeStudents } = useApp();
+
+  // Create drive modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [college, setCollege] = useState('');
   const [date, setDate] = useState('');
+  const [day2Date, setDay2Date] = useState('');
   const [location, setLocation] = useState('');
-  const [targetHiring, setTargetHiring] = useState('');
+
   const [spocName, setSpocName] = useState('');
   const [spocContact, setSpocContact] = useState('');
   const [description, setDescription] = useState('');
 
+  // College student pool state
+  const [studentModalCollege, setStudentModalCollege] = useState<string | null>(null);
+  const [importingCollege, setImportingCollege] = useState<string | null>(null);
+  const [expandedColleges, setExpandedColleges] = useState<Set<string>>(new Set());
+  const [collegeSearch, setCollegeSearch] = useState('');
+
   const resetForm = () => {
-    setName(''); setCollege(''); setDate(''); setLocation('');
-    setTargetHiring(''); setSpocName(''); setSpocContact(''); setDescription('');
+    setName(''); setCollege(''); setDate(''); setDay2Date(''); setLocation('');
+    setSpocName(''); setSpocContact(''); setDescription('');
   };
 
   const handleSave = (status: CampusDrive['status']) => {
-    if (!name || !college || !date || !location || !targetHiring) {
+    if (!name || !college || !date || !location) {
       alert('Please fill all required fields.');
       return;
     }
-    createDrive({ name, college, date, location, targetHiring: parseInt(targetHiring), spocName, spocContact, description, status, accessMode: 'in-person' });
+    createDrive({ name, college, date, day2Date: day2Date || undefined, location, spocName, spocContact, description, status, accessMode: 'in-person' });
     resetForm();
     setModalOpen(false);
   };
 
-  const columns = [
+  const toggleCollege = (c: string) => {
+    setExpandedColleges(prev => {
+      const next = new Set(prev);
+      next.has(c) ? next.delete(c) : next.add(c);
+      return next;
+    });
+  };
+
+  const drivesByCollege = useMemo(() => {
+    const map = db.drives.reduce((m, d) => {
+      if (!m.has(d.college)) m.set(d.college, []);
+      m.get(d.college)!.push(d);
+      return m;
+    }, new Map<string, CampusDrive[]>());
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [db.drives]);
+
+  const filteredColleges = useMemo(() => {
+    if (!collegeSearch.trim()) return drivesByCollege;
+    const q = collegeSearch.toLowerCase();
+    return drivesByCollege.filter(([c]) => c.toLowerCase().includes(q));
+  }, [drivesByCollege, collegeSearch]);
+
+  const handleStudentFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    targetCollege: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImportingCollege(targetCollege);
+    try {
+      const rows = await parseStudentFile(file);
+      const count = importCollegeStudents(targetCollege, rows);
+      if (count > 0) {
+        toast.success(`${count} student${count !== 1 ? 's' : ''} added to ${targetCollege}.`);
+      } else {
+        toast.info('No new students added — all emails already exist in this college pool.');
+      }
+    } catch {
+      toast.error('Failed to parse file. Please check the format.');
+    } finally {
+      setImportingCollege(null);
+    }
+  };
+
+  const driveColumns = [
     {
       header: 'Drive Name',
       accessor: 'name' as const,
@@ -59,7 +119,6 @@ export const CampusDrives: React.FC = () => {
         </div>
       ),
     },
-    { header: 'College', accessor: 'college' as const, sortable: true },
     {
       header: 'Date',
       accessor: 'date' as const,
@@ -82,7 +141,7 @@ export const CampusDrives: React.FC = () => {
         </span>
       ),
     },
-    { header: 'Target', accessor: 'targetHiring' as const, sortable: true },
+
     { header: 'Registered', accessor: 'registered' as const, sortable: true },
     { header: 'Selected', accessor: 'selected' as const, sortable: true },
     {
@@ -95,23 +154,74 @@ export const CampusDrives: React.FC = () => {
     },
   ];
 
-  const tableFilters = [
+  const studentColumns = [
+    { header: 'Name', accessor: 'name' as const, sortable: true },
+    { header: 'Reg. No', accessor: 'registrationNumber' as const },
+    { header: 'Email', accessor: 'email' as const },
+    { header: 'Degree', accessor: 'degree' as const, sortable: true },
+    { header: 'Specialization', accessor: 'specialization' as const },
     {
-      key: 'status',
-      label: 'Status',
-      options: [
-        { label: 'Published', value: 'Published' },
-        { label: 'Ongoing', value: 'Ongoing' },
-        { label: 'Completed', value: 'Completed' },
-        { label: 'Draft', value: 'Draft' },
-      ],
+      header: 'CGPA / UG%',
+      accessor: 'cgpa' as const,
+      sortable: true,
+      render: (row: CollegeStudent) => row.cgpa || '—',
     },
     {
-      key: 'location',
-      label: 'Location',
-      options: Array.from(new Set(db.drives.map(d => d.location))).map(loc => ({ label: loc, value: loc })),
+      header: 'GitHub',
+      render: (row: CollegeStudent) =>
+        row.githubUrl ? (
+          <a
+            href={row.githubUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-sm text-foreground hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            GitHub
+          </a>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        ),
+    },
+    {
+      header: 'LinkedIn',
+      render: (row: CollegeStudent) =>
+        row.linkedinUrl ? (
+          <a
+            href={row.linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            LinkedIn
+          </a>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        ),
+    },
+    {
+      header: 'Resume',
+      render: (row: CollegeStudent) =>
+        row.resumeUrl ? (
+          <a
+            href={row.resumeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-sm text-emerald-600 hover:underline"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Open
+          </a>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        ),
     },
   ];
+
+  const modalStudents = studentModalCollege
+    ? (db.collegeStudents ?? []).filter(s => s.college === studentModalCollege)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -119,7 +229,7 @@ export const CampusDrives: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Campus Drives</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Schedule and manage campus placement drives at top engineering colleges.
+            Schedule and manage campus placement drives. Import student databases per college.
           </p>
         </div>
         <Button onClick={() => setModalOpen(true)} className="gap-2">
@@ -128,16 +238,136 @@ export const CampusDrives: React.FC = () => {
         </Button>
       </div>
 
-      <Table
-        data={db.drives}
-        columns={columns}
-        filters={tableFilters}
-        searchPlaceholder="Search drives or colleges..."
-        searchKey={d => `${d.name} ${d.college}`}
-        initialSort={{ key: 'date', direction: 'desc' }}
-        exportFileName="Campus_Drives_Export"
+      <Input
+        placeholder="Search colleges..."
+        value={collegeSearch}
+        onChange={e => setCollegeSearch(e.target.value)}
+        className="max-w-sm"
       />
 
+      <div className="space-y-3">
+        {filteredColleges.map(([collegeName, drives]) => {
+          const poolStudents = (db.collegeStudents ?? []).filter(s => s.college === collegeName);
+          const isExpanded = expandedColleges.has(collegeName);
+
+          return (
+            <div key={collegeName} className="rounded-lg border bg-card shadow-sm overflow-hidden">
+              {/* College header */}
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                <button
+                  className="flex items-center gap-2 font-semibold text-sm text-left hover:text-primary transition-colors"
+                  onClick={() => toggleCollege(collegeName)}
+                >
+                  {isExpanded
+                    ? <ChevronDown className="h-4 w-4 shrink-0" />
+                    : <ChevronRight className="h-4 w-4 shrink-0" />}
+                  {collegeName}
+                  <Badge variant="outline" className="ml-1 text-xs font-normal">
+                    {drives.length} drive{drives.length !== 1 ? 's' : ''}
+                  </Badge>
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Users className="h-3.5 w-3.5" />
+                    {poolStudents.length} in pool
+                  </span>
+
+                  {/* Hidden file input per college */}
+                  <input
+                    type="file"
+                    id={`file-${collegeName}`}
+                    accept=".csv,.xlsx,.xls"
+                    className="hidden"
+                    onChange={e => handleStudentFileChange(e, collegeName)}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={importingCollege === collegeName}
+                    onClick={() => document.getElementById(`file-${collegeName}`)?.click()}
+                    className="gap-1.5 h-7 text-xs"
+                  >
+                    <Upload className="h-3 w-3" />
+                    {importingCollege === collegeName ? 'Importing…' : 'Import Students'}
+                  </Button>
+
+                  {poolStudents.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 h-7 text-xs"
+                      onClick={() => setStudentModalCollege(collegeName)}
+                    >
+                      <Eye className="h-3 w-3" />
+                      View Students
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Expanded drives table */}
+              {isExpanded && (
+                <div className="p-4">
+                  <Table
+                    data={drives}
+                    columns={driveColumns}
+                    searchPlaceholder="Search drives..."
+                    searchKey={d => `${d.name} ${d.location}`}
+                    initialSort={{ key: 'date', direction: 'desc' }}
+                    exportFileName={`${collegeName}_Drives`}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {filteredColleges.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground text-sm">
+            No colleges found matching "{collegeSearch}".
+          </div>
+        )}
+      </div>
+
+      {/* Student pool modal */}
+      {studentModalCollege && (
+        <Modal
+          isOpen
+          onClose={() => setStudentModalCollege(null)}
+          title={`Student Pool — ${studentModalCollege}`}
+          footer={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  deleteCollegeStudents(studentModalCollege);
+                  setStudentModalCollege(null);
+                  toast.success(`Student pool for ${studentModalCollege} cleared.`);
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear Pool
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setStudentModalCollege(null)}>
+                Close
+              </Button>
+            </div>
+          }
+        >
+          <Table
+            data={modalStudents}
+            columns={studentColumns}
+            searchPlaceholder="Search students..."
+            searchKey={s => `${s.name} ${s.email} ${s.degree} ${s.registrationNumber ?? ''}`}
+            exportFileName={`${studentModalCollege}_Students`}
+          />
+        </Modal>
+      )}
+
+      {/* Create drive modal */}
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); resetForm(); }}
@@ -168,12 +398,14 @@ export const CampusDrives: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Drive Date *</Label>
+              <Label>Day 1 Date *</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Pre-placement & Online Test</p>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Hiring Target *</Label>
-              <Input type="number" placeholder="e.g. 25" value={targetHiring} onChange={e => setTargetHiring(e.target.value)} />
+              <Label>Day 2 Date</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Interview, Coding & Whiteboarding</p>
+              <Input type="date" value={day2Date} onChange={e => setDay2Date(e.target.value)} />
             </div>
           </div>
 

@@ -11,6 +11,14 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from '@/components/ui/sheet';
 import {
@@ -22,7 +30,7 @@ import {
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Upload, UserCheck, UserX, Mail,
+  Upload, UserCheck, UserX, Mail, ExternalLink,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
@@ -375,12 +383,13 @@ export const TestDetail: React.FC = () => {
   const [driveEditOpen, setDriveEditOpen] = useState(false);
   const [draftDriveName, setDraftDriveName] = useState('');
   const [draftDriveDate, setDraftDriveDate] = useState('');
+  const [draftDriveDay2Date, setDraftDriveDay2Date] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
   const [draftDriveStatus, setDraftDriveStatus] = useState<CampusDrive['status']>('Draft');
   const [draftDriveAccessMode, setDraftDriveAccessMode] = useState<CampusDrive['accessMode']>('in-person');
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
-  const [draftDriveTarget, setDraftDriveTarget] = useState('');
+
   const [draftDriveSpocName, setDraftDriveSpocName] = useState('');
   const [draftDriveSpocContact, setDraftDriveSpocContact] = useState('');
   const [draftDriveDescription, setDraftDriveDescription] = useState('');
@@ -426,6 +435,10 @@ export const TestDetail: React.FC = () => {
   const [wbSheetOpen, setWbSheetOpen] = useState(false);
   const [wbCandidate, setWbCandidate] = useState<Candidate | null>(null);
   const [wbDraft, setWbDraft] = useState<WhiteboardDraft>({ ...BLANK_WB });
+
+  // ── Publish confirmation & success ───────────────────────────────────────────
+  const [confirmPublishOpen, setConfirmPublishOpen] = useState(false);
+  const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
 
   const drive = useMemo(() => db.drives.find(d => d.id === id), [db.drives, id]);
 
@@ -557,6 +570,14 @@ export const TestDetail: React.FC = () => {
   );
 
   // ── handlers ────────────────────────────────────────────────────────────────
+
+  const handleConfirmPublish = () => {
+    if (!drive) return;
+    updateDrive({ ...drive, status: 'Published' });
+    if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
+    setConfirmPublishOpen(false);
+    setPublishSuccessOpen(true);
+  };
 
   const toggleSection = (topic: string) => {
     setCollapsedSections(prev => {
@@ -903,12 +924,13 @@ export const TestDetail: React.FC = () => {
     if (!drive) return;
     setDraftDriveName(drive.name);
     setDraftDriveDate(drive.date);
+    setDraftDriveDay2Date(drive.day2Date ?? '');
     setDraftDriveLocation(drive.location);
     setDraftDriveStatus(drive.status);
     setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
-    setDraftDriveTarget(String(drive.targetHiring));
+
     setDraftDriveSpocName(drive.spocName);
     setDraftDriveSpocContact(drive.spocContact);
     setDraftDriveDescription(drive.description);
@@ -921,12 +943,12 @@ export const TestDetail: React.FC = () => {
       ...drive,
       name: draftDriveName,
       date: draftDriveDate,
+      day2Date: draftDriveDay2Date || undefined,
       location: draftDriveLocation,
       status: draftDriveStatus,
       accessMode: draftDriveAccessMode,
       examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
       examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
-      targetHiring: parseInt(draftDriveTarget) || 0,
       spocName: draftDriveSpocName,
       spocContact: draftDriveSpocContact,
       description: draftDriveDescription,
@@ -1717,6 +1739,19 @@ export const TestDetail: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Confirm & Publish button — shown only in Draft state with questions */}
+          {drive?.status === 'Draft' && driveQuestions.length > 0 && linkedAssessment && (
+            <div className="mt-6 pt-4 border-t flex justify-end">
+              <Button
+                className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={() => setConfirmPublishOpen(true)}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Confirm & Publish Test
+              </Button>
+            </div>
+          )}
         </TabsContent>
 
         {/* ── Invite Tab ── */}
@@ -2413,6 +2448,25 @@ export const TestDetail: React.FC = () => {
                         <td className="px-4 py-3">
                           <p className="font-medium">{c.name}</p>
                           <p className="text-xs text-muted-foreground">{c.email}</p>
+                          {(c.resumeUrl || c.githubUrl || c.linkedinUrl) && (
+                            <div className="flex items-center gap-2 mt-1">
+                              {c.resumeUrl && (
+                                <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                                  <FileText className="h-3 w-3" />Resume
+                                </a>
+                              )}
+                              {c.githubUrl && (
+                                <a href={c.githubUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                                  <ExternalLink className="h-3 w-3" />GitHub
+                                </a>
+                              )}
+                              {c.linkedinUrl && (
+                                <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                                  <ExternalLink className="h-3 w-3" />LinkedIn
+                                </a>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(scoreBand(pct))}`}>{pct}%</span>
@@ -2824,9 +2878,17 @@ export const TestDetail: React.FC = () => {
               <Label>Drive Name</Label>
               <Input value={draftDriveName} onChange={e => setDraftDriveName(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={draftDriveDate} onChange={e => setDraftDriveDate(e.target.value)} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Day 1 Date</Label>
+                <p className="text-xs text-muted-foreground -mt-1">Pre-placement & Online Test</p>
+                <Input type="date" value={draftDriveDate} onChange={e => setDraftDriveDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Day 2 Date</Label>
+                <p className="text-xs text-muted-foreground -mt-1">Interview, Coding & Whiteboarding</p>
+                <Input type="date" value={draftDriveDay2Date} onChange={e => setDraftDriveDay2Date(e.target.value)} />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Location</Label>
@@ -2875,10 +2937,6 @@ export const TestDetail: React.FC = () => {
                 </div>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label>Target Hiring</Label>
-              <Input type="number" value={draftDriveTarget} onChange={e => setDraftDriveTarget(e.target.value)} />
-            </div>
             <div className="space-y-1.5">
               <Label>SPOC Name</Label>
               <Input value={draftDriveSpocName} onChange={e => setDraftDriveSpocName(e.target.value)} />
@@ -3026,6 +3084,30 @@ export const TestDetail: React.FC = () => {
             )}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {/* Candidate links */}
+            {interviewCandidate && (interviewCandidate.resumeUrl || interviewCandidate.githubUrl || interviewCandidate.linkedinUrl) && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {interviewCandidate.resumeUrl && (
+                  <a href={interviewCandidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
+                    <FileText className="h-3.5 w-3.5" />
+                    Resume
+                  </a>
+                )}
+                {interviewCandidate.githubUrl && (
+                  <a href={interviewCandidate.githubUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    GitHub
+                  </a>
+                )}
+                {interviewCandidate.linkedinUrl && (
+                  <a href={interviewCandidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    LinkedIn
+                  </a>
+                )}
+              </div>
+            )}
+
             {/* Panel info */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -3257,6 +3339,95 @@ export const TestDetail: React.FC = () => {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {/* ── Publish Confirmation Dialog ── */}
+      <AlertDialog open={confirmPublishOpen} onOpenChange={setConfirmPublishOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish this test?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will activate the test and make it accessible to candidates via the link and
+              password. Candidates can begin taking the assessment immediately after publishing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleConfirmPublish}
+            >
+              Yes, Publish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Publish Success Dialog — shows link + password ── */}
+      <Dialog open={publishSuccessOpen} onOpenChange={setPublishSuccessOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle2 className="h-5 w-5" />
+              Test Published Successfully!
+            </DialogTitle>
+            <DialogDescription>
+              Share the link and password below with your students.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Test Link
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={assessmentUrl ?? ''}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={!assessmentUrl}
+                  onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Password
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={linkedAssessment?.accessPassword ?? ''}
+                  className="font-mono tracking-widest text-sm"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={!linkedAssessment?.accessPassword}
+                  onClick={() => linkedAssessment?.accessPassword && copyToClipboard(linkedAssessment.accessPassword, 'Password')}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button className="w-full" onClick={() => setPublishSuccessOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

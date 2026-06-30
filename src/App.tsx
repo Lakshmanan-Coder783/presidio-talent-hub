@@ -9,13 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 // Admin Pages
 import { Dashboard } from './pages/admin/Dashboard';
 import { OnlineAssessment } from './pages/admin/OnlineAssessment';
-import { CampusDrives } from './pages/admin/CampusDrives';
-import { Candidates } from './pages/admin/Candidates';
-import { Assessments } from './pages/admin/Assessments';
 import { QuestionBank } from './pages/admin/QuestionBank';
-import { InviteCandidates } from './pages/admin/InviteCandidates';
-import { Interviews } from './pages/admin/Interviews';
-import { Offers } from './pages/admin/Offers';
 import { Reports } from './pages/admin/Reports';
 import { Settings } from './pages/admin/Settings';
 import { TestDetail } from './pages/admin/TestDetail';
@@ -83,13 +77,7 @@ const AppRoutes: React.FC = () => {
           <Route path="/admin/dashboard"         element={<Dashboard />} />
           <Route path="/admin/online-assessment" element={<OnlineAssessment />} />
           <Route path="/admin/online-assessment/:id" element={<TestDetail />} />
-          <Route path="/admin/campus-drives"     element={<CampusDrives />} />
-          <Route path="/admin/candidates"        element={<Candidates />} />
-          <Route path="/admin/assessments"       element={<Assessments />} />
           <Route path="/admin/question-bank"     element={<QuestionBank />} />
-          <Route path="/admin/invite-candidates" element={<InviteCandidates />} />
-          <Route path="/admin/interviews"        element={<Interviews />} />
-          <Route path="/admin/offers"            element={<Offers />} />
           <Route path="/admin/reports"           element={<Reports />} />
           <Route path="/admin/settings"          element={<Settings />} />
         </Route>

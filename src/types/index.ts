@@ -3,8 +3,9 @@ export interface CampusDrive {
   name: string;
   college: string;
   date: string;
+  day2Date?: string;
   location: string;
-  targetHiring: number;
+  targetHiring?: number;
   registered: number;
   selected: number;
   spocName: string;
@@ -130,6 +131,32 @@ export interface Candidate {
   whiteboardSelectedForCulturalFit?: boolean;
   whiteboardComments?: string;
   whiteboardFinalResult?: 'Selected' | 'Rejected' | 'Waitlisted';
+}
+
+export interface CollegeStudent {
+  id: string;
+  college: string;
+  name: string;
+  email: string;
+  phone: string;
+  registrationNumber?: string;
+  degree: string;
+  specialization?: string;
+  gender: 'Male' | 'Female' | 'Other';
+  dateOfBirth?: string;
+  cgpa: number;
+  githubUrl?: string;
+  linkedinUrl?: string;
+  resumeUrl?: string;
+  codingPlatformUrls?: string;
+  tenth?: number;
+  twelfth?: number;
+  diploma?: number;
+  ugMarks?: number;
+  pgMarks?: number;
+  backlogHistory?: number;
+  currentBacklogs?: number;
+  importedAt: string;
 }
 
 export interface AssessmentSection {

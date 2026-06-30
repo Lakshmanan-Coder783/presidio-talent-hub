@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
-import type { Assessment, CampusDrive, Candidate, Question, Interview, Offer } from '../types';
+import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer } from '../types';
+import type { ParsedStudentRow } from '../utils/parseStudentFile';
 
 interface UserSession {
   role: 'admin' | 'candidate';
@@ -36,6 +37,8 @@ interface AppContextType {
   bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => number;
   sendRemoteInvites: (driveId: string) => number;
   markAttendance: (candidateId: string, present: boolean) => void;
+  importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => number;
+  deleteCollegeStudents: (college: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -509,6 +512,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveDatabase(updatedDb);
   };
 
+  const importCollegeStudents = (college: string, rows: ParsedStudentRow[]): number => {
+    const existing = new Set(
+      (db.collegeStudents ?? [])
+        .filter(s => s.college === college)
+        .map(s => s.email.toLowerCase())
+    );
+    const now = new Date().toISOString();
+    const newStudents: CollegeStudent[] = [];
+
+    rows.forEach((row, idx) => {
+      if (!row.email || existing.has(row.email.toLowerCase())) return;
+      const prefix = college.replace(/\s+/g, '').slice(0, 6).toUpperCase();
+      newStudents.push({
+        ...row,
+        id: `CS-${prefix}-${Date.now()}-${idx}`,
+        college,
+        importedAt: now,
+      });
+    });
+
+    if (newStudents.length === 0) return 0;
+    const updatedDb = { ...db, collegeStudents: [...(db.collegeStudents ?? []), ...newStudents] };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+    return newStudents.length;
+  };
+
+  const deleteCollegeStudents = (college: string) => {
+    const updatedDb = {
+      ...db,
+      collegeStudents: (db.collegeStudents ?? []).filter(s => s.college !== college),
+    };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
   return (
     <AppContext.Provider value={{
       db,
@@ -532,6 +571,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sendRemoteInvites,
       markAttendance,
       bulkUpdateCandidates,
+      importCollegeStudents,
+      deleteCollegeStudents,
     }}>
       {children}
     </AppContext.Provider>

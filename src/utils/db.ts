@@ -1,4 +1,4 @@
-import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection } from '../types';
+import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection, CollegeStudent } from '../types';
 import { generateSlug } from '../lib/utils';
 
 class SeededRandom {
@@ -25,6 +25,7 @@ export interface Database {
   questions: Question[];
   interviews: Interview[];
   offers: Offer[];
+  collegeStudents: CollegeStudent[];
 }
 
 const DRIVE_DATA: { college: string; year: number }[] = [
@@ -924,6 +925,7 @@ export function generateMockDatabase(): Database {
       });
     }
 
+    const githubHandle = name.toLowerCase().replace(/\s+/g, '-');
     candidates.push({
       id: `PRES2026-${10000 + i}`,
       name,
@@ -933,6 +935,9 @@ export function generateMockDatabase(): Database {
       cgpa,
       email: `${cleanEmailName}@${drive.college.toLowerCase().replace(/\s+/g, '')}.edu.in`,
       phone: `+91 ${Math.floor(rnd.range(8000000000, 9999999999))}`,
+      githubUrl: `https://github.com/${githubHandle}`,
+      linkedinUrl: `https://linkedin.com/in/${githubHandle}`,
+      resumeUrl: `https://drive.google.com/file/d/mock-resume-${i}/view`,
       assessmentStatus,
       assessmentPassword,
       assessmentId: targetAssessment.id,
@@ -962,10 +967,10 @@ export function generateMockDatabase(): Database {
     });
   });
 
-  return { drives, candidates, assessments, questions, interviews, offers };
+  return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [] };
 }
 
-const DB_VERSION = '10';
+const DB_VERSION = '12';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {
@@ -975,7 +980,9 @@ export function getDatabase(): Database {
   const data = localStorage.getItem('presidio_talent_hub_db');
   if (data) {
     try {
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (!parsed.collegeStudents) parsed.collegeStudents = [];
+      return parsed;
     } catch (e) {
       console.error('Failed to parse database from localStorage, re-seeding.', e);
     }

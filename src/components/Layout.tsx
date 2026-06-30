@@ -2,9 +2,9 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
-  LayoutDashboard, Users, FileText, Database,
-  Calendar, Gift, BarChart3, Settings as SettingsIcon,
-  LogOut, Bell, Search, User, Send, Monitor,
+  LayoutDashboard, Database,
+  BarChart3, Settings as SettingsIcon,
+  LogOut, Bell, Search, User, Monitor,
 } from 'lucide-react';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
@@ -31,12 +31,7 @@ interface LayoutProps {
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
-  { id: 'candidates', label: 'Candidates', icon: Users },
-  { id: 'assessments', label: 'Assessments', icon: FileText },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
-  { id: 'invite-candidates', label: 'Invite Candidates', icon: Send },
-  { id: 'interviews', label: 'Interviews', icon: Calendar },
-  { id: 'offers', label: 'Offers', icon: Gift },
   { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];

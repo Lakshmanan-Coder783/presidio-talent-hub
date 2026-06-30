@@ -1,12 +1,24 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { ArrowRight, KeyRound, UserCheck, Loader2, AlertCircle } from 'lucide-react';
+import {
+  ArrowRight, KeyRound, UserCheck, Loader2, AlertCircle,
+  Clock, Star, Tag, CheckCircle2, WifiHigh, ShieldCheck,
+  ListChecks, Timer,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+
+const INSTRUCTIONS = [
+  { icon: WifiHigh,     text: 'Ensure a stable internet connection before starting.' },
+  { icon: ShieldCheck,  text: 'Do not refresh or navigate away during the test.' },
+  { icon: ListChecks,   text: 'Each question must be attempted before moving forward.' },
+  { icon: Timer,        text: 'The test will auto-submit when the timer expires.' },
+];
 
 export const TakeTest: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -40,34 +52,35 @@ export const TakeTest: React.FC = () => {
 
   if (!assessment) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-        <Card className="w-full max-w-[420px] shadow-xl text-center">
-          <CardContent className="pt-8 pb-8 space-y-4">
-            <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-            <h2 className="text-xl font-bold">Test Not Found</h2>
-            <p className="text-muted-foreground text-sm">
-              The test link <strong>/take/{slug}</strong> does not exist or has been removed.
-              Please check the URL with your exam coordinator.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-muted/60 to-background p-6">
+        <div className="w-full max-w-[400px] rounded-2xl border bg-card shadow-2xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertCircle className="h-7 w-7 text-destructive" />
+          </div>
+          <h2 className="text-xl font-bold">Test Not Found</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            The test link <code className="text-xs bg-muted px-1.5 py-0.5 rounded">/take/{slug}</code> does not exist
+            or has been removed. Please check the URL with your exam coordinator.
+          </p>
+        </div>
       </div>
     );
   }
 
   if (assessment.status !== 'Active') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-        <Card className="w-full max-w-[420px] shadow-xl text-center">
-          <CardContent className="pt-8 pb-8 space-y-4">
-            <AlertCircle className="h-12 w-12 text-amber-500 mx-auto" />
-            <h2 className="text-xl font-bold">{assessment.name}</h2>
-            <p className="text-muted-foreground text-sm">
-              This test is not currently active ({assessment.status}).
-              Please contact your exam coordinator.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-muted/60 to-background p-6">
+        <div className="w-full max-w-[400px] rounded-2xl border bg-card shadow-2xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+            <AlertCircle className="h-7 w-7 text-amber-500" />
+          </div>
+          <h2 className="text-xl font-bold">{assessment.name}</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            This test is not currently active{' '}
+            <Badge variant="outline" className="text-xs">{assessment.status}</Badge>.{' '}
+            Please contact your exam coordinator.
+          </p>
+        </div>
       </div>
     );
   }
@@ -75,9 +88,10 @@ export const TakeTest: React.FC = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!candidateId.trim() || !password.trim()) {
-      setErrorMsg(isRemote
-        ? 'Please enter your Candidate ID and your individual password.'
-        : 'Please enter both your Candidate ID and the test password.'
+      setErrorMsg(
+        isRemote
+          ? 'Please enter your Candidate ID and your individual password.'
+          : 'Please enter both your Candidate ID and the test password.'
       );
       return;
     }
@@ -86,39 +100,119 @@ export const TakeTest: React.FC = () => {
     setTimeout(() => {
       const res = loginCandidateByTestSlug(slug!, candidateId.trim(), password.trim());
       setLoading(false);
-      if (!res.success) {
-        setErrorMsg(res.message);
-      }
+      if (!res.success) setErrorMsg(res.message);
     }, 1200);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-      <Card className="w-full max-w-[420px] shadow-xl">
-        <CardHeader className="text-center pb-4">
-          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl mx-auto mb-3">
+    <div className="min-h-screen flex flex-col md:flex-row">
+      {/* ── Left Panel: Branding & Test Info ── */}
+      <div className="md:w-[55%] bg-primary text-primary-foreground flex flex-col">
+        {/* Header */}
+        <div className="p-6 flex items-center gap-3 border-b border-primary-foreground/10">
+          <div className="w-9 h-9 rounded-lg bg-primary-foreground/15 flex items-center justify-center font-black text-lg">
             P
           </div>
-          <CardTitle className="text-2xl">{assessment.name}</CardTitle>
-          <CardDescription>
-            {assessment.duration} min &middot; {assessment.totalMarks} marks &middot; {assessment.type}
-          </CardDescription>
-        </CardHeader>
+          <span className="font-semibold text-sm tracking-wide opacity-90">Presidio Talent Hub</span>
+        </div>
 
-        <CardContent className="space-y-4">
-          {errorMsg && (
-            <Alert variant="destructive">
-              <AlertDescription className="text-xs font-semibold">{errorMsg}</AlertDescription>
-            </Alert>
+        {/* Body */}
+        <div className="flex-1 flex flex-col justify-center px-8 py-10 md:px-12 space-y-8">
+          {/* Test identity */}
+          <div className="space-y-3">
+            <span className="text-xs font-semibold tracking-widest uppercase opacity-60">
+              Assessment Portal
+            </span>
+            <h1 className="text-3xl font-black leading-tight">{assessment.name}</h1>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="flex items-center gap-1.5 text-xs font-medium bg-primary-foreground/10 rounded-full px-3 py-1">
+                <Clock className="h-3.5 w-3.5 opacity-70" />
+                {assessment.duration} min
+              </span>
+              <span className="flex items-center gap-1.5 text-xs font-medium bg-primary-foreground/10 rounded-full px-3 py-1">
+                <Star className="h-3.5 w-3.5 opacity-70" />
+                {assessment.totalMarks} marks
+              </span>
+              <span className="flex items-center gap-1.5 text-xs font-medium bg-primary-foreground/10 rounded-full px-3 py-1">
+                <Tag className="h-3.5 w-3.5 opacity-70" />
+                {assessment.type}
+              </span>
+            </div>
+          </div>
+
+          {/* Sections */}
+          {assessment.sections && assessment.sections.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-widest opacity-60">
+                Sections
+              </p>
+              <div className="space-y-2">
+                {assessment.sections.map((sec) => (
+                  <div
+                    key={sec.name}
+                    className="flex items-center justify-between rounded-lg bg-primary-foreground/8 px-4 py-2.5 text-sm"
+                  >
+                    <span className="font-medium">{sec.name}</span>
+                    <span className="opacity-70 text-xs">
+                      {sec.questionCount} Q · {sec.marks} marks
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
+          <Separator className="bg-primary-foreground/15" />
+
+          {/* Instructions */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest opacity-60">
+              Instructions
+            </p>
+            <ul className="space-y-2.5">
+              {INSTRUCTIONS.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-start gap-3 text-sm opacity-85">
+                  <Icon className="h-4 w-4 shrink-0 mt-0.5 opacity-70" />
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-primary-foreground/10 text-xs opacity-50 text-center">
+          Powered by Presidio Talent Hub &copy; {new Date().getFullYear()}
+        </div>
+      </div>
+
+      {/* ── Right Panel: Auth Form ── */}
+      <div className="md:w-[45%] flex items-center justify-center bg-background p-8 md:p-12">
+        <div className="w-full max-w-[380px] space-y-8">
+          {/* Heading */}
+          <div className="space-y-1.5">
+            <h2 className="text-2xl font-bold tracking-tight">Sign in to begin</h2>
+            <p className="text-sm text-muted-foreground">
+              {isRemote
+                ? 'Use your Candidate ID and individual password from your invite email.'
+                : 'Use your Candidate ID and the shared password provided in the exam hall.'}
+            </p>
+          </div>
+
+          {/* Form */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-xs text-muted-foreground font-medium">Validating credentials…</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <Loader2 className="h-9 w-9 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground font-medium">Validating credentials…</p>
             </div>
           ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-5">
+              {errorMsg && (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-xs font-semibold">{errorMsg}</AlertDescription>
+                </Alert>
+              )}
+
               <div className="space-y-1.5">
                 <Label htmlFor="candidate-id">Candidate ID</Label>
                 <div className="relative">
@@ -127,9 +221,10 @@ export const TakeTest: React.FC = () => {
                     id="candidate-id"
                     type="text"
                     placeholder="e.g. PRES2026-10025"
-                    className="pl-9"
+                    className="pl-9 h-10"
                     value={candidateId}
                     onChange={e => setCandidateId(e.target.value)}
+                    autoComplete="username"
                   />
                 </div>
               </div>
@@ -143,27 +238,45 @@ export const TakeTest: React.FC = () => {
                   <Input
                     id="test-password"
                     type="password"
-                    placeholder={isRemote ? 'Your individual password (e.g. PRES1234)' : 'Shared test password'}
-                    className="pl-9"
+                    placeholder={isRemote ? 'Your individual password' : 'Shared test password'}
+                    className="pl-9 h-10"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    autoComplete="current-password"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {isRemote
-                    ? 'Enter your individual password sent to your email.'
-                    : 'Enter the shared password given by your exam coordinator in the lab.'}
+                    ? 'Sent to your registered email address.'
+                    : 'Provided by your exam coordinator in the lab.'}
                 </p>
               </div>
 
-              <Button type="submit" className="w-full gap-2">
-                Enter Test
+              <Button type="submit" className="w-full h-10 gap-2 font-semibold">
+                Enter Assessment
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </form>
           )}
-        </CardContent>
-      </Card>
+
+          {/* Help note */}
+          <p className="text-xs text-muted-foreground text-center">
+            Having trouble?{' '}
+            <span className="font-medium text-foreground">Contact your exam coordinator</span>{' '}
+            for assistance.
+          </p>
+
+          {/* Checkmarks */}
+          <div className="flex flex-col gap-1.5 pt-2">
+            {['Proctored assessment environment', 'Secure & encrypted submission', 'Instant results after review'].map(item => (
+              <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
