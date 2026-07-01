@@ -12,7 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Pencil, Upload, Mail, UserCheck, UserX, Eye, ExternalLink, FileText, Plus } from 'lucide-react';
+import { UserCheck, UserX, ExternalLink, FileText, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
@@ -26,20 +26,14 @@ interface TestRow {
   createdOn: string;
   lastActivity: string;
   registered: number;
-  invited: number | null;
-  participationPct: number;
-  finishedPct: number;
-  examDate?: string;
-  examStartTime?: string;
-  examEndTime?: string;
-  emailPendingCount: number;
-  status: 'Ongoing' | 'Deactivated' | 'Finished';
+  driveDate: string;
+  driveDay2Date?: string;
+  pipelineProgress: number;
+  status: 'Ongoing' | 'Finished';
   ownerInitials: string;
   ownerName: string;
   ownerColor: string;
   team: string;
-  assessmentUrl: string | null;
-  assessmentPassword: string | null;
 }
 
 const OWNER = { initials: 'LM', name: 'Lakshmanan M', color: 'bg-blue-600' };
@@ -54,20 +48,24 @@ const relativeTime = (ts: number | null): string => {
   return `${Math.floor(days / 30)} months ago`;
 };
 
-const formatExamDate = (date?: string) => {
-  if (!date) return null;
-  return new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-};
 
 const DRIVE_STATUS_MAP: Record<string, TestRow['status']> = {
   Ongoing:   'Ongoing',
   Published: 'Ongoing',
   Completed: 'Finished',
-  Draft:     'Deactivated',
+  Draft:     'Ongoing',
+};
+
+const computePipelineProgress = (candidates: Candidate[]): number => {
+  if (candidates.some(c => c.whiteboardFinalResult !== undefined)) return 100;
+  if (candidates.some(c => c.codingShortlisted !== undefined)) return 75;
+  if (candidates.some(c => c.interviewShortlisted !== undefined)) return 50;
+  if (candidates.some(c => c.assessmentStatus === 'Completed')) return 25;
+  return 0;
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db, updateDrive, createDrive, sendRemoteInvites, markAttendance, importCollegeStudents } = useApp();
+  const { db, updateDrive, createDrive, markAttendance, importCollegeStudents } = useApp();
   const navigate = useNavigate();
 
   // ── Edit / Create drive state ────────────────────────────────────────────────
@@ -265,22 +263,9 @@ export const OnlineAssessment: React.FC = () => {
   // ── Rows ──────────────────────────────────────────────────────────────────────
   const rows = useMemo<TestRow[]>(() => {
     return db.drives.map((drive) => {
-      const driveCandidates = db.candidates.filter(c => c.college === drive.college);
-      const invited   = driveCandidates.filter(c => c.assessmentStatus !== 'Not Invited');
-      const completed = invited.filter(c => c.assessmentStatus === 'Completed');
-      const started   = invited.filter(
-        c => c.assessmentStatus === 'InProgress' || c.assessmentStatus === 'Completed'
-      );
-      const participationPct = invited.length
-        ? Math.round((started.length / invited.length) * 100) : 0;
-      const finishedPct = invited.length
-        ? Math.round((completed.length / invited.length) * 100) : 0;
+      const driveCandidates = db.candidates.filter(c => c.driveId === drive.id);
 
-      const emailPendingCount = drive.accessMode === 'remote'
-        ? invited.filter(c => !c.inviteEmailSentAt).length
-        : 0;
-
-      const submissionTimes = invited
+      const submissionTimes = driveCandidates
         .filter(c => c.assessmentSubmissionDate)
         .map(c => new Date(c.assessmentSubmissionDate!).getTime());
       const lastTs = submissionTimes.length ? Math.max(...submissionTimes) : null;
@@ -288,13 +273,6 @@ export const OnlineAssessment: React.FC = () => {
       const createdOn = new Date(drive.date).toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       });
-
-      const linkedAsmId = drive.assessmentId
-        ?? driveCandidates.find(c => c.assessmentId)?.assessmentId;
-      const linkedAsm = linkedAsmId ? db.assessments.find(a => a.id === linkedAsmId) : null;
-      const assessmentUrl = linkedAsm?.slug
-        ? `${window.location.origin}/take/${linkedAsm.slug}` : null;
-      const assessmentPassword = linkedAsm?.accessPassword ?? null;
 
       return {
         id:               drive.id,
@@ -305,23 +283,17 @@ export const OnlineAssessment: React.FC = () => {
         createdOn,
         lastActivity:     relativeTime(lastTs),
         registered:       drive.registered,
-        invited:          invited.length || null,
-        participationPct,
-        finishedPct,
-        examDate:         drive.examDate,
-        examStartTime:    drive.examStartTime,
-        examEndTime:      drive.examEndTime,
-        emailPendingCount,
-        status:           DRIVE_STATUS_MAP[drive.status] ?? 'Deactivated',
+        driveDate:        drive.date,
+        driveDay2Date:    drive.day2Date,
+        pipelineProgress: computePipelineProgress(driveCandidates),
+        status:           DRIVE_STATUS_MAP[drive.status] ?? 'Ongoing',
         ownerInitials:    OWNER.initials,
         ownerName:        OWNER.name,
         ownerColor:       OWNER.color,
         team:             drive.status,
-        assessmentUrl,
-        assessmentPassword,
       };
     });
-  }, [db.drives, db.candidates, db.assessments]);
+  }, [db.drives, db.candidates]);
 
   // ── Columns ──────────────────────────────────────────────────────────────────
   const columns = [
@@ -346,27 +318,22 @@ export const OnlineAssessment: React.FC = () => {
       accessor: 'registered' as const,
       sortable: true,
       render: (row: TestRow) => (
-        <div className="space-y-0.5">
-          <p className="text-sm font-semibold">{row.registered}</p>
-          <p className="text-xs text-muted-foreground">
-            {row.invited != null ? `${row.invited} invited` : 'none invited'}
-          </p>
-        </div>
+        <p className="text-sm font-semibold">{row.registered}</p>
       ),
     },
     {
-      header: 'EXAM SCHEDULE',
-      accessor: 'examDate' as const,
+      header: 'DRIVE DATES',
+      accessor: 'driveDate' as const,
       sortable: true,
       render: (row: TestRow) => {
-        const dateStr = formatExamDate(row.examDate);
-        if (!dateStr) return <span className="text-sm text-muted-foreground">—</span>;
-        const hasWindow = row.accessMode === 'in-person' && row.examStartTime && row.examEndTime;
+        const fmt = (d: string) => new Date(d).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        });
         return (
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">{dateStr}</p>
-            {hasWindow && (
-              <p className="text-xs text-muted-foreground">{row.examStartTime} – {row.examEndTime}</p>
+            <p className="text-sm font-medium">{fmt(row.driveDate)}</p>
+            {row.driveDay2Date && (
+              <p className="text-xs text-muted-foreground">{fmt(row.driveDay2Date)}</p>
             )}
           </div>
         );
@@ -374,14 +341,26 @@ export const OnlineAssessment: React.FC = () => {
     },
     {
       header: 'PROGRESS',
-      accessor: 'participationPct' as const,
+      accessor: 'pipelineProgress' as const,
       sortable: true,
       render: (row: TestRow) => {
-        if (!row.invited) return <span className="text-sm text-muted-foreground">—</span>;
+        const stages = ['Online Test', 'Interview', 'Coding Round', 'Whiteboarding'];
+        const stageIdx = row.pipelineProgress / 25 - 1;
+        const label = stageIdx >= 0 ? stages[stageIdx] : null;
         return (
-          <div className="space-y-0.5">
-            <p className="text-sm"><span className="font-semibold">{row.participationPct}%</span> started</p>
-            <p className="text-xs text-muted-foreground">{row.finishedPct}% finished</p>
+          <div className="space-y-1 min-w-[110px]">
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${row.pipelineProgress}%` }}
+                />
+              </div>
+              <span className="text-xs font-semibold tabular-nums w-8 text-right">
+                {row.pipelineProgress}%
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">{label ?? '—'}</p>
           </div>
         );
       },
@@ -413,81 +392,15 @@ export const OnlineAssessment: React.FC = () => {
         </div>
       ),
     },
-    {
-      header: 'ACTIONS',
-      accessor: 'assessmentUrl' as const,
-      sortable: false,
-      render: (row: TestRow) => (
-        <div className="flex items-center gap-1">
-          {/* Edit */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            title="Edit drive"
-            onClick={() => openEdit(row.id)}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-
-          {/* Send email invites (remote only) */}
-          {row.accessMode === 'remote' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-7 w-7 ${row.emailPendingCount > 0 ? 'text-blue-600' : ''}`}
-              title={row.emailPendingCount > 0
-                ? `Send invites to ${row.emailPendingCount} pending candidate${row.emailPendingCount !== 1 ? 's' : ''}`
-                : 'All emails sent'}
-              disabled={row.emailPendingCount === 0}
-              onClick={() => {
-                const count = sendRemoteInvites(row.id);
-                if (count > 0) {
-                  toast.success(`Test invite emails sent to ${count} candidate${count !== 1 ? 's' : ''}.`);
-                } else {
-                  toast.info('All candidates already have emails sent.');
-                }
-              }}
-            >
-              <Mail className="h-3.5 w-3.5" />
-            </Button>
-          )}
-
-          {/* Import to college student pool */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            title={`Import students to ${row.college} pool`}
-            disabled={activeImportCollege === row.college}
-            onClick={() => openCollegeFilePicker(row.college)}
-          >
-            <Upload className="h-3.5 w-3.5 text-emerald-600" />
-          </Button>
-
-          {/* View college student pool */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            title={`View ${row.college} student pool (${(db.collegeStudents ?? []).filter(s => s.college === row.college).length})`}
-            onClick={() => setViewStudentsCollege(row.college)}
-          >
-            <Eye className="h-3.5 w-3.5 text-blue-600" />
-          </Button>
-        </div>
-      ),
-    },
   ];
 
   const filters = [
     {
       key:   'status',
-      label: 'Status',
+      label: 'All Status',
       options: [
-        { label: 'Ongoing',     value: 'Ongoing' },
-        { label: 'Deactivated', value: 'Deactivated' },
-        { label: 'Finished',    value: 'Finished' },
+        { label: 'Ongoing',  value: 'Ongoing' },
+        { label: 'Finished', value: 'Finished' },
       ],
     },
   ];

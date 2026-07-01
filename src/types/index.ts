@@ -33,6 +33,7 @@ export interface CampusDrive {
 export interface Candidate {
   id: string;
   name: string;
+  driveId: string;
   college: string;
   degree: string;
   cgpa: number;

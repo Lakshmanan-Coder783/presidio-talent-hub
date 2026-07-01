@@ -929,6 +929,7 @@ export function generateMockDatabase(): Database {
     candidates.push({
       id: `PRES2026-${10000 + i}`,
       name,
+      driveId: drive.id,
       college: drive.college,
       degree,
       gender,
@@ -970,7 +971,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [] };
 }
 
-const DB_VERSION = '12';
+const DB_VERSION = '13';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

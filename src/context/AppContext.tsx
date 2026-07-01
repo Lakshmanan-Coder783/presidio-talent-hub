@@ -29,7 +29,7 @@ interface AppContextType {
     answers: { [qId: string]: string | number[] | number },
     durationUsed: number
   ) => void;
-  bulkInvite: (assessmentId: string, date: string, college: string) => void;
+  bulkInvite: (assessmentId: string, date: string, driveId: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
   updateAssessment: (assessment: Assessment) => void;
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
@@ -419,11 +419,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Login successful.' };
   };
 
-  const bulkInvite = (assessmentId: string, date: string, college: string) => {
-    console.log(`Scheduling bulk assessment for ${college} on ${date}`);
-    // Invites all "Not Invited" candidates from the specific college to take the assessment
+  const bulkInvite = (assessmentId: string, date: string, driveId: string) => {
     const updatedCandidates = db.candidates.map(c => {
-      if (c.college === college && c.assessmentStatus === 'Not Invited') {
+      if (c.driveId === driveId && c.assessmentStatus === 'Not Invited') {
         return {
           ...c,
           assessmentStatus: 'Pending' as const,
@@ -434,7 +432,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return c;
     });
 
-    // Re-compute assigned count
     const updatedAssessments = db.assessments.map(asm => {
       if (asm.id === assessmentId) {
         const count = updatedCandidates.filter(c => c.assessmentId === assessmentId).length;
@@ -444,7 +441,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const updatedDrives = db.drives.map(d =>
-      d.college === college ? { ...d, assessmentId, examDate: date } : d
+      d.id === driveId ? { ...d, assessmentId, examDate: date } : d
     );
     const updatedDb = { ...db, candidates: updatedCandidates, assessments: updatedAssessments, drives: updatedDrives };
     setDb(updatedDb);
@@ -453,7 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const bulkImportCandidates = (
     driveId: string,
-    rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]
+    rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage' | 'driveId'>[]
   ): number => {
     const drive = db.drives.find(d => d.id === driveId);
     if (!drive) return 0;
@@ -466,6 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newCandidates.push({
         ...row,
         id: `PRES2026-${20000 + db.candidates.length + idx + 1}`,
+        driveId: drive.id,
         college: drive.college,
         assessmentStatus: 'Not Invited',
         interviewStatus: 'Not Scheduled',
@@ -490,7 +488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let count = 0;
 
     const updatedCandidates = db.candidates.map(c => {
-      if (c.college === drive.college && c.assessmentStatus === 'Pending' && !c.inviteEmailSentAt) {
+      if (c.driveId === driveId && c.assessmentStatus === 'Pending' && !c.inviteEmailSentAt) {
         count++;
         return { ...c, inviteEmailSentAt: now };
       }

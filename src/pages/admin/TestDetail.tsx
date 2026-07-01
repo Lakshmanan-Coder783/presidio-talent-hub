@@ -471,7 +471,7 @@ export const TestDetail: React.FC = () => {
   const estimatedMinutes = driveQuestions.length;
 
   const driveCandidates = useMemo(
-    () => (drive ? db.candidates.filter(c => c.college === drive.college) : []),
+    () => (drive ? db.candidates.filter(c => c.driveId === drive.id) : []),
     [db.candidates, drive],
   );
 
@@ -610,7 +610,7 @@ export const TestDetail: React.FC = () => {
 
   const handleInvite = () => {
     if (!selectedAssessment || !scheduleDate || !scheduleTime || !drive) return;
-    bulkInvite(selectedAssessment, scheduleDate, drive.college);
+    bulkInvite(selectedAssessment, scheduleDate, drive.id);
     setInviteSent(true);
   };
 
@@ -1577,76 +1577,78 @@ export const TestDetail: React.FC = () => {
 
                 {editingQuestion ? (
                   /* ── Edit form ── */
-                  <div className="p-4 space-y-3 overflow-y-auto max-h-[75vh]">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Question Text</Label>
-                      <Textarea
-                        rows={4}
-                        value={editDraft.text ?? ''}
-                        onChange={e => setEditDraft(d => ({ ...d, text: e.target.value }))}
-                        className="text-sm"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col">
+                    <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh]">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Difficulty</Label>
-                        <Select
-                          value={editDraft.difficulty ?? selectedQuestion.difficulty}
-                          onValueChange={v => setEditDraft(d => ({ ...d, difficulty: v as Question['difficulty'] }))}
-                        >
-                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Easy">Easy</SelectItem>
-                            <SelectItem value="Medium">Medium</SelectItem>
-                            <SelectItem value="Hard">Hard</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Marks</Label>
-                        <Input
-                          type="number"
-                          className="h-8 text-xs"
-                          value={editDraft.marks ?? selectedQuestion.marks}
-                          onChange={e => setEditDraft(d => ({ ...d, marks: parseInt(e.target.value) || 1 }))}
+                        <Label className="text-xs">Question Text</Label>
+                        <Textarea
+                          rows={4}
+                          value={editDraft.text ?? ''}
+                          onChange={e => setEditDraft(d => ({ ...d, text: e.target.value }))}
+                          className="text-sm"
                         />
                       </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Tags (comma separated)</Label>
-                      <Input
-                        className="h-8 text-xs"
-                        value={(editDraft.tags ?? selectedQuestion.tags).join(', ')}
-                        onChange={e => setEditDraft(d => ({ ...d, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))}
-                      />
-                    </div>
-                    {editDraft.options && (
-                      <div className="space-y-2">
-                        <Label className="text-xs">Options (click radio to set correct)</Label>
-                        {editDraft.options.map((opt, i) => {
-                          const isCorrect = (editDraft.correctOptions ?? []).includes(i);
-                          return (
-                            <div key={i} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setEditDraft(d => ({ ...d, correctOptions: [i] }))}
-                                className={`h-4 w-4 rounded-full border-2 shrink-0 transition-colors ${isCorrect ? 'border-emerald-600 bg-emerald-600' : 'border-muted-foreground'}`}
-                              />
-                              <Input
-                                className="h-7 text-xs"
-                                value={opt}
-                                onChange={e => setEditDraft(d => {
-                                  const opts = [...(d.options ?? [])];
-                                  opts[i] = e.target.value;
-                                  return { ...d, options: opts };
-                                })}
-                              />
-                            </div>
-                          );
-                        })}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Difficulty</Label>
+                          <Select
+                            value={editDraft.difficulty ?? selectedQuestion.difficulty}
+                            onValueChange={v => setEditDraft(d => ({ ...d, difficulty: v as Question['difficulty'] }))}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Easy">Easy</SelectItem>
+                              <SelectItem value="Medium">Medium</SelectItem>
+                              <SelectItem value="Hard">Hard</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Marks</Label>
+                          <Input
+                            type="number"
+                            className="h-8 text-xs"
+                            value={editDraft.marks ?? selectedQuestion.marks}
+                            onChange={e => setEditDraft(d => ({ ...d, marks: parseInt(e.target.value) || 1 }))}
+                          />
+                        </div>
                       </div>
-                    )}
-                    <div className="flex gap-2 pt-1">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Tags (comma separated)</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={(editDraft.tags ?? selectedQuestion.tags).join(', ')}
+                          onChange={e => setEditDraft(d => ({ ...d, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))}
+                        />
+                      </div>
+                      {editDraft.options && (
+                        <div className="space-y-2">
+                          <Label className="text-xs">Options (click radio to set correct)</Label>
+                          {editDraft.options.map((opt, i) => {
+                            const isCorrect = (editDraft.correctOptions ?? []).includes(i);
+                            return (
+                              <div key={i} className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditDraft(d => ({ ...d, correctOptions: [i] }))}
+                                  className={`h-4 w-4 rounded-full border-2 shrink-0 transition-colors ${isCorrect ? 'border-emerald-600 bg-emerald-600' : 'border-muted-foreground'}`}
+                                />
+                                <Input
+                                  className="h-7 text-xs"
+                                  value={opt}
+                                  onChange={e => setEditDraft(d => {
+                                    const opts = [...(d.options ?? [])];
+                                    opts[i] = e.target.value;
+                                    return { ...d, options: opts };
+                                  })}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-4 py-3 border-t flex gap-2 bg-background">
                       <Button
                         size="sm"
                         className="flex-1"
