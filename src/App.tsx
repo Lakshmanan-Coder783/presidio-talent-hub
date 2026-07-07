@@ -10,7 +10,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Dashboard } from './pages/admin/Dashboard';
 import { OnlineAssessment } from './pages/admin/OnlineAssessment';
 import { QuestionBank } from './pages/admin/QuestionBank';
-import { Reports } from './pages/admin/Reports';
 import { Settings } from './pages/admin/Settings';
 import { TestDetail } from './pages/admin/TestDetail';
 
@@ -78,7 +77,6 @@ const AppRoutes: React.FC = () => {
           <Route path="/admin/online-assessment" element={<OnlineAssessment />} />
           <Route path="/admin/online-assessment/:id" element={<TestDetail />} />
           <Route path="/admin/question-bank"     element={<QuestionBank />} />
-          <Route path="/admin/reports"           element={<Reports />} />
           <Route path="/admin/settings"          element={<Settings />} />
         </Route>
       </Route>

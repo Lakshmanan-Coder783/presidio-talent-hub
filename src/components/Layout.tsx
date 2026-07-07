@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Database,
-  BarChart3, Settings as SettingsIcon,
+  Settings as SettingsIcon,
   LogOut, Bell, Search, User, Monitor,
 } from 'lucide-react';
 import {
@@ -32,7 +32,6 @@ const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
-  { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 

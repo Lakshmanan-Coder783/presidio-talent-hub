@@ -32,9 +32,10 @@ import {
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
   Upload, UserCheck, UserX, Mail, ExternalLink,
 } from 'lucide-react';
-import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
+import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive, CollegeStudent } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword } from '../../lib/utils';
+import { parseStudentFile } from '../../utils/parseStudentFile';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,7 +207,7 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <SheetContent side="right" className="sm:max-w-2xl flex flex-col p-0">
+      <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
         <SheetHeader className="px-6 py-4 border-b shrink-0">
           <SheetTitle>Add questions from bank</SheetTitle>
         </SheetHeader>
@@ -328,6 +329,208 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
   );
 };
 
+// ── College pool picker sheet ─────────────────────────────────────────────────
+
+interface CollegePoolPickerProps {
+  open: boolean;
+  onClose: () => void;
+  driveId: string;
+  college: string;
+}
+
+const CollegePoolPicker: React.FC<CollegePoolPickerProps> = ({ open, onClose, driveId, college }) => {
+  const { db, importCollegeStudents, bulkImportCandidates } = useApp();
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const existingEmails = useMemo(
+    () => new Set(db.candidates.map(c => c.email.toLowerCase())),
+    [db.candidates]
+  );
+
+  const poolStudents = useMemo(
+    () => db.collegeStudents.filter(s => s.college === college),
+    [db.collegeStudents, college]
+  );
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return poolStudents;
+    const q = search.toLowerCase();
+    return poolStudents.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      (s.registrationNumber ?? '').toLowerCase().includes(q)
+    );
+  }, [poolStudents, search]);
+
+  const toggle = (student: CollegeStudent) => {
+    if (existingEmails.has(student.email.toLowerCase())) return;
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(student.id) ? next.delete(student.id) : next.add(student.id);
+      return next;
+    });
+  };
+
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const rows = await parseStudentFile(file);
+      const count = importCollegeStudents(college, rows);
+      if (count > 0) {
+        toast.success(`${count} student${count !== 1 ? 's' : ''} added to ${college} pool.`);
+      } else {
+        toast.info('No new students — all emails already exist in this college pool.');
+      }
+    } catch {
+      toast.error('Failed to parse file. Please check the format.');
+    }
+  };
+
+  const handleClose = () => {
+    setSelected(new Set());
+    setSearch('');
+    onClose();
+  };
+
+  const handleAddToDrive = () => {
+    const chosen = poolStudents.filter(s => selected.has(s.id));
+    if (chosen.length === 0) return;
+
+    const rows: Parameters<typeof bulkImportCandidates>[1] = chosen.map(s => ({
+      name: s.name,
+      email: s.email,
+      phone: s.phone,
+      degree: s.degree,
+      cgpa: s.cgpa,
+      college,
+      gender: s.gender,
+      registrationNumber: s.registrationNumber,
+      specialization: s.specialization,
+      dateOfBirth: s.dateOfBirth,
+      githubUrl: s.githubUrl,
+      linkedinUrl: s.linkedinUrl,
+      resumeUrl: s.resumeUrl,
+      codingPlatformUrls: s.codingPlatformUrls,
+      tenth: s.tenth,
+      twelfth: s.twelfth,
+      diploma: s.diploma,
+      ugMarks: s.ugMarks,
+      pgMarks: s.pgMarks,
+      backlogHistory: s.backlogHistory,
+      currentBacklogs: s.currentBacklogs,
+    }));
+
+    const imported = bulkImportCandidates(driveId, rows);
+    if (imported > 0) {
+      toast.success(`${imported} student${imported !== 1 ? 's' : ''} added to the drive.`);
+    } else {
+      toast.info('No new candidates — all selected students already exist in a drive.');
+    }
+    handleClose();
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
+      <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
+        <SheetHeader className="px-6 py-4 border-b shrink-0">
+          <SheetTitle>College Pool — {college}</SheetTitle>
+          <p className="text-sm text-muted-foreground">{poolStudents.length} student{poolStudents.length !== 1 ? 's' : ''} in pool</p>
+        </SheetHeader>
+
+        <div className="px-6 py-3 border-b shrink-0 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, email or reg. no…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 h-9"
+            />
+          </div>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="hidden"
+            onChange={handleCsvUpload}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-9 text-xs shrink-0"
+            onClick={() => csvInputRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload CSV
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y">
+          {filtered.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              {poolStudents.length === 0
+                ? `No students in the pool for ${college} yet — upload a CSV to add some.`
+                : 'No students match your search.'}
+            </p>
+          ) : (
+            filtered.map(s => {
+              const isAdded = existingEmails.has(s.email.toLowerCase());
+              const isSelected = selected.has(s.id);
+              return (
+                <button
+                  key={s.id}
+                  className={`w-full flex items-start gap-3 px-6 py-3 text-left transition-colors
+                    ${isAdded ? 'opacity-60 cursor-default bg-muted/30' : 'hover:bg-muted/40 cursor-pointer'}
+                    ${isSelected ? 'bg-primary/5' : ''}
+                  `}
+                  onClick={() => toggle(s)}
+                  disabled={isAdded}
+                >
+                  <div className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center
+                    ${isAdded ? 'border-green-500 bg-green-500' : isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'}`}
+                  >
+                    {(isAdded || isSelected) && (
+                      <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium leading-snug">{s.name}</p>
+                    <p className="text-xs text-muted-foreground">{s.email}</p>
+                  </div>
+
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    <span className="text-xs text-muted-foreground">{s.degree}</span>
+                    <span className="text-xs text-muted-foreground">CGPA {s.cgpa || '—'}</span>
+                    {isAdded && <span className="text-[10px] font-semibold text-green-600">Already added</span>}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+          <Button variant="outline" onClick={handleClose} className="flex-1">Cancel</Button>
+          <Button
+            onClick={handleAddToDrive}
+            disabled={selected.size === 0}
+            className="flex-1"
+          >
+            Add {selected.size > 0 ? `${selected.size} student${selected.size > 1 ? 's' : ''}` : 'to Drive'}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+};
+
 // ── Default experience settings ───────────────────────────────────────────────
 
 const DEFAULT_EXP: {
@@ -411,6 +614,9 @@ export const TestDetail: React.FC = () => {
   const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
   const [csvPreviewRows, setCsvPreviewRows] = useState<{ name: string; email: string; degree: string; registrationNumber: string }[]>([]);
   const [csvParsedData, setCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
+
+  // College pool picker
+  const [collegePoolOpen, setCollegePoolOpen] = useState(false);
 
   // experience settings
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
@@ -2164,6 +2370,15 @@ export const TestDetail: React.FC = () => {
                 <Upload className="h-3.5 w-3.5" />
                 Import Students (CSV)
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-xs"
+                onClick={() => setCollegePoolOpen(true)}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Add from College Pool
+              </Button>
             </div>
           </div>
 
@@ -2653,9 +2868,19 @@ export const TestDetail: React.FC = () => {
         onAdd={addQuestions}
       />
 
+      {/* ── College pool picker sheet ── */}
+      {drive && (
+        <CollegePoolPicker
+          open={collegePoolOpen}
+          onClose={() => setCollegePoolOpen(false)}
+          driveId={drive.id}
+          college={drive.college}
+        />
+      )}
+
       {/* ── Evaluate drawer ── */}
       <Sheet open={evaluateOpen} onOpenChange={open => { if (!open) { setEvaluateOpen(false); setEvaluateCandidate(null); } }}>
-        <SheetContent side="right" className="sm:max-w-md flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-md flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{evaluateCandidate?.name ?? 'Evaluate Candidate'}</SheetTitle>
             {evaluateCandidate && (
@@ -2836,7 +3061,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── CSV Import Preview Sheet ── */}
       <Sheet open={csvPreviewOpen} onOpenChange={v => { if (!v) setCsvPreviewOpen(false); }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Import Students</SheetTitle>
             <p className="text-sm text-muted-foreground">
@@ -2871,7 +3096,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Edit Drive Sheet ── */}
       <Sheet open={driveEditOpen} onOpenChange={v => { if (!v) setDriveEditOpen(false); }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Edit Drive Details</SheetTitle>
           </SheetHeader>
@@ -2965,7 +3190,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Edit Assessment Sheet ── */}
       <Sheet open={asmEditOpen} onOpenChange={v => { if (v) openAsmEdit(); else setAsmEditOpen(false); }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Edit Assessment</SheetTitle>
           </SheetHeader>
@@ -3078,7 +3303,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Interview Round Sheet ── */}
       <Sheet open={interviewSheetOpen} onOpenChange={open => { if (!open) { setInterviewSheetOpen(false); setInterviewCandidate(null); } }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{interviewCandidate?.name ?? 'Interview Feedback'}</SheetTitle>
             {interviewCandidate && (
@@ -3201,7 +3426,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Coding Round Sheet ── */}
       <Sheet open={codingSheetOpen} onOpenChange={open => { if (!open) { setCodingSheetOpen(false); setCodingCandidate(null); } }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{codingCandidate?.name ?? 'Coding Round'}</SheetTitle>
             {codingCandidate && (
@@ -3292,7 +3517,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Whiteboarding Sheet ── */}
       <Sheet open={wbSheetOpen} onOpenChange={open => { if (!open) { setWbSheetOpen(false); setWbCandidate(null); } }}>
-        <SheetContent side="right" className="sm:max-w-md flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-md flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{wbCandidate?.name ?? 'Whiteboarding'}</SheetTitle>
             {wbCandidate && (

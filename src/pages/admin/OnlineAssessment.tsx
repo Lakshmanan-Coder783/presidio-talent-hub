@@ -12,7 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { UserCheck, UserX, ExternalLink, FileText, Plus } from 'lucide-react';
+import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
@@ -65,7 +65,7 @@ const computePipelineProgress = (candidates: Candidate[]): number => {
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db, updateDrive, createDrive, markAttendance, importCollegeStudents } = useApp();
+  const { db, updateDrive, createDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
   const navigate = useNavigate();
 
   // ── Edit / Create drive state ────────────────────────────────────────────────
@@ -95,6 +95,12 @@ export const OnlineAssessment: React.FC = () => {
   // ── Attendance sheet state ───────────────────────────────────────────────────
   const [attendanceDriveId, setAttendanceDriveId] = useState<string | null>(null);
   const [attendanceOpen, setAttendanceOpen] = useState(false);
+
+  // ── Students database (per-drive) import state ──────────────────────────────
+  const driveFileInputRef = useRef<HTMLInputElement>(null);
+  const [activeImportDriveId, setActiveImportDriveId] = useState<string | null>(null);
+  const [driveCsvPreviewOpen, setDriveCsvPreviewOpen] = useState(false);
+  const [driveCsvParsedData, setDriveCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const copyToClipboard = (text: string, label: string) => {
@@ -214,6 +220,41 @@ export const OnlineAssessment: React.FC = () => {
     }
   };
 
+  // ── Students database (per-drive) import ─────────────────────────────────────
+  const openDriveFilePicker = (driveId: string) => {
+    setActiveImportDriveId(driveId);
+    setTimeout(() => driveFileInputRef.current?.click(), 0);
+  };
+
+  const handleDriveFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeImportDriveId) return;
+    e.target.value = '';
+    const drive = db.drives.find(d => d.id === activeImportDriveId);
+    if (!drive) return;
+    try {
+      const rows = await parseStudentFile(file);
+      setDriveCsvParsedData(rows.map(r => ({ ...r, college: drive.college })));
+      setDriveCsvPreviewOpen(true);
+    } catch {
+      toast.error('Failed to parse file. Please check the format.');
+      setActiveImportDriveId(null);
+    }
+  };
+
+  const confirmDriveCsvImport = () => {
+    if (!activeImportDriveId) return;
+    const imported = bulkImportCandidates(activeImportDriveId, driveCsvParsedData);
+    setDriveCsvPreviewOpen(false);
+    setDriveCsvParsedData([]);
+    setActiveImportDriveId(null);
+    if (imported > 0) {
+      toast.success(`${imported} student${imported !== 1 ? 's' : ''} registered for the drive.`);
+    } else {
+      toast.info('No new students — all emails already exist as candidates.');
+    }
+  };
+
   const studentColumns = [
     { header: 'Name', accessor: 'name' as const, sortable: true },
     { header: 'Reg. No', accessor: 'registrationNumber' as const },
@@ -249,6 +290,61 @@ export const OnlineAssessment: React.FC = () => {
     },
   ];
 
+  // ── Students database preview (spreadsheet-style) ────────────────────────────
+  type DriveDbPreviewRow = { sno: number } & Parameters<typeof bulkImportCandidates>[1][number];
+
+  const driveCsvPreviewTableData = useMemo<DriveDbPreviewRow[]>(
+    () => driveCsvParsedData.map((r, i) => ({ sno: i + 1, ...r })),
+    [driveCsvParsedData]
+  );
+
+  const driveDbPreviewColumns = [
+    { header: 'S.No', accessor: 'sno' as const, sortable: true },
+    { header: 'Reg. No', accessor: 'registrationNumber' as const, sortable: true },
+    { header: 'Name', accessor: 'name' as const, sortable: true },
+    { header: 'Email', accessor: 'email' as const },
+    { header: 'Phone', accessor: 'phone' as const },
+    { header: 'Degree', accessor: 'degree' as const, sortable: true },
+    { header: 'Specialization', accessor: 'specialization' as const },
+    { header: 'Gender', accessor: 'gender' as const },
+    { header: 'DOB', accessor: 'dateOfBirth' as const },
+    {
+      header: 'GitHub',
+      render: (row: DriveDbPreviewRow) =>
+        row.githubUrl ? (
+          <a href={row.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />GitHub
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'LinkedIn',
+      render: (row: DriveDbPreviewRow) =>
+        row.linkedinUrl ? (
+          <a href={row.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />LinkedIn
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'Resume',
+      render: (row: DriveDbPreviewRow) =>
+        row.resumeUrl ? (
+          <a href={row.resumeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-emerald-600 hover:underline">
+            <FileText className="h-3.5 w-3.5" />Open
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    { header: 'Coding Platforms', accessor: 'codingPlatformUrls' as const },
+    { header: '10th', accessor: 'tenth' as const, sortable: true },
+    { header: '12th', accessor: 'twelfth' as const, sortable: true },
+    { header: 'Diploma', accessor: 'diploma' as const, sortable: true },
+    { header: 'UG Marks', accessor: 'ugMarks' as const, sortable: true },
+    { header: 'PG Marks', accessor: 'pgMarks' as const, sortable: true },
+    { header: 'Backlog History', accessor: 'backlogHistory' as const, sortable: true },
+    { header: 'Current Backlogs', accessor: 'currentBacklogs' as const, sortable: true },
+  ];
+
   // ── Attendance sheet ─────────────────────────────────────────────────────────
   const openAttendance = (driveId: string) => {
     setAttendanceDriveId(driveId);
@@ -282,7 +378,7 @@ export const OnlineAssessment: React.FC = () => {
         group:            'Default Group',
         createdOn,
         lastActivity:     relativeTime(lastTs),
-        registered:       drive.registered,
+        registered:       driveCandidates.length,
         driveDate:        drive.date,
         driveDay2Date:    drive.day2Date,
         pipelineProgress: computePipelineProgress(driveCandidates),
@@ -319,6 +415,20 @@ export const OnlineAssessment: React.FC = () => {
       sortable: true,
       render: (row: TestRow) => (
         <p className="text-sm font-semibold">{row.registered}</p>
+      ),
+    },
+    {
+      header: 'STUDENTS DATABASE',
+      render: (row: TestRow) => (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-7 text-xs"
+          onClick={() => openDriveFilePicker(row.id)}
+        >
+          <Upload className="h-3 w-3" />
+          Upload
+        </Button>
       ),
     },
     {
@@ -421,6 +531,7 @@ export const OnlineAssessment: React.FC = () => {
         filters={filters}
         searchPlaceholder="Search Test"
         searchKey="name"
+        initialSort={{ key: 'driveDate', direction: 'desc' }}
         exportFileName="Tests_Export"
       />
 
@@ -433,9 +544,18 @@ export const OnlineAssessment: React.FC = () => {
         onChange={handleCollegeFileChange}
       />
 
+      {/* Hidden file input for per-drive students database import */}
+      <input
+        ref={driveFileInputRef}
+        type="file"
+        accept=".csv,.xlsx,.xls"
+        className="hidden"
+        onChange={handleDriveFileChange}
+      />
+
       {/* ── Edit / Create Drive Sheet ── */}
       <Sheet open={editOpen} onOpenChange={v => { if (!v) { setEditOpen(false); setIsCreating(false); } }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{isCreating ? 'Create New Drive' : 'Edit Drive'}</SheetTitle>
           </SheetHeader>
@@ -547,7 +667,7 @@ export const OnlineAssessment: React.FC = () => {
 
       {/* ── College Import Preview Sheet ── */}
       <Sheet open={collegeCsvPreviewOpen} onOpenChange={v => { if (!v) { setCollegeCsvPreviewOpen(false); setPendingImportCollege(null); setCollegeCsvPreview([]); setActiveImportCollege(null); } }}>
-        <SheetContent side="right" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Import to College Pool</SheetTitle>
             <p className="text-sm text-muted-foreground">
@@ -584,9 +704,47 @@ export const OnlineAssessment: React.FC = () => {
         </SheetContent>
       </Sheet>
 
+      {/* ── Students Database (per-drive) Import Preview Sheet ── */}
+      <Sheet open={driveCsvPreviewOpen} onOpenChange={v => { if (!v) { setDriveCsvPreviewOpen(false); setActiveImportDriveId(null); setDriveCsvParsedData([]); } }}>
+        <SheetContent side="center" className="sm:max-w-[95vw] flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Import Students Database</SheetTitle>
+            <p className="text-sm text-muted-foreground">
+              {activeImportDriveId && (
+                <span className="font-medium text-foreground">
+                  {db.drives.find(d => d.id === activeImportDriveId)?.name} ·{' '}
+                </span>
+              )}
+              {driveCsvParsedData.length} student{driveCsvParsedData.length !== 1 ? 's' : ''} found in file
+            </p>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {driveCsvParsedData.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No valid rows found in file.</p>
+            ) : (
+              <Table
+                data={driveCsvPreviewTableData}
+                columns={driveDbPreviewColumns}
+                searchPlaceholder="Search students…"
+                searchKey="name"
+                exportFileName="Students_Preview"
+              />
+            )}
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => { setDriveCsvPreviewOpen(false); setActiveImportDriveId(null); setDriveCsvParsedData([]); }}>
+              Cancel
+            </Button>
+            <Button className="flex-1" disabled={driveCsvParsedData.length === 0} onClick={confirmDriveCsvImport}>
+              Import {driveCsvParsedData.length} Student{driveCsvParsedData.length !== 1 ? 's' : ''}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
       {/* ── College Student Pool Sheet ── */}
       <Sheet open={!!viewStudentsCollege} onOpenChange={v => { if (!v) setViewStudentsCollege(null); }}>
-        <SheetContent side="right" className="sm:max-w-4xl flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-4xl flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Student Pool — {viewStudentsCollege}</SheetTitle>
             <p className="text-sm text-muted-foreground">
@@ -614,7 +772,7 @@ export const OnlineAssessment: React.FC = () => {
 
       {/* ── Attendance Sheet (in-person) ── */}
       <Sheet open={attendanceOpen} onOpenChange={v => { if (!v) { setAttendanceOpen(false); setAttendanceDriveId(null); } }}>
-        <SheetContent side="right" className="sm:max-w-md flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-md flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Mark Attendance</SheetTitle>
             {attendanceDrive && (
