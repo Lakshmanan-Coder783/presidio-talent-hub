@@ -594,8 +594,7 @@ export const TestDetail: React.FC = () => {
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
 
   const [draftDriveSpocName, setDraftDriveSpocName] = useState('');
-  const [draftDriveSpocContact, setDraftDriveSpocContact] = useState('');
-  const [draftDriveDescription, setDraftDriveDescription] = useState('');
+  const [draftDriveSpocEmail, setDraftDriveSpocEmail] = useState('');
 
   // edit assessment sheet
   const [asmEditOpen, setAsmEditOpen] = useState(false);
@@ -1138,8 +1137,7 @@ export const TestDetail: React.FC = () => {
     setDraftDriveExamEnd(drive.examEndTime ?? '');
 
     setDraftDriveSpocName(drive.spocName);
-    setDraftDriveSpocContact(drive.spocContact);
-    setDraftDriveDescription(drive.description);
+    setDraftDriveSpocEmail(drive.spocEmail);
     setDriveEditOpen(true);
   };
 
@@ -1156,8 +1154,7 @@ export const TestDetail: React.FC = () => {
       examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
       examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
       spocName: draftDriveSpocName,
-      spocContact: draftDriveSpocContact,
-      description: draftDriveDescription,
+      spocEmail: draftDriveSpocEmail,
     });
     setDriveEditOpen(false);
     toast.success('Drive details updated.');
@@ -3169,16 +3166,8 @@ export const TestDetail: React.FC = () => {
               <Input value={draftDriveSpocName} onChange={e => setDraftDriveSpocName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>SPOC Contact</Label>
-              <Input value={draftDriveSpocContact} onChange={e => setDraftDriveSpocContact(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea
-                value={draftDriveDescription}
-                onChange={e => setDraftDriveDescription(e.target.value)}
-                rows={3}
-              />
+              <Label>SPOC Email</Label>
+              <Input type="email" value={draftDriveSpocEmail} onChange={e => setDraftDriveSpocEmail(e.target.value)} />
             </div>
           </div>
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">

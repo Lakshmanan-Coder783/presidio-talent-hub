@@ -37,7 +37,7 @@ export const CampusDrives: React.FC = () => {
   const [location, setLocation] = useState('');
 
   const [spocName, setSpocName] = useState('');
-  const [spocContact, setSpocContact] = useState('');
+  const [spocEmail, setSpocEmail] = useState('');
   const [description, setDescription] = useState('');
 
   // College student pool state
@@ -48,7 +48,7 @@ export const CampusDrives: React.FC = () => {
 
   const resetForm = () => {
     setName(''); setCollege(''); setDate(''); setDay2Date(''); setLocation('');
-    setSpocName(''); setSpocContact(''); setDescription('');
+    setSpocName(''); setSpocEmail(''); setDescription('');
   };
 
   const handleSave = (status: CampusDrive['status']) => {
@@ -56,7 +56,7 @@ export const CampusDrives: React.FC = () => {
       alert('Please fill all required fields.');
       return;
     }
-    createDrive({ name, college, date, day2Date: day2Date || undefined, location, spocName, spocContact, description, status, accessMode: 'in-person' });
+    createDrive({ name, college, date, day2Date: day2Date || undefined, location, spocName, spocEmail, description, status, accessMode: 'in-person' });
     resetForm();
     setModalOpen(false);
   };
@@ -415,8 +415,8 @@ export const CampusDrives: React.FC = () => {
               <Input placeholder="e.g. Prof. R. Ramanujan" value={spocName} onChange={e => setSpocName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>SPOC Contact</Label>
-              <Input placeholder="+91 9876543210" value={spocContact} onChange={e => setSpocContact(e.target.value)} />
+              <Label>SPOC Email</Label>
+              <Input type="email" placeholder="spoc@college.edu.in" value={spocEmail} onChange={e => setSpocEmail(e.target.value)} />
             </div>
           </div>
 

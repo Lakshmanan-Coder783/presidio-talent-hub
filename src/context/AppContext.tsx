@@ -18,6 +18,7 @@ interface AppContextType {
   logout: () => void;
   createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => void;
   updateDrive: (drive: CampusDrive) => void;
+  deleteDrive: (driveId: string) => void;
   updateCandidate: (candidate: Candidate) => void;
   bulkUpdateCandidates: (updates: Candidate[]) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
@@ -125,6 +126,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateDrive = (updatedDrive: CampusDrive) => {
     const updatedDrives = db.drives.map(d => d.id === updatedDrive.id ? updatedDrive : d);
     const updatedDb = { ...db, drives: updatedDrives };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
+  const deleteDrive = (driveId: string) => {
+    const updatedDb = {
+      ...db,
+      drives: db.drives.filter(d => d.id !== driveId),
+      candidates: db.candidates.filter(c => c.driveId !== driveId),
+    };
     setDb(updatedDb);
     saveDatabase(updatedDb);
   };
@@ -455,11 +466,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const drive = db.drives.find(d => d.id === driveId);
     if (!drive) return 0;
 
-    const existing = new Set(db.candidates.map(c => c.email.toLowerCase()));
+    const existing = new Set(
+      db.candidates.filter(c => c.driveId === driveId).map(c => c.email.toLowerCase())
+    );
     const newCandidates: Candidate[] = [];
 
     rows.forEach((row, idx) => {
-      if (existing.has(row.email.toLowerCase())) return; // skip duplicates
+      if (existing.has(row.email.toLowerCase())) return; // skip duplicates within this drive
       newCandidates.push({
         ...row,
         id: `PRES2026-${20000 + db.candidates.length + idx + 1}`,
@@ -555,6 +568,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logout,
       createDrive,
       updateDrive,
+      deleteDrive,
       updateCandidate,
       createQuestion,
       createInterview,

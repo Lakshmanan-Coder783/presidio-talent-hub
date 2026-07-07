@@ -9,7 +9,7 @@ export interface CampusDrive {
   registered: number;
   selected: number;
   spocName: string;
-  spocContact: string;
+  spocEmail: string;
   description: string;
   status: 'Draft' | 'Published' | 'Completed' | 'Ongoing';
   accessMode: 'in-person' | 'remote';

@@ -727,6 +727,7 @@ export function generateMockDatabase(): Database {
       ...[0,1,2].map(k => `Q-${1401 + ((i * 11 + k) % 60)}`),  // Coding/Programming (3)
     ];
 
+    const spocName = `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`;
     drives.push({
       id: `DRV-${year}-${100 + i}`,
       name: `${college} Campus Recruitment Drive ${year}`,
@@ -736,8 +737,8 @@ export function generateMockDatabase(): Database {
       targetHiring: target,
       registered,
       selected,
-      spocName: `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`,
-      spocContact: `+91 ${Math.floor(rnd.range(7000000000, 9999999999))}`,
+      spocName,
+      spocEmail: `${spocName.toLowerCase().replace(/\s+/g, '.')}@${college.toLowerCase().replace(/[^a-z0-9]+/g, '')}.edu.in`,
       description: DRIVE_DESCRIPTIONS[i % DRIVE_DESCRIPTIONS.length](college),
       status,
       accessMode: i % 3 === 0 ? 'remote' : 'in-person',

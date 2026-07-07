@@ -5,14 +5,17 @@ import { Table } from '../../components/Table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from '@/components/ui/sheet';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
@@ -29,7 +32,7 @@ interface TestRow {
   driveDate: string;
   driveDay2Date?: string;
   pipelineProgress: number;
-  status: 'Ongoing' | 'Finished';
+  status: 'Ongoing' | 'Finished' | 'Draft';
   ownerInitials: string;
   ownerName: string;
   ownerColor: string;
@@ -53,7 +56,7 @@ const DRIVE_STATUS_MAP: Record<string, TestRow['status']> = {
   Ongoing:   'Ongoing',
   Published: 'Ongoing',
   Completed: 'Finished',
-  Draft:     'Ongoing',
+  Draft:     'Draft',
 };
 
 const computePipelineProgress = (candidates: Candidate[]): number => {
@@ -65,8 +68,12 @@ const computePipelineProgress = (candidates: Candidate[]): number => {
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db, updateDrive, createDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
+  const { db, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
   const navigate = useNavigate();
+
+  // ── Delete drive state ───────────────────────────────────────────────────────
+  const [deleteDriveId, setDeleteDriveId] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   // ── Edit / Create drive state ────────────────────────────────────────────────
   const [editOpen, setEditOpen] = useState(false);
@@ -81,8 +88,7 @@ export const OnlineAssessment: React.FC = () => {
   const [draftAccessMode, setDraftAccessMode] = useState<CampusDrive['accessMode']>('in-person');
 
   const [draftSpocName, setDraftSpocName] = useState('');
-  const [draftSpocContact, setDraftSpocContact] = useState('');
-  const [draftDescription, setDraftDescription] = useState('');
+  const [draftSpocEmail, setDraftSpocEmail] = useState('');
 
   // ── College student pool state ───────────────────────────────────────────────
   const collegeFileInputRef = useRef<HTMLInputElement>(null);
@@ -122,8 +128,7 @@ export const OnlineAssessment: React.FC = () => {
     setDraftAccessMode(drive.accessMode ?? 'in-person');
 
     setDraftSpocName(drive.spocName);
-    setDraftSpocContact(drive.spocContact);
-    setDraftDescription(drive.description);
+    setDraftSpocEmail(drive.spocEmail);
     setEditOpen(true);
   };
 
@@ -139,8 +144,7 @@ export const OnlineAssessment: React.FC = () => {
     setDraftAccessMode('in-person');
 
     setDraftSpocName('');
-    setDraftSpocContact('');
-    setDraftDescription('');
+    setDraftSpocEmail('');
     setEditOpen(true);
   };
 
@@ -158,8 +162,8 @@ export const OnlineAssessment: React.FC = () => {
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
         spocName: draftSpocName,
-        spocContact: draftSpocContact,
-        description: draftDescription,
+        spocEmail: draftSpocEmail,
+        description: '',
         status: effectiveStatus,
         accessMode: draftAccessMode,
       });
@@ -175,13 +179,20 @@ export const OnlineAssessment: React.FC = () => {
         status: effectiveStatus,
         accessMode: draftAccessMode,
         spocName: draftSpocName,
-        spocContact: draftSpocContact,
-        description: draftDescription,
+        spocEmail: draftSpocEmail,
       });
       toast.success('Drive updated successfully.');
     }
     setEditOpen(false);
     setIsCreating(false);
+  };
+
+  const confirmDeleteDrive = () => {
+    if (!deleteDriveId) return;
+    deleteDrive(deleteDriveId);
+    toast.success('Drive deleted.');
+    setDeleteConfirmOpen(false);
+    setDeleteDriveId(null);
   };
 
   // ── College student pool import ──────────────────────────────────────────────
@@ -483,6 +494,7 @@ export const OnlineAssessment: React.FC = () => {
         const cls =
           row.status === 'Ongoing'  ? 'text-amber-600 font-medium' :
           row.status === 'Finished' ? 'text-foreground font-medium' :
+          row.status === 'Draft'    ? 'text-muted-foreground italic' :
                                       'text-muted-foreground';
         return <span className={`text-sm ${cls}`}>{row.status}</span>;
       },
@@ -502,6 +514,31 @@ export const OnlineAssessment: React.FC = () => {
         </div>
       ),
     },
+    {
+      header: 'ACTIONS',
+      render: (row: TestRow) => (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title="Edit drive"
+            onClick={() => openEdit(row.id)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            title="Delete drive"
+            onClick={() => { setDeleteDriveId(row.id); setDeleteConfirmOpen(true); }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   const filters = [
@@ -511,6 +548,7 @@ export const OnlineAssessment: React.FC = () => {
       options: [
         { label: 'Ongoing',  value: 'Ongoing' },
         { label: 'Finished', value: 'Finished' },
+        { label: 'Draft',    value: 'Draft' },
       ],
     },
   ];
@@ -534,6 +572,27 @@ export const OnlineAssessment: React.FC = () => {
         initialSort={{ key: 'driveDate', direction: 'desc' }}
         exportFileName="Tests_Export"
       />
+
+      {/* ── Delete Drive confirmation ── */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={v => { setDeleteConfirmOpen(v); if (!v) setDeleteDriveId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this drive?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this drive and all candidates registered under it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              onClick={confirmDeleteDrive}
+            >
+              Yes, Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Hidden file input for college student pool import */}
       <input
@@ -628,16 +687,8 @@ export const OnlineAssessment: React.FC = () => {
               <Input value={draftSpocName} onChange={e => setDraftSpocName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>SPOC Contact</Label>
-              <Input value={draftSpocContact} onChange={e => setDraftSpocContact(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea
-                value={draftDescription}
-                onChange={e => setDraftDescription(e.target.value)}
-                rows={3}
-              />
+              <Label>SPOC Email</Label>
+              <Input type="email" value={draftSpocEmail} onChange={e => setDraftSpocEmail(e.target.value)} />
             </div>
           </div>
 
