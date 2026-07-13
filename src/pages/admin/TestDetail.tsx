@@ -26,11 +26,11 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Pencil, Share2, Eye, Settings, UserPlus, AlignLeft, Shield, Users,
+  ArrowLeft, Pencil, Share2, Eye, Settings, AlignLeft, Shield, Users,
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Upload, UserCheck, UserX, Mail, ExternalLink,
+  Upload, UserCheck, UserX, Mail, ExternalLink, Database,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive, CollegeStudent } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
@@ -556,19 +556,13 @@ const DEFAULT_EXP: {
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, bulkInvite, bulkImportCandidates, markAttendance, sendRemoteInvites } = useApp();
+  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, bulkImportCandidates, markAttendance } = useApp();
 
   // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('questions');
-
-  // invite tab state
-  const [selectedAssessment, setSelectedAssessment] = useState('');
-  const [scheduleDate, setScheduleDate] = useState('');
-  const [scheduleTime, setScheduleTime] = useState('');
-  const [inviteSent, setInviteSent] = useState(false);
 
   // evaluate drawer state
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
@@ -680,9 +674,53 @@ export const TestDetail: React.FC = () => {
     [db.candidates, drive],
   );
 
+  type StudentsDbRow = { sno: number } & Candidate;
+  const studentsDbRows = useMemo<StudentsDbRow[]>(
+    () => driveCandidates.map((c, i) => ({ sno: i + 1, ...c })),
+    [driveCandidates],
+  );
+
+  const studentsDbColumns = [
+    { header: 'S.No', accessor: 'sno' as const, sortable: true },
+    { header: 'Reg. No', accessor: 'registrationNumber' as const, sortable: true },
+    { header: 'Name', accessor: 'name' as const, sortable: true },
+    { header: 'Email', accessor: 'email' as const },
+    { header: 'Phone', accessor: 'phone' as const },
+    { header: 'Degree', accessor: 'degree' as const, sortable: true },
+    { header: 'Specialization', accessor: 'specialization' as const },
+    { header: 'Gender', accessor: 'gender' as const },
+    { header: 'DOB', accessor: 'dateOfBirth' as const },
+    {
+      header: 'GitHub',
+      render: (row: StudentsDbRow) =>
+        row.githubUrl ? (
+          <a href={row.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />GitHub
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'LinkedIn',
+      render: (row: StudentsDbRow) =>
+        row.linkedinUrl ? (
+          <a href={row.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" />LinkedIn
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+    {
+      header: 'Resume',
+      render: (row: StudentsDbRow) =>
+        row.resumeUrl ? (
+          <a href={row.resumeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-emerald-600 hover:underline">
+            <FileText className="h-3.5 w-3.5" />Open
+          </a>
+        ) : <span className="text-muted-foreground text-sm">—</span>,
+    },
+  ];
+
   const candidateRows = useMemo<CandidateRow[]>(() => {
     return driveCandidates
-      .filter(c => c.assessmentStatus !== 'Not Invited')
       .map(c => {
         const pct = c.assessmentScore != null && totalMarks > 0
           ? Math.round((c.assessmentScore / totalMarks) * 100)
@@ -721,16 +759,6 @@ export const TestDetail: React.FC = () => {
 
   const assessmentUrl = linkedAssessment?.slug
     ? `${window.location.origin}/take/${linkedAssessment.slug}` : null;
-
-  const activeAssessments = useMemo(
-    () => db.assessments.filter(a => a.status === 'Active'),
-    [db.assessments]
-  );
-
-  const invitedCandidates = useMemo(
-    () => driveCandidates.filter(c => c.assessmentStatus !== 'Not Invited'),
-    [driveCandidates]
-  );
 
   const sectionAverages = useMemo(() => {
     const completed = driveCandidates.filter(c => c.sectionScores);
@@ -811,12 +839,6 @@ export const TestDetail: React.FC = () => {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
-  };
-
-  const handleInvite = () => {
-    if (!selectedAssessment || !scheduleDate || !scheduleTime || !drive) return;
-    bulkInvite(selectedAssessment, scheduleDate, drive.id);
-    setInviteSent(true);
   };
 
   const exportCSV = () => {
@@ -1567,9 +1589,14 @@ export const TestDetail: React.FC = () => {
               <AlignLeft className="h-4 w-4" />
               Questions
             </TabsTrigger>
-            <TabsTrigger value="invite" className={TAB_TRIGGER}>
-              <UserPlus className="h-4 w-4" />
-              Invite
+            <TabsTrigger value="students-database" className={TAB_TRIGGER}>
+              <Database className="h-4 w-4" />
+              Students Database
+              {driveCandidates.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                  {driveCandidates.length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="experience" className={TAB_TRIGGER}>
               <Shield className="h-4 w-4" />
@@ -1959,186 +1986,27 @@ export const TestDetail: React.FC = () => {
           )}
         </TabsContent>
 
-        {/* ── Invite Tab ── */}
-        <TabsContent value="invite" className="m-0 p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            {/* Left: configurator */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Invite Configurator</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Select Assessment</Label>
-                  <Select
-                    value={selectedAssessment}
-                    onValueChange={v => { setSelectedAssessment(v); setInviteSent(false); }}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Choose an active assessment…" /></SelectTrigger>
-                    <SelectContent>
-                      {activeAssessments.length === 0 ? (
-                        <SelectItem value="__none" disabled>No active assessments</SelectItem>
-                      ) : (
-                        activeAssessments.map(asm => (
-                          <SelectItem key={asm.id} value={asm.id}>
-                            {asm.name} ({asm.duration} min)
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Exam Date</Label>
-                  <Input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Start Time</Label>
-                  <Input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} />
-                </div>
-
-                <div className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
-                  Inviting candidates from{' '}
-                  <span className="font-semibold text-foreground">{drive.college}</span>
-                </div>
-
-                {/* Access mode indicator */}
-                <div className={`rounded-lg px-3 py-2 text-xs flex items-start gap-2 ${drive.accessMode === 'remote' ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-800'}`}>
-                  <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  {drive.accessMode === 'remote'
-                    ? 'Remote drive — each candidate receives the test link + their individual password via email.'
-                    : 'In-Person drive — share the test link and shared password verbally in the lab.'
-                  }
-                </div>
-
-                {inviteSent ? (
-                  <div className="space-y-2">
-                    <Alert className="border-emerald-500 bg-emerald-50 text-emerald-800">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      <AlertDescription className="font-semibold">
-                        Invitations dispatched successfully!
-                      </AlertDescription>
-                    </Alert>
-                    {drive.accessMode === 'remote' && (
-                      <Button
-                        variant="outline"
-                        className="w-full gap-2 text-sm"
-                        onClick={() => {
-                          const count = sendRemoteInvites(drive.id);
-                          if (count > 0) {
-                            toast.success(`Test invite emails sent to ${count} candidate${count !== 1 ? 's' : ''}.`);
-                          } else {
-                            toast.info('All candidates already have emails sent.');
-                          }
-                        }}
-                      >
-                        <Mail className="h-4 w-4" />
-                        Send Test Invites via Email
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <Button
-                    className="w-full gap-2"
-                    disabled={!selectedAssessment || !scheduleDate || !scheduleTime}
-                    onClick={handleInvite}
-                  >
-                    <Send className="h-4 w-4" />
-                    {drive.accessMode === 'remote' ? 'Generate Individual Passwords' : 'Send Invitations'}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Right: invited candidates */}
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-base">
-                  Invited Candidates
-                  {invitedCandidates.length > 0 && (
-                    <span className="ml-2 text-xs font-normal bg-muted text-muted-foreground rounded-full px-2 py-0.5">
-                      {invitedCandidates.length}
-                    </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {invitedCandidates.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-16 text-center text-muted-foreground">
-                    <Users className="h-10 w-10 opacity-40" />
-                    <div>
-                      <p className="font-semibold text-sm">No candidates invited yet</p>
-                      <p className="text-xs mt-1">Configure and send invitations to see credentials here.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                          <th className="text-left py-2 pr-4 font-medium">Candidate</th>
-                          <th className="text-left py-2 pr-4 font-medium">ID</th>
-                          <th className="text-left py-2 pr-4 font-medium">Password</th>
-                          {drive.accessMode === 'remote' && (
-                            <th className="text-left py-2 pr-4 font-medium">Email</th>
-                          )}
-                          <th className="text-left py-2 font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {invitedCandidates.map(c => (
-                          <tr key={c.id} className="hover:bg-muted/30">
-                            <td className="py-2.5 pr-4">
-                              <p className="font-medium">{c.name}</p>
-                              <p className="text-xs text-muted-foreground">{c.email}</p>
-                            </td>
-                            <td className="py-2.5 pr-4 font-mono text-xs text-muted-foreground">{c.id}</td>
-                            <td className="py-2.5 pr-4">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono font-semibold text-primary text-xs">
-                                  {c.assessmentPassword ?? '—'}
-                                </span>
-                                {c.assessmentPassword && (
-                                  <button
-                                    className="text-muted-foreground hover:text-foreground"
-                                    onClick={() => copyToClipboard(c.assessmentPassword!, 'Password')}
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                            {drive.accessMode === 'remote' && (
-                              <td className="py-2.5 pr-4">
-                                {c.inviteEmailSentAt ? (
-                                  <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                                    <Mail className="h-3 w-3" /> Sent
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">Pending</span>
-                                )}
-                              </td>
-                            )}
-                            <td className="py-2.5">
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                                c.assessmentStatus === 'Completed' ? 'bg-green-100 text-green-700' :
-                                c.assessmentStatus === 'InProgress' ? 'bg-amber-100 text-amber-700' :
-                                'bg-muted text-muted-foreground'
-                              }`}>
-                                {c.assessmentStatus}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        {/* ── Students Database Tab ── */}
+        <TabsContent value="students-database" className="m-0 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">
+              {driveCandidates.length} student{driveCandidates.length !== 1 ? 's' : ''} registered for this drive
+            </p>
           </div>
+          {driveCandidates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-1.5 border-2 border-dashed rounded-lg text-muted-foreground">
+              <p className="text-sm">No students uploaded for this drive yet.</p>
+              <p className="text-xs">Use the Upload button in the Students Database column on the Campus Drive list.</p>
+            </div>
+          ) : (
+            <Table
+              data={studentsDbRows}
+              columns={studentsDbColumns}
+              searchPlaceholder="Search students…"
+              searchKey="name"
+              exportFileName="Students_Database"
+            />
+          )}
         </TabsContent>
 
         {/* ── Experience Tab ── */}
@@ -2454,9 +2322,9 @@ export const TestDetail: React.FC = () => {
           {candidateRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
               <Users className="h-8 w-8 opacity-40" />
-              <p className="text-sm">No candidates invited yet.</p>
-              <Button size="sm" variant="outline" onClick={() => setActiveTab('invite')}>
-                Go to Invite tab
+              <p className="text-sm">No candidates registered yet.</p>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('students-database')}>
+                Go to Students Database
               </Button>
             </div>
           ) : (
