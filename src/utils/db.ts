@@ -1,5 +1,6 @@
 import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection, CollegeStudent } from '../types';
 import { generateSlug } from '../lib/utils';
+import { computeDriveStatus } from './driveStatus';
 
 class SeededRandom {
   private seed: number;
@@ -164,6 +165,9 @@ const DEGREES = ['B.Tech CSE', 'B.Tech ECE', 'B.Tech IT', 'M.Tech CSE', 'MCA', '
 const CTC_STEPS = [7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0];
 const JOINED_CTC_STEPS = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0];
 
+const BROWSERS = ['Chrome 128.0.0.0', 'Edge 138.0.0.0', 'Firefox 130.0', 'Safari 17.5'];
+const OPERATING_SYSTEMS = ['Windows 10', 'Windows 11', 'macOS 14', 'Ubuntu 22.04'];
+
 const DRIVE_DESCRIPTIONS = [
   (college: string) => `Campus placement drive at ${college} targeting software engineering, backend development, and data science roles for final-year B.Tech and M.Tech students.`,
   (college: string) => `Product engineering recruitment at ${college} for full-stack, mobile, and frontend roles. We are building the next generation of Presidio's SaaS platform.`,
@@ -184,6 +188,20 @@ const INTERVIEW_FEEDBACK = [
 
 export function generateMockDatabase(): Database {
   const rnd = new SeededRandom(2026); // Seed to guarantee identical data on first load
+
+  // Online assessments typically start between 10:30 AM and 11:00 AM
+  const randomExamStartTime = (day: number) => {
+    const totalMinutes = Math.floor(rnd.range(630, 661));
+    const hour = Math.floor(totalMinutes / 60);
+    const minute = totalMinutes % 60;
+    return new Date(2026, 4, day, hour, minute).toISOString();
+  };
+
+  const randomDeviceInfo = () => ({
+    browser: rnd.pick(BROWSERS),
+    os: rnd.pick(OPERATING_SYSTEMS),
+    ip: `${Math.floor(rnd.range(1, 223))}.${Math.floor(rnd.range(0, 255))}.${Math.floor(rnd.range(0, 255))}.${Math.floor(rnd.range(1, 254))}`,
+  });
 
   // 1. Generate 500 Questions
   const questions: Question[] = [];
@@ -746,6 +764,13 @@ export function generateMockDatabase(): Database {
     });
   }
 
+  // Per-drive total marks (mirrors TestDetail.tsx's own driveQuestions/totalMarks calc),
+  // used so a candidate's assessmentScore is always generated — and later displayed —
+  // against the same total as their actual drive's question set.
+  const driveTotalMarksById = new Map(
+    drives.map(d => [d.id, questions.filter(q => d.questionIds?.includes(q.id)).reduce((s, q) => s + q.marks, 0)])
+  );
+
   // 3. Generate 100 Assessments
   const assessments: Assessment[] = [];
   const assessmentNames = [
@@ -812,6 +837,7 @@ export function generateMockDatabase(): Database {
 
   for (let i = 1; i <= 1000; i++) {
     const drive = drives[i % drives.length];
+    const driveTotal = driveTotalMarksById.get(drive.id) ?? 0;
     const name = `${FIRST_NAMES[i % FIRST_NAMES.length]} ${LAST_NAMES[(i * 3) % LAST_NAMES.length]}`;
     const cleanEmailName = name.toLowerCase().replace(/\s+/g, '.');
     const degree = rnd.pick(DEGREES);
@@ -823,6 +849,10 @@ export function generateMockDatabase(): Database {
     let assessmentStatus: Candidate['assessmentStatus'] = 'Not Invited';
     let interviewStatus: Candidate['interviewStatus'] = 'Not Scheduled';
     let offerStatus: Candidate['offerStatus'] = 'None';
+    let oaShortlisted: boolean | undefined = undefined;
+    let interviewShortlisted: boolean | undefined = undefined;
+    let codingShortlisted: boolean | undefined = undefined;
+    let whiteboardFinalResult: Candidate['whiteboardFinalResult'] = undefined;
 
     const roll = rnd.range(0, 100);
 
@@ -843,15 +873,15 @@ export function generateMockDatabase(): Database {
       funnelStage = 'Online Test';
       if (roll < 72) {
         assessmentStatus = 'Completed';
-        assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.3, 0.95));
+        assessmentScore = Math.floor(driveTotal * rnd.range(0.3, 0.95));
         durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
-        submissionDate = new Date(2026, 4, Math.floor(rnd.range(1, 28))).toISOString();
+        submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
         const isCombined = targetAssessment.type === 'Combined';
         sectionScores = {
-          aptitude: Math.floor(targetAssessment.totalMarks * 0.2 * rnd.range(0.3, 0.9)),
-          logical: isCombined ? Math.floor(targetAssessment.totalMarks * 0.1 * rnd.range(0.4, 0.9)) : undefined,
-          technical: Math.floor(targetAssessment.totalMarks * 0.5 * rnd.range(0.4, 0.95)),
-          coding: rnd.next() > 0.4 ? Math.floor(targetAssessment.totalMarks * 0.3 * rnd.range(0.2, 0.9)) : 0
+          aptitude: Math.floor(driveTotal * 0.2 * rnd.range(0.3, 0.9)),
+          logical: isCombined ? Math.floor(driveTotal * 0.1 * rnd.range(0.4, 0.9)) : undefined,
+          technical: Math.floor(driveTotal * 0.5 * rnd.range(0.4, 0.95)),
+          coding: rnd.next() > 0.4 ? Math.floor(driveTotal * 0.3 * rnd.range(0.2, 0.9)) : 0
         };
       } else {
         assessmentStatus = 'InProgress';
@@ -860,13 +890,15 @@ export function generateMockDatabase(): Database {
       const stageOptions: Candidate['funnelStage'][] = ['Interview', 'Coding Exercise', 'Whiteboard Interview'];
       funnelStage = rnd.pick(stageOptions);
       assessmentStatus = 'Completed';
-      assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.65, 0.98));
+      assessmentScore = Math.floor(driveTotal * rnd.range(0.65, 0.98));
+      durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
+      submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
       const isCombined = targetAssessment.type === 'Combined';
       sectionScores = {
-        aptitude: Math.floor(targetAssessment.totalMarks * 0.25 * rnd.range(0.7, 0.95)),
-        logical: isCombined ? Math.floor(targetAssessment.totalMarks * 0.1 * rnd.range(0.6, 0.95)) : undefined,
-        technical: Math.floor(targetAssessment.totalMarks * 0.45 * rnd.range(0.75, 0.98)),
-        coding: Math.floor(targetAssessment.totalMarks * 0.3 * rnd.range(0.65, 0.95))
+        aptitude: Math.floor(driveTotal * 0.25 * rnd.range(0.7, 0.95)),
+        logical: isCombined ? Math.floor(driveTotal * 0.1 * rnd.range(0.6, 0.95)) : undefined,
+        technical: Math.floor(driveTotal * 0.45 * rnd.range(0.75, 0.98)),
+        coding: Math.floor(driveTotal * 0.3 * rnd.range(0.65, 0.95))
       };
 
       interviewStatus = roll < 87 ? 'Scheduled' : 'Ongoing';
@@ -889,7 +921,9 @@ export function generateMockDatabase(): Database {
     } else if (roll < 97) {
       funnelStage = 'Offered';
       assessmentStatus = 'Completed';
-      assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.75, 0.98));
+      assessmentScore = Math.floor(driveTotal * rnd.range(0.75, 0.98));
+      durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
+      submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
       interviewStatus = 'Passed';
 
       const offerRoll = rnd.range(0, 3);
@@ -910,7 +944,9 @@ export function generateMockDatabase(): Database {
     } else {
       funnelStage = 'Joined';
       assessmentStatus = 'Completed';
-      assessmentScore = Math.floor(targetAssessment.totalMarks * rnd.range(0.8, 0.99));
+      assessmentScore = Math.floor(driveTotal * rnd.range(0.8, 0.99));
+      durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
+      submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
       interviewStatus = 'Passed';
       offerStatus = 'Joined';
 
@@ -927,6 +963,7 @@ export function generateMockDatabase(): Database {
     }
 
     const githubHandle = name.toLowerCase().replace(/\s+/g, '-');
+    const deviceInfo = (assessmentStatus === 'InProgress' || assessmentStatus === 'Completed') ? randomDeviceInfo() : null;
     candidates.push({
       id: `PRES2026-${10000 + i}`,
       name,
@@ -949,11 +986,50 @@ export function generateMockDatabase(): Database {
       sectionScores,
       interviewStatus,
       offerStatus,
-      funnelStage
+      funnelStage,
+      oaShortlisted,
+      interviewShortlisted,
+      codingShortlisted,
+      whiteboardFinalResult,
+      deviceBrowser: deviceInfo?.browser,
+      deviceOS: deviceInfo?.os,
+      mockIpAddress: deviceInfo?.ip,
     });
 
     targetAssessment.candidatesAssignedCount++;
   }
+
+  // If any candidate in a drive has advanced past the OA (funnelStage beyond
+  // 'Online Test'), every other candidate registered under that same drive must
+  // have at least completed the Online Assessment too — a drive can't be
+  // mid-Coding-Round while most of its roster never sat the OA.
+  const advancedStages: Candidate['funnelStage'][] = ['Interview', 'Coding Exercise', 'Whiteboard Interview', 'Offered', 'Joined'];
+  const advancedDriveIds = new Set(
+    candidates.filter(c => advancedStages.includes(c.funnelStage)).map(c => c.driveId)
+  );
+  candidates.forEach(c => {
+    if (!advancedDriveIds.has(c.driveId) || c.assessmentStatus === 'Completed') return;
+    const asm = assessments.find(a => a.id === c.assessmentId);
+    const total = driveTotalMarksById.get(c.driveId) ?? 100;
+    const isCombined = asm?.type === 'Combined';
+    c.assessmentStatus = 'Completed';
+    c.assessmentScore = Math.floor(total * rnd.range(0.3, 0.95));
+    c.assessmentDurationUsed = Math.floor((asm?.duration ?? 60) * 60 * rnd.range(0.5, 0.95));
+    c.assessmentSubmissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
+    if (!c.deviceBrowser) {
+      const deviceInfo = randomDeviceInfo();
+      c.deviceBrowser = deviceInfo.browser;
+      c.deviceOS = deviceInfo.os;
+      c.mockIpAddress = deviceInfo.ip;
+    }
+    c.sectionScores = {
+      aptitude: Math.floor(total * 0.2 * rnd.range(0.3, 0.9)),
+      logical: isCombined ? Math.floor(total * 0.1 * rnd.range(0.4, 0.9)) : undefined,
+      technical: Math.floor(total * 0.5 * rnd.range(0.4, 0.95)),
+      coding: rnd.next() > 0.4 ? Math.floor(total * 0.3 * rnd.range(0.2, 0.9)) : 0,
+    };
+    if (c.funnelStage === 'Applied') c.funnelStage = 'Online Test';
+  });
 
   // Calculate ranks and percentiles for completed assessments
   const completedCandidates = candidates.filter(c => c.assessmentStatus === 'Completed');
@@ -969,10 +1045,15 @@ export function generateMockDatabase(): Database {
     });
   });
 
+  // Derive each drive's status from its candidates' pipeline progress
+  drives.forEach(drive => {
+    drive.status = computeDriveStatus(candidates.filter(c => c.driveId === drive.id));
+  });
+
   return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [] };
 }
 
-const DB_VERSION = '13';
+const DB_VERSION = '19';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

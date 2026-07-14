@@ -11,7 +11,7 @@ export interface CampusDrive {
   spocName: string;
   spocEmail: string;
   description: string;
-  status: 'Draft' | 'Published' | 'Completed' | 'Ongoing';
+  status: 'Draft' | 'Ongoing' | 'Completed';
   accessMode: 'in-person' | 'remote';
   questionIds?: string[];
   assessmentId?: string;
@@ -84,6 +84,11 @@ export interface Candidate {
   // Attendance & invite tracking
   attendanceMarked?: boolean;
   inviteEmailSentAt?: string;
+
+  // Session/device info captured (or mocked) at assessment time
+  deviceBrowser?: string;
+  deviceOS?: string;
+  mockIpAddress?: string;
 
   // OA shortlisting
   oaShortlisted?: boolean;

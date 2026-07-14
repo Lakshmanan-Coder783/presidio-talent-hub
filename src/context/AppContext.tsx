@@ -10,6 +10,24 @@ interface UserSession {
   candidate?: Candidate;
 }
 
+const parseUserAgent = (): { browser: string; os: string } => {
+  const ua = navigator.userAgent;
+  let browser = 'Unknown Browser';
+  if (ua.includes('Edg/')) browser = 'Edge';
+  else if (ua.includes('Chrome/')) browser = 'Chrome';
+  else if (ua.includes('Firefox/')) browser = 'Firefox';
+  else if (ua.includes('Safari/') && !ua.includes('Chrome')) browser = 'Safari';
+
+  let os = 'Unknown OS';
+  if (ua.includes('Windows')) os = 'Windows';
+  else if (ua.includes('Mac OS X')) os = 'macOS';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+
+  return { browser, os };
+};
+
 interface AppContextType {
   db: Database;
   currentUser: UserSession | null;
@@ -290,6 +308,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    const { browser, os } = parseUserAgent();
     const updatedCandidates = db.candidates.map(c => {
       if (c.id === candidateId) {
         return {
@@ -299,7 +318,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           assessmentDurationUsed: durationUsed,
           assessmentSubmissionDate: new Date().toISOString(),
           sectionScores: scoresBreakdown,
-          funnelStage: 'Online Test' as const // Ensure funnel updates
+          funnelStage: 'Online Test' as const, // Ensure funnel updates
+          deviceBrowser: browser,
+          deviceOS: os,
         };
       }
       return c;

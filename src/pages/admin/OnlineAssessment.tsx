@@ -19,6 +19,7 @@ import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload, Pencil, Trash2 
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
+import { computeDriveStatus } from '../../utils/driveStatus';
 
 interface TestRow {
   id: string;
@@ -32,7 +33,7 @@ interface TestRow {
   driveDate: string;
   driveDay2Date?: string;
   pipelineProgress: number;
-  status: 'Ongoing' | 'Finished' | 'Draft';
+  status: CampusDrive['status'];
   ownerInitials: string;
   ownerName: string;
   ownerColor: string;
@@ -52,19 +53,15 @@ const relativeTime = (ts: number | null): string => {
 };
 
 
-const DRIVE_STATUS_MAP: Record<string, TestRow['status']> = {
-  Ongoing:   'Ongoing',
-  Published: 'Ongoing',
-  Completed: 'Finished',
-  Draft:     'Draft',
-};
-
 const computePipelineProgress = (candidates: Candidate[]): number => {
-  if (candidates.some(c => c.whiteboardFinalResult !== undefined)) return 100;
-  if (candidates.some(c => c.codingShortlisted !== undefined)) return 75;
-  if (candidates.some(c => c.interviewShortlisted !== undefined)) return 50;
-  if (candidates.some(c => c.assessmentStatus === 'Completed')) return 25;
-  return 0;
+  const rank = (c: Candidate): number => {
+    if (c.funnelStage === 'Whiteboard Interview' || c.funnelStage === 'Offered' || c.funnelStage === 'Joined' || c.whiteboardFinalResult !== undefined) return 100;
+    if (c.funnelStage === 'Coding Exercise') return 75;
+    if (c.funnelStage === 'Interview') return 50;
+    if (c.assessmentStatus === 'Completed' || c.assessmentStatus === 'InProgress') return 25;
+    return 0;
+  };
+  return candidates.reduce((max, c) => Math.max(max, rank(c)), 0);
 };
 
 export const OnlineAssessment: React.FC = () => {
@@ -84,7 +81,6 @@ export const OnlineAssessment: React.FC = () => {
   const [draftDate, setDraftDate] = useState('');
   const [draftDay2Date, setDraftDay2Date] = useState('');
   const [draftLocation, setDraftLocation] = useState('');
-  const [draftStatus, setDraftStatus] = useState<CampusDrive['status']>('Draft');
   const [draftAccessMode, setDraftAccessMode] = useState<CampusDrive['accessMode']>('in-person');
 
   const [draftSpocName, setDraftSpocName] = useState('');
@@ -124,7 +120,6 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDate(drive.date);
     setDraftDay2Date(drive.day2Date ?? '');
     setDraftLocation(drive.location);
-    setDraftStatus(drive.status);
     setDraftAccessMode(drive.accessMode ?? 'in-person');
 
     setDraftSpocName(drive.spocName);
@@ -140,7 +135,6 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDate('');
     setDraftDay2Date('');
     setDraftLocation('');
-    setDraftStatus('Draft');
     setDraftAccessMode('in-person');
 
     setDraftSpocName('');
@@ -148,8 +142,7 @@ export const OnlineAssessment: React.FC = () => {
     setEditOpen(true);
   };
 
-  const handleSave = (statusOverride?: CampusDrive['status']) => {
-    const effectiveStatus = statusOverride ?? draftStatus;
+  const handleSave = () => {
     if (isCreating) {
       if (!draftName || !draftCollege || !draftDate || !draftLocation) {
         toast.error('Please fill all required fields.');
@@ -164,7 +157,7 @@ export const OnlineAssessment: React.FC = () => {
         spocName: draftSpocName,
         spocEmail: draftSpocEmail,
         description: '',
-        status: effectiveStatus,
+        status: 'Draft',
         accessMode: draftAccessMode,
       });
       toast.success('Drive created successfully.');
@@ -176,7 +169,6 @@ export const OnlineAssessment: React.FC = () => {
         date: draftDate,
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
-        status: effectiveStatus,
         accessMode: draftAccessMode,
         spocName: draftSpocName,
         spocEmail: draftSpocEmail,
@@ -393,11 +385,11 @@ export const OnlineAssessment: React.FC = () => {
         driveDate:        drive.date,
         driveDay2Date:    drive.day2Date,
         pipelineProgress: computePipelineProgress(driveCandidates),
-        status:           DRIVE_STATUS_MAP[drive.status] ?? 'Ongoing',
+        status:           computeDriveStatus(driveCandidates),
         ownerInitials:    OWNER.initials,
         ownerName:        OWNER.name,
         ownerColor:       OWNER.color,
-        team:             drive.status,
+        team:             computeDriveStatus(driveCandidates),
       };
     });
   }, [db.drives, db.candidates]);
@@ -492,10 +484,10 @@ export const OnlineAssessment: React.FC = () => {
       sortable: true,
       render: (row: TestRow) => {
         const cls =
-          row.status === 'Ongoing'  ? 'text-amber-600 font-medium' :
-          row.status === 'Finished' ? 'text-foreground font-medium' :
-          row.status === 'Draft'    ? 'text-muted-foreground italic' :
-                                      'text-muted-foreground';
+          row.status === 'Ongoing'   ? 'text-amber-600 font-medium' :
+          row.status === 'Completed' ? 'text-foreground font-medium' :
+          row.status === 'Draft'     ? 'text-muted-foreground italic' :
+                                        'text-muted-foreground';
         return <span className={`text-sm ${cls}`}>{row.status}</span>;
       },
     },
@@ -546,9 +538,9 @@ export const OnlineAssessment: React.FC = () => {
       key:   'status',
       label: 'All Status',
       options: [
-        { label: 'Ongoing',  value: 'Ongoing' },
-        { label: 'Finished', value: 'Finished' },
-        { label: 'Draft',    value: 'Draft' },
+        { label: 'Ongoing',   value: 'Ongoing' },
+        { label: 'Completed', value: 'Completed' },
+        { label: 'Draft',     value: 'Draft' },
       ],
     },
   ];
@@ -656,18 +648,6 @@ export const OnlineAssessment: React.FC = () => {
               <Input value={draftLocation} onChange={e => setDraftLocation(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={draftStatus} onValueChange={v => setDraftStatus(v as CampusDrive['status'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Published">Published</SelectItem>
-                  <SelectItem value="Ongoing">Ongoing</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
               <Label>Access Mode</Label>
               <Select value={draftAccessMode} onValueChange={v => setDraftAccessMode(v as CampusDrive['accessMode'])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -694,14 +674,9 @@ export const OnlineAssessment: React.FC = () => {
 
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             {isCreating ? (
-              <>
-                <Button variant="outline" className="flex-1" onClick={() => handleSave('Draft')}>
-                  Save as Draft
-                </Button>
-                <Button className="flex-1" onClick={() => handleSave('Published')}>
-                  Publish Drive
-                </Button>
-              </>
+              <Button className="flex-1" onClick={() => handleSave()}>
+                Create Drive
+              </Button>
             ) : (
               <>
                 <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>

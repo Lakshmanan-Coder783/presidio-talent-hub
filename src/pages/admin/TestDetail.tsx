@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
@@ -30,12 +30,14 @@ import {
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Upload, UserCheck, UserX, Mail, ExternalLink, Database,
+  Mail, ExternalLink, Database,
 } from 'lucide-react';
-import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive, CollegeStudent } from '../../types';
+import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword } from '../../lib/utils';
-import { parseStudentFile } from '../../utils/parseStudentFile';
+import { computeDriveStatus } from '../../utils/driveStatus';
+import { scoreBand, scoreBandColor } from '../../utils/scoreBand';
+import { EvaluateReport } from './EvaluateReport';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,19 +77,6 @@ const topicColor = (t: Question['topic']) => {
   return map[t] ?? 'bg-gray-100 text-gray-700';
 };
 
-const scoreBand = (pct: number) => {
-  if (pct >= 75) return 'Excellent';
-  if (pct >= 50) return 'Good';
-  if (pct >= 25) return 'Average';
-  return 'Poor';
-};
-
-const scoreBandColor = (band: string) => {
-  if (band === 'Excellent') return 'bg-green-100 text-green-700';
-  if (band === 'Good') return 'bg-blue-100 text-blue-700';
-  if (band === 'Average') return 'bg-amber-100 text-amber-700';
-  return 'bg-red-100 text-red-700';
-};
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -329,207 +318,6 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
   );
 };
 
-// ── College pool picker sheet ─────────────────────────────────────────────────
-
-interface CollegePoolPickerProps {
-  open: boolean;
-  onClose: () => void;
-  driveId: string;
-  college: string;
-}
-
-const CollegePoolPicker: React.FC<CollegePoolPickerProps> = ({ open, onClose, driveId, college }) => {
-  const { db, importCollegeStudents, bulkImportCandidates } = useApp();
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const csvInputRef = useRef<HTMLInputElement>(null);
-
-  const existingEmails = useMemo(
-    () => new Set(db.candidates.map(c => c.email.toLowerCase())),
-    [db.candidates]
-  );
-
-  const poolStudents = useMemo(
-    () => db.collegeStudents.filter(s => s.college === college),
-    [db.collegeStudents, college]
-  );
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return poolStudents;
-    const q = search.toLowerCase();
-    return poolStudents.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.email.toLowerCase().includes(q) ||
-      (s.registrationNumber ?? '').toLowerCase().includes(q)
-    );
-  }, [poolStudents, search]);
-
-  const toggle = (student: CollegeStudent) => {
-    if (existingEmails.has(student.email.toLowerCase())) return;
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(student.id) ? next.delete(student.id) : next.add(student.id);
-      return next;
-    });
-  };
-
-  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    try {
-      const rows = await parseStudentFile(file);
-      const count = importCollegeStudents(college, rows);
-      if (count > 0) {
-        toast.success(`${count} student${count !== 1 ? 's' : ''} added to ${college} pool.`);
-      } else {
-        toast.info('No new students — all emails already exist in this college pool.');
-      }
-    } catch {
-      toast.error('Failed to parse file. Please check the format.');
-    }
-  };
-
-  const handleClose = () => {
-    setSelected(new Set());
-    setSearch('');
-    onClose();
-  };
-
-  const handleAddToDrive = () => {
-    const chosen = poolStudents.filter(s => selected.has(s.id));
-    if (chosen.length === 0) return;
-
-    const rows: Parameters<typeof bulkImportCandidates>[1] = chosen.map(s => ({
-      name: s.name,
-      email: s.email,
-      phone: s.phone,
-      degree: s.degree,
-      cgpa: s.cgpa,
-      college,
-      gender: s.gender,
-      registrationNumber: s.registrationNumber,
-      specialization: s.specialization,
-      dateOfBirth: s.dateOfBirth,
-      githubUrl: s.githubUrl,
-      linkedinUrl: s.linkedinUrl,
-      resumeUrl: s.resumeUrl,
-      codingPlatformUrls: s.codingPlatformUrls,
-      tenth: s.tenth,
-      twelfth: s.twelfth,
-      diploma: s.diploma,
-      ugMarks: s.ugMarks,
-      pgMarks: s.pgMarks,
-      backlogHistory: s.backlogHistory,
-      currentBacklogs: s.currentBacklogs,
-    }));
-
-    const imported = bulkImportCandidates(driveId, rows);
-    if (imported > 0) {
-      toast.success(`${imported} student${imported !== 1 ? 's' : ''} added to the drive.`);
-    } else {
-      toast.info('No new candidates — all selected students already exist in a drive.');
-    }
-    handleClose();
-  };
-
-  return (
-    <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
-        <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <SheetTitle>College Pool — {college}</SheetTitle>
-          <p className="text-sm text-muted-foreground">{poolStudents.length} student{poolStudents.length !== 1 ? 's' : ''} in pool</p>
-        </SheetHeader>
-
-        <div className="px-6 py-3 border-b shrink-0 flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name, email or reg. no…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9 h-9"
-            />
-          </div>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            className="hidden"
-            onChange={handleCsvUpload}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 h-9 text-xs shrink-0"
-            onClick={() => csvInputRef.current?.click()}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Upload CSV
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto divide-y">
-          {filtered.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              {poolStudents.length === 0
-                ? `No students in the pool for ${college} yet — upload a CSV to add some.`
-                : 'No students match your search.'}
-            </p>
-          ) : (
-            filtered.map(s => {
-              const isAdded = existingEmails.has(s.email.toLowerCase());
-              const isSelected = selected.has(s.id);
-              return (
-                <button
-                  key={s.id}
-                  className={`w-full flex items-start gap-3 px-6 py-3 text-left transition-colors
-                    ${isAdded ? 'opacity-60 cursor-default bg-muted/30' : 'hover:bg-muted/40 cursor-pointer'}
-                    ${isSelected ? 'bg-primary/5' : ''}
-                  `}
-                  onClick={() => toggle(s)}
-                  disabled={isAdded}
-                >
-                  <div className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center
-                    ${isAdded ? 'border-green-500 bg-green-500' : isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'}`}
-                  >
-                    {(isAdded || isSelected) && (
-                      <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
-                        <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium leading-snug">{s.name}</p>
-                    <p className="text-xs text-muted-foreground">{s.email}</p>
-                  </div>
-
-                  <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className="text-xs text-muted-foreground">{s.degree}</span>
-                    <span className="text-xs text-muted-foreground">CGPA {s.cgpa || '—'}</span>
-                    {isAdded && <span className="text-[10px] font-semibold text-green-600">Already added</span>}
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-
-        <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
-          <Button variant="outline" onClick={handleClose} className="flex-1">Cancel</Button>
-          <Button
-            onClick={handleAddToDrive}
-            disabled={selected.size === 0}
-            className="flex-1"
-          >
-            Add {selected.size > 0 ? `${selected.size} student${selected.size > 1 ? 's' : ''}` : 'to Drive'}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-};
 
 // ── Default experience settings ───────────────────────────────────────────────
 
@@ -556,7 +344,7 @@ const DEFAULT_EXP: {
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, bulkImportCandidates, markAttendance } = useApp();
+  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates } = useApp();
 
   // existing state
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -582,7 +370,6 @@ export const TestDetail: React.FC = () => {
   const [draftDriveDate, setDraftDriveDate] = useState('');
   const [draftDriveDay2Date, setDraftDriveDay2Date] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
-  const [draftDriveStatus, setDraftDriveStatus] = useState<CampusDrive['status']>('Draft');
   const [draftDriveAccessMode, setDraftDriveAccessMode] = useState<CampusDrive['accessMode']>('in-person');
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
@@ -602,15 +389,6 @@ export const TestDetail: React.FC = () => {
   const [editingSlug, setEditingSlug] = useState(false);
   const [draftSlug, setDraftSlug] = useState('');
 
-  // CSV import
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
-  const [csvPreviewRows, setCsvPreviewRows] = useState<{ name: string; email: string; degree: string; registrationNumber: string }[]>([]);
-  const [csvParsedData, setCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
-
-  // College pool picker
-  const [collegePoolOpen, setCollegePoolOpen] = useState(false);
-
   // experience settings
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
   const [expDirty, setExpDirty] = useState(false);
@@ -618,6 +396,7 @@ export const TestDetail: React.FC = () => {
   // OA shortlisting
   const [cutoffInput, setCutoffInput] = useState('40');
   const [shortlistSelection, setShortlistSelection] = useState<Set<string>>(new Set());
+  const [removeShortlistId, setRemoveShortlistId] = useState<string | null>(null);
   const [aiEvaluating, setAiEvaluating] = useState(false);
 
   // Interview Round sheet
@@ -673,6 +452,8 @@ export const TestDetail: React.FC = () => {
     () => (drive ? db.candidates.filter(c => c.driveId === drive.id) : []),
     [db.candidates, drive],
   );
+
+  const liveStatus = useMemo(() => computeDriveStatus(driveCandidates), [driveCandidates]);
 
   type StudentsDbRow = { sno: number } & Candidate;
   const studentsDbRows = useMemo<StudentsDbRow[]>(
@@ -730,8 +511,7 @@ export const TestDetail: React.FC = () => {
           c.assessmentStatus === 'Completed' ? 'Finished' :
           c.assessmentStatus === 'InProgress' ? 'In Progress' : 'Pending';
         const startTime = c.assessmentSubmissionDate
-          ? new Date(c.assessmentSubmissionDate).toLocaleString('en-US', {
-              month: 'short', day: 'numeric', year: 'numeric',
+          ? new Date(c.assessmentSubmissionDate).toLocaleTimeString('en-US', {
               hour: 'numeric', minute: '2-digit', hour12: true,
             })
           : '—';
@@ -806,7 +586,6 @@ export const TestDetail: React.FC = () => {
 
   const handleConfirmPublish = () => {
     if (!drive) return;
-    updateDrive({ ...drive, status: 'Published' });
     if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
     setConfirmPublishOpen(false);
     setPublishSuccessOpen(true);
@@ -859,6 +638,25 @@ export const TestDetail: React.FC = () => {
     a.click();
   };
 
+  const markAllFinished = () => {
+    const now = new Date().toISOString();
+    const updates = driveCandidates
+      .filter(c => c.assessmentStatus !== 'Completed')
+      .map(c => {
+        const score = Math.round(totalMarks * (0.3 + Math.random() * 0.65));
+        return {
+          ...c,
+          assessmentStatus: 'Completed' as const,
+          assessmentScore: score,
+          assessmentSubmissionDate: c.assessmentSubmissionDate ?? now,
+          funnelStage: c.funnelStage === 'Applied' ? 'Online Test' as const : c.funnelStage,
+        };
+      });
+    if (updates.length === 0) return;
+    bulkUpdateCandidates(updates);
+    toast.success(`${updates.length} candidate${updates.length !== 1 ? 's' : ''} marked as finished.`);
+  };
+
   // ── OA shortlisting handlers ─────────────────────────────────────────────────
 
   const applyCutoff = () => {
@@ -890,6 +688,20 @@ export const TestDetail: React.FC = () => {
     bulkUpdateCandidates(updates);
     setShortlistSelection(new Set());
     toast.success(`${count} candidate${count !== 1 ? 's' : ''} shortlisted for Interview Round.`);
+  };
+
+  const removeFromShortlist = (candidateId: string) => {
+    const candidate = driveCandidates.find(c => c.id === candidateId);
+    if (!candidate) return;
+    updateCandidate({
+      ...candidate,
+      oaShortlisted: undefined,
+      interviewShortlisted: undefined,
+      codingShortlisted: undefined,
+      whiteboardFinalResult: undefined,
+      funnelStage: candidate.funnelStage === 'Applied' ? 'Applied' : 'Online Test',
+    });
+    toast.success(`${candidate.name} removed from shortlist.`);
   };
 
   const generateAiEvaluation = (candidate: Candidate) => {
@@ -1067,77 +879,6 @@ export const TestDetail: React.FC = () => {
     toast.success('Whiteboarding result saved.');
   };
 
-  const handleCsvFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!drive) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      const lines = text.split('\n').filter(l => l.trim());
-      // Skip header row if first cell is non-numeric (e.g. "S.No")
-      const dataLines = isNaN(Number(lines[0]?.split(',')[0]?.trim())) ? lines.slice(1) : lines;
-
-      const parsed: Parameters<typeof bulkImportCandidates>[1] = [];
-      const preview: { name: string; email: string; degree: string; registrationNumber: string }[] = [];
-
-      dataLines.forEach(line => {
-        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        if (cols.length < 4) return;
-        const [, regNum, name, email, phone, degree, specialization, gender, dateOfBirth,
-               githubUrl, linkedinUrl, resumeUrl, codingPlatformUrls,
-               tenthStr, twelfthStr, diplomaStr, ugStr, pgStr, backlogHistStr, currentBacklogStr] = cols;
-
-        const genderNorm = gender === 'Female' ? 'Female' : gender === 'Other' ? 'Other' : 'Male';
-
-        parsed.push({
-          name: name || '',
-          email: email || '',
-          phone: phone || '',
-          degree: degree || '',
-          cgpa: parseFloat(ugStr) || 0,
-          college: drive.college,
-          gender: genderNorm as 'Male' | 'Female' | 'Other',
-          registrationNumber: regNum,
-          specialization,
-          dateOfBirth,
-          githubUrl,
-          linkedinUrl,
-          resumeUrl,
-          codingPlatformUrls,
-          tenth: parseFloat(tenthStr) || undefined,
-          twelfth: parseFloat(twelfthStr) || undefined,
-          diploma: parseFloat(diplomaStr) || undefined,
-          ugMarks: parseFloat(ugStr) || undefined,
-          pgMarks: parseFloat(pgStr) || undefined,
-          backlogHistory: parseInt(backlogHistStr) || undefined,
-          currentBacklogs: parseInt(currentBacklogStr) || undefined,
-        });
-        preview.push({ name: name || '', email: email || '', degree: degree || '', registrationNumber: regNum || '' });
-      });
-
-      setCsvParsedData(parsed);
-      setCsvPreviewRows(preview);
-      setCsvPreviewOpen(true);
-    };
-    reader.readAsText(file);
-  };
-
-  const confirmCsvImport = () => {
-    if (!drive) return;
-    const imported = bulkImportCandidates(drive.id, csvParsedData);
-    setCsvPreviewOpen(false);
-    setCsvParsedData([]);
-    setCsvPreviewRows([]);
-    if (imported > 0) {
-      toast.success(`${imported} student${imported !== 1 ? 's' : ''} imported successfully.`);
-    } else {
-      toast.info('No new students added — all emails already exist in the system.');
-    }
-  };
-
   // inline name save
   const saveInlineName = () => {
     if (!drive || !draftName.trim()) return;
@@ -1153,7 +894,6 @@ export const TestDetail: React.FC = () => {
     setDraftDriveDate(drive.date);
     setDraftDriveDay2Date(drive.day2Date ?? '');
     setDraftDriveLocation(drive.location);
-    setDraftDriveStatus(drive.status);
     setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
@@ -1171,7 +911,6 @@ export const TestDetail: React.FC = () => {
       date: draftDriveDate,
       day2Date: draftDriveDay2Date || undefined,
       location: draftDriveLocation,
-      status: draftDriveStatus,
       accessMode: draftDriveAccessMode,
       examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
       examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
@@ -1272,8 +1011,15 @@ export const TestDetail: React.FC = () => {
         return (
           <div className="flex items-center justify-center">
             {alreadyShortlisted ? (
-              <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
                 Confirmed
+                <button
+                  title="Remove from shortlist"
+                  onClick={() => setRemoveShortlistId(row.id)}
+                  className="text-green-700 hover:text-red-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </span>
             ) : (
               <input
@@ -1339,27 +1085,6 @@ export const TestDetail: React.FC = () => {
         );
       },
     },
-    ...(drive?.accessMode === 'in-person' ? [{
-      header: 'ATTENDANCE',
-      accessor: 'id' as const,
-      sortable: false,
-      render: (row: CandidateRow) => {
-        const candidate = driveCandidates.find(c => c.id === row.id);
-        if (!candidate) return null;
-        const present = candidate.attendanceMarked === true;
-        return (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-7 text-xs gap-1 px-2 ${present ? 'text-green-600' : 'text-muted-foreground'}`}
-            onClick={() => markAttendance(candidate.id, !present)}
-          >
-            {present ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
-            {present ? 'Present' : 'Absent'}
-          </Button>
-        );
-      },
-    }] : []),
     {
       header: 'EVALUATE',
       accessor: 'id' as const,
@@ -1442,12 +1167,12 @@ export const TestDetail: React.FC = () => {
             <span className="truncate max-w-[320px]">{drive.name}</span>
           )}
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-            drive.status === 'Published' || drive.status === 'Ongoing'
+            liveStatus === 'Ongoing'
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : drive.status === 'Completed'
+              : liveStatus === 'Completed'
               ? 'bg-gray-100 text-gray-500 border-gray-200'
               : 'bg-amber-50 text-amber-700 border-amber-200'
-          }`}>{drive.status}</span>
+          }`}>{liveStatus}</span>
           <button
             title="Edit drive name"
             onClick={() => { setDraftName(drive.name); setEditingName(true); }}
@@ -1470,12 +1195,11 @@ export const TestDetail: React.FC = () => {
           <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
             <Settings className="h-4 w-4" />
           </Button>
-          {drive.status === 'Draft' ? (
+          {liveStatus === 'Draft' ? (
             <Button
               size="sm"
               className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => {
-                updateDrive({ ...drive, status: 'Published' });
                 if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
                 toast.success('Test published — candidates can now take the assessment');
               }}
@@ -1483,30 +1207,15 @@ export const TestDetail: React.FC = () => {
               <CheckCircle2 className="h-4 w-4" />
               Done
             </Button>
-          ) : (drive.status === 'Published' || drive.status === 'Ongoing') ? (
+          ) : liveStatus === 'Ongoing' ? (
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live
             </span>
           ) : (
-            <>
-              <span className="text-xs font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
-                Completed
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => {
-                  updateDrive({ ...drive, status: 'Published' });
-                  if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
-                  toast.success('Test reopened — candidates can take the assessment again');
-                }}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Reopen
-              </Button>
-            </>
+            <span className="text-xs font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+              Completed
+            </span>
           )}
         </div>
       </div>
@@ -2198,54 +1907,20 @@ export const TestDetail: React.FC = () => {
 
         {/* ── Candidates Tab ── */}
         <TabsContent value="candidates" className="m-0 p-6 space-y-6">
-          {/* Toolbar: Import + attendance controls */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* Toolbar */}
+          {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
             <div className="flex items-center gap-2">
-              {drive?.accessMode === 'in-person' && driveCandidates.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-xs"
-                  onClick={() => {
-                    driveCandidates.forEach(c => {
-                      if (!c.attendanceMarked) markAttendance(c.id, true);
-                    });
-                    toast.success('All candidates marked as present.');
-                  }}
-                >
-                  <UserCheck className="h-3.5 w-3.5" />
-                  Mark All Present
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={csvInputRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleCsvFileSelect}
-              />
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-2 text-xs"
-                onClick={() => csvInputRef.current?.click()}
+                onClick={markAllFinished}
               >
-                <Upload className="h-3.5 w-3.5" />
-                Import Students (CSV)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 text-xs"
-                onClick={() => setCollegePoolOpen(true)}
-              >
-                <Users className="h-3.5 w-3.5" />
-                Add from College Pool
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Mark All Finished
               </Button>
             </div>
-          </div>
+          )}
 
           <div className="border rounded-lg p-4">
             <h3 className="font-semibold text-sm mb-4">Overview</h3>
@@ -2733,231 +2408,18 @@ export const TestDetail: React.FC = () => {
         onAdd={addQuestions}
       />
 
-      {/* ── College pool picker sheet ── */}
-      {drive && (
-        <CollegePoolPicker
-          open={collegePoolOpen}
-          onClose={() => setCollegePoolOpen(false)}
-          driveId={drive.id}
-          college={drive.college}
-        />
-      )}
 
       {/* ── Evaluate drawer ── */}
-      <Sheet open={evaluateOpen} onOpenChange={open => { if (!open) { setEvaluateOpen(false); setEvaluateCandidate(null); } }}>
-        <SheetContent side="center" className="sm:max-w-md flex flex-col p-0">
-          <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle>{evaluateCandidate?.name ?? 'Evaluate Candidate'}</SheetTitle>
-            {evaluateCandidate && (
-              <p className="text-sm text-muted-foreground">{evaluateCandidate.email}</p>
-            )}
-          </SheetHeader>
+      <EvaluateReport
+        open={evaluateOpen}
+        candidate={evaluateCandidate}
+        drive={drive}
+        db={db}
+        aiEvaluating={aiEvaluating}
+        onRunAiEvaluation={runAiEvaluation}
+        onClose={() => { setEvaluateOpen(false); setEvaluateCandidate(null); }}
+      />
 
-          {evaluateCandidate && (
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {/* Score overview */}
-              <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Score</p>
-                  <p className="text-3xl font-bold">{evaluateCandidate.assessmentScore ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">out of {totalMarks}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Percentage</p>
-                  {(() => {
-                    const pct = totalMarks > 0
-                      ? Math.round(((evaluateCandidate.assessmentScore ?? 0) / totalMarks) * 100)
-                      : 0;
-                    const band = scoreBand(pct);
-                    return (
-                      <>
-                        <p className="text-3xl font-bold">{pct}%</p>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(band)}`}>
-                          {band}
-                        </span>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Rank & percentile */}
-              {evaluateCandidate.assessmentRank != null && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Rank</p>
-                    <p className="text-2xl font-bold">#{evaluateCandidate.assessmentRank}</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Percentile</p>
-                    <p className="text-2xl font-bold">{evaluateCandidate.assessmentPercentile}%</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Section breakdown */}
-              {evaluateCandidate.sectionScores && (
-                <div>
-                  <p className="text-sm font-semibold mb-2">Section Breakdown</p>
-                  <div className="space-y-2">
-                    {(Object.entries(evaluateCandidate.sectionScores) as [string, number | undefined][])
-                      .filter(([, v]) => v != null)
-                      .map(([section, score]) => (
-                        <div key={section} className="flex items-center justify-between text-sm border rounded px-3 py-2">
-                          <span className="capitalize text-muted-foreground">{section}</span>
-                          <span className="font-semibold">{score} pts</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Assessment meta */}
-              {linkedAssessment && (
-                <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1.5">
-                  <p className="font-semibold">{linkedAssessment.name}</p>
-                  <p className="text-muted-foreground">
-                    {linkedAssessment.duration} min &middot; {linkedAssessment.totalMarks} total marks
-                  </p>
-                  {evaluateCandidate.assessmentDurationUsed != null && (
-                    <p className="text-muted-foreground">
-                      Time used:{' '}
-                      {Math.floor(evaluateCandidate.assessmentDurationUsed / 60)} min{' '}
-                      {evaluateCandidate.assessmentDurationUsed % 60}s
-                    </p>
-                  )}
-                  {evaluateCandidate.assessmentSubmissionDate && (
-                    <p className="text-muted-foreground">
-                      Submitted:{' '}
-                      {new Date(evaluateCandidate.assessmentSubmissionDate).toLocaleString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                        hour: 'numeric', minute: '2-digit', hour12: true,
-                      })}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* AI Practical Round Evaluation */}
-              {(evaluateCandidate.sectionScores?.coding != null ||
-                evaluateCandidate.sectionScores?.subjective != null ||
-                evaluateCandidate.sectionScores?.sqlQuery != null) && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Practical Round AI Evaluation</p>
-                    {!evaluateCandidate.practicalAiEvaluation && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
-                        onClick={runAiEvaluation}
-                        disabled={aiEvaluating}
-                      >
-                        {aiEvaluating ? (
-                          <>
-                            <RefreshCw className="h-3 w-3 animate-spin" />
-                            Evaluating…
-                          </>
-                        ) : (
-                          <>
-                            <Award className="h-3 w-3" />
-                            AI Evaluate
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </div>
-
-                  {evaluateCandidate.practicalAiEvaluation ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 p-3">
-                        <span className="text-xs font-medium text-violet-700">Overall Practical Score</span>
-                        <span className="text-xl font-bold text-violet-800">
-                          {evaluateCandidate.practicalAiEvaluation.overallPracticalScore}/10
-                        </span>
-                      </div>
-
-                      {[
-                        { label: 'Coding', score: evaluateCandidate.practicalAiEvaluation.codingScore, feedback: evaluateCandidate.practicalAiEvaluation.codingFeedback },
-                        { label: 'SQL / Query', score: evaluateCandidate.practicalAiEvaluation.sqlScore, feedback: evaluateCandidate.practicalAiEvaluation.sqlFeedback },
-                        { label: 'Subjective', score: evaluateCandidate.practicalAiEvaluation.subjectiveScore, feedback: evaluateCandidate.practicalAiEvaluation.subjectiveFeedback },
-                      ].map(item => item.score != null && (
-                        <div key={item.label} className="rounded-lg border p-3 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold">{item.label}</span>
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-100 text-violet-700">{item.score}/10</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-relaxed">{item.feedback}</p>
-                        </div>
-                      ))}
-
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                        <p className="text-xs font-semibold text-blue-800 mb-1">AI Summary</p>
-                        <p className="text-xs text-blue-700 leading-relaxed">{evaluateCandidate.practicalAiEvaluation.summary}</p>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-muted-foreground">
-                          Evaluated {new Date(evaluateCandidate.practicalAiEvaluation.evaluatedAt!).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
-                        </p>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-[10px] text-muted-foreground gap-1"
-                          onClick={runAiEvaluation}
-                          disabled={aiEvaluating}
-                        >
-                          <RefreshCw className="h-2.5 w-2.5" />
-                          Re-evaluate
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                      Click "AI Evaluate" to generate an automated assessment of the candidate's practical round submissions.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* ── CSV Import Preview Sheet ── */}
-      <Sheet open={csvPreviewOpen} onOpenChange={v => { if (!v) setCsvPreviewOpen(false); }}>
-        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
-          <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle>Import Students</SheetTitle>
-            <p className="text-sm text-muted-foreground">
-              {csvPreviewRows.length} student{csvPreviewRows.length !== 1 ? 's' : ''} found in CSV. Review before importing.
-            </p>
-          </SheetHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-            {csvPreviewRows.map((r, i) => (
-              <div key={i} className="flex items-start justify-between border rounded px-3 py-2 text-sm">
-                <div>
-                  <p className="font-medium">{r.name}</p>
-                  <p className="text-xs text-muted-foreground">{r.email}</p>
-                </div>
-                <div className="text-right text-xs text-muted-foreground">
-                  <p>{r.degree}</p>
-                  {r.registrationNumber && <p>#{r.registrationNumber}</p>}
-                </div>
-              </div>
-            ))}
-            {csvPreviewRows.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No valid rows found in CSV.</p>
-            )}
-          </div>
-          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setCsvPreviewOpen(false)}>Cancel</Button>
-            <Button className="flex-1" disabled={csvPreviewRows.length === 0} onClick={confirmCsvImport}>
-              Import {csvPreviewRows.length} Student{csvPreviewRows.length !== 1 ? 's' : ''}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
 
       {/* ── Edit Drive Sheet ── */}
       <Sheet open={driveEditOpen} onOpenChange={v => { if (!v) setDriveEditOpen(false); }}>
@@ -2988,15 +2450,9 @@ export const TestDetail: React.FC = () => {
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={draftDriveStatus} onValueChange={v => setDraftDriveStatus(v as CampusDrive['status'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Published">Published</SelectItem>
-                  <SelectItem value="Ongoing">Ongoing</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
+              <p className="text-sm text-muted-foreground">
+                {liveStatus} — determined automatically from candidate progress.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Access Mode</Label>
@@ -3441,6 +2897,33 @@ export const TestDetail: React.FC = () => {
               onClick={handleConfirmPublish}
             >
               Yes, Publish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Remove From Shortlist Confirmation Dialog ── */}
+      <AlertDialog open={!!removeShortlistId} onOpenChange={v => { if (!v) setRemoveShortlistId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from shortlist?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const c = driveCandidates.find(c => c.id === removeShortlistId);
+                const advanced = c && (c.interviewShortlisted || c.codingShortlisted || c.whiteboardFinalResult);
+                return advanced
+                  ? 'This candidate has already progressed to a later round. Removing them from the OA shortlist will also clear their Interview/Coding/Whiteboarding progress.'
+                  : 'This candidate will move back to the unshortlisted pool. You can re-select and confirm them again later if needed.';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              onClick={() => { if (removeShortlistId) removeFromShortlist(removeShortlistId); setRemoveShortlistId(null); }}
+            >
+              Yes, Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

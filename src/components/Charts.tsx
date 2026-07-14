@@ -1,4 +1,5 @@
 import React from 'react';
+import { User } from 'lucide-react';
 import {
   Bar,
   BarChart as ReBarChart,
@@ -10,6 +11,13 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  RadialBar,
+  RadialBarChart as ReRadialBarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart as ReRadarChart,
 } from 'recharts';
 import {
   ChartContainer,
@@ -236,6 +244,92 @@ export const DonutChart: React.FC<{ data: DonutChartData[] }> = ({ data }) => {
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+// ─── 5. Gauge Chart ───────────────────────────────────────────────────────────
+
+export const GaugeChart: React.FC<{ percentage: number; color?: string; label?: string }> = ({
+  percentage, color = 'var(--chart-1)', label,
+}) => {
+  const pct = Math.max(0, Math.min(100, percentage));
+  const chartConfig = {
+    score: { label: 'Score', color },
+  } satisfies ChartConfig;
+
+  return (
+    <div className="relative flex items-center justify-center">
+      <ChartContainer config={chartConfig} className="h-[150px] w-[220px] aspect-auto">
+        <ReRadialBarChart
+          data={[{ name: 'score', value: pct, fill: color }]}
+          startAngle={180}
+          endAngle={0}
+          innerRadius="70%"
+          outerRadius="100%"
+          cx="50%"
+          cy="95%"
+          barSize={18}
+        >
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} axisLine={false} />
+          <RadialBar dataKey="value" cornerRadius={9} background={{ fill: 'var(--muted)' }} />
+        </ReRadialBarChart>
+      </ChartContainer>
+      <div className="absolute inset-x-0 bottom-1 flex flex-col items-center">
+        <span className="text-3xl font-bold text-foreground">{pct}%</span>
+        {label && <span className="text-xs text-muted-foreground">{label}</span>}
+      </div>
+    </div>
+  );
+};
+
+// ─── 6. Skill Radar Chart ──────────────────────────────────────────────────────
+
+export interface SkillRadarPoint {
+  skill: string;
+  candidate: number;
+  average: number;
+}
+
+export const SkillRadarChart: React.FC<{ data: SkillRadarPoint[] }> = ({ data }) => {
+  const chartConfig = {
+    candidate: { label: 'Candidate', color: 'var(--chart-1)' },
+    average: { label: 'Average', color: 'var(--chart-2)' },
+  } satisfies ChartConfig;
+
+  return (
+    <ChartContainer config={chartConfig} className="h-[320px] w-full">
+      <ReRadarChart data={data} outerRadius="75%">
+        <PolarGrid stroke="var(--border)" />
+        <PolarAngleAxis dataKey="skill" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} />
+        <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: 'var(--muted-foreground)' }} axisLine={false} />
+        <Radar name="Average" dataKey="average" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.25} />
+        <Radar name="Candidate" dataKey="candidate" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.35} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+      </ReRadarChart>
+    </ChartContainer>
+  );
+};
+
+// ─── 7. Percentile Dots ─────────────────────────────────────────────────────────
+
+export const PercentileDots: React.FC<{ rank: number; total: number; dotCount?: number }> = ({
+  rank, total, dotCount = 10,
+}) => {
+  const safeTotal = Math.max(total, 1);
+  const highlightIndex = Math.min(
+    dotCount - 1,
+    Math.max(0, Math.round(((rank - 1) / Math.max(safeTotal - 1, 1)) * (dotCount - 1)))
+  );
+  return (
+    <div className="flex items-center gap-3">
+      {Array.from({ length: dotCount }).map((_, idx) => (
+        <User
+          key={idx}
+          className={idx === highlightIndex ? 'h-5 w-5 text-primary fill-primary/20' : 'h-5 w-5 text-muted-foreground/40'}
+        />
+      ))}
     </div>
   );
 };

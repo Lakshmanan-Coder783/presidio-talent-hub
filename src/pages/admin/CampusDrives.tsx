@@ -14,12 +14,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { parseStudentFile } from '../../utils/parseStudentFile';
 import { toast } from 'sonner';
+import { computeDriveStatus } from '../../utils/driveStatus';
 
 const driveStatusVariant = (status: CampusDrive['status']) => {
   switch (status) {
     case 'Completed': return 'default';
     case 'Ongoing': return 'secondary';
-    case 'Published': return 'outline';
     case 'Draft': return 'destructive';
     default: return 'outline';
   }
@@ -51,12 +51,12 @@ export const CampusDrives: React.FC = () => {
     setSpocName(''); setSpocEmail(''); setDescription('');
   };
 
-  const handleSave = (status: CampusDrive['status']) => {
+  const handleSave = () => {
     if (!name || !college || !date || !location) {
       alert('Please fill all required fields.');
       return;
     }
-    createDrive({ name, college, date, day2Date: day2Date || undefined, location, spocName, spocEmail, description, status, accessMode: 'in-person' });
+    createDrive({ name, college, date, day2Date: day2Date || undefined, location, spocName, spocEmail, description, status: 'Draft', accessMode: 'in-person' });
     resetForm();
     setModalOpen(false);
   };
@@ -107,6 +107,10 @@ export const CampusDrives: React.FC = () => {
     }
   };
 
+  const statusById = useMemo(() => new Map(
+    db.drives.map(d => [d.id, computeDriveStatus(db.candidates.filter(c => c.driveId === d.id))])
+  ), [db.drives, db.candidates]);
+
   const driveColumns = [
     {
       header: 'Drive Name',
@@ -148,9 +152,10 @@ export const CampusDrives: React.FC = () => {
       header: 'Status',
       accessor: 'status' as const,
       sortable: true,
-      render: (row: CampusDrive) => (
-        <Badge variant={driveStatusVariant(row.status)}>{row.status}</Badge>
-      ),
+      render: (row: CampusDrive) => {
+        const status = statusById.get(row.id) ?? row.status;
+        return <Badge variant={driveStatusVariant(status)}>{status}</Badge>;
+      },
     },
   ];
 
@@ -374,8 +379,7 @@ export const CampusDrives: React.FC = () => {
         title="Create Campus Drive"
         footer={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleSave('Draft')}>Save as Draft</Button>
-            <Button onClick={() => handleSave('Published')}>Publish Drive</Button>
+            <Button onClick={handleSave}>Create Drive</Button>
           </div>
         }
       >
