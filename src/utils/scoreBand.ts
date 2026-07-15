@@ -1,7 +1,11 @@
-export const scoreBand = (pct: number) => {
-  if (pct >= 75) return 'Excellent';
-  if (pct >= 50) return 'Good';
-  if (pct >= 25) return 'Average';
+export const DEFAULT_SCORE_BAND_CUTOFFS = { average: 25, good: 50, excellent: 75 };
+
+export type ScoreBandCutoffs = typeof DEFAULT_SCORE_BAND_CUTOFFS;
+
+export const scoreBand = (pct: number, cutoffs: ScoreBandCutoffs = DEFAULT_SCORE_BAND_CUTOFFS) => {
+  if (pct >= cutoffs.excellent) return 'Excellent';
+  if (pct >= cutoffs.good) return 'Good';
+  if (pct >= cutoffs.average) return 'Average';
   return 'Poor';
 };
 

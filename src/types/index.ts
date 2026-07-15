@@ -19,6 +19,7 @@ export interface CampusDrive {
   examStartTime?: string; // HH:mm, used for in-person time-window enforcement
   examEndTime?: string;   // HH:mm
   cutoffPercentage?: number; // OA shortlisting cutoff (default 40)
+  scoreBandCutoffs?: { average: number; good: number; excellent: number }; // band starting points, 0-100 (default 25/50/75)
   experienceSettings?: {
     testWindow: 'anytime' | 'scheduled';
     reminderEnabled: boolean;

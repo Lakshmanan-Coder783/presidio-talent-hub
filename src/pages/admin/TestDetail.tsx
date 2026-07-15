@@ -24,19 +24,20 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Pencil, Share2, Eye, Settings, AlignLeft, Shield, Users,
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
   TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Mail, ExternalLink, Database,
+  Mail, ExternalLink, Database, SlidersHorizontal,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword } from '../../lib/utils';
 import { computeDriveStatus } from '../../utils/driveStatus';
-import { scoreBand, scoreBandColor } from '../../utils/scoreBand';
+import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { EvaluateReport } from './EvaluateReport';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -399,6 +400,14 @@ export const TestDetail: React.FC = () => {
   const [removeShortlistId, setRemoveShortlistId] = useState<string | null>(null);
   const [aiEvaluating, setAiEvaluating] = useState(false);
 
+  // Score band cutoffs
+  const [bandDraft, setBandDraft] = useState({
+    average: String(DEFAULT_SCORE_BAND_CUTOFFS.average),
+    good: String(DEFAULT_SCORE_BAND_CUTOFFS.good),
+    excellent: String(DEFAULT_SCORE_BAND_CUTOFFS.excellent),
+  });
+  const [bandPopoverOpen, setBandPopoverOpen] = useState(false);
+
   // Interview Round sheet
   const [interviewSheetOpen, setInterviewSheetOpen] = useState(false);
   const [interviewCandidate, setInterviewCandidate] = useState<Candidate | null>(null);
@@ -425,8 +434,15 @@ export const TestDetail: React.FC = () => {
     if (drive) {
       setExpSettings({ ...DEFAULT_EXP, ...drive.experienceSettings });
       setCutoffInput(String(drive.cutoffPercentage ?? 40));
+      const c = { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs };
+      setBandDraft({ average: String(c.average), good: String(c.good), excellent: String(c.excellent) });
     }
   }, [drive?.id]);
+
+  const bandCutoffs = useMemo(
+    () => ({ ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive?.scoreBandCutoffs }),
+    [drive?.scoreBandCutoffs],
+  );
 
   const driveQuestionIds = drive?.questionIds ?? [];
   const driveQuestions = useMemo(
@@ -506,7 +522,7 @@ export const TestDetail: React.FC = () => {
         const pct = c.assessmentScore != null && totalMarks > 0
           ? Math.round((c.assessmentScore / totalMarks) * 100)
           : 0;
-        const band = scoreBand(pct);
+        const band = scoreBand(pct, bandCutoffs);
         const statusLabel =
           c.assessmentStatus === 'Completed' ? 'Finished' :
           c.assessmentStatus === 'InProgress' ? 'In Progress' : 'Pending';
@@ -517,7 +533,7 @@ export const TestDetail: React.FC = () => {
           : '—';
         return { id: c.id, name: c.name, email: c.email, status: statusLabel, startTime, percentage: pct, band };
       });
-  }, [driveCandidates, totalMarks]);
+  }, [driveCandidates, totalMarks, bandCutoffs]);
 
   const overview = useMemo(() => {
     const invited = candidateRows.length;
@@ -626,7 +642,7 @@ export const TestDetail: React.FC = () => {
     const csvRows = driveCandidates.filter(c => c.assessmentStatus === 'Completed').map(c => {
       const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
       return [
-        c.id, c.name, c.email, c.assessmentScore ?? 0, pct, scoreBand(pct),
+        c.id, c.name, c.email, c.assessmentScore ?? 0, pct, scoreBand(pct, bandCutoffs),
         c.sectionScores?.aptitude ?? '', c.sectionScores?.logical ?? '',
         c.sectionScores?.technical ?? '', c.sectionScores?.coding ?? '',
       ];
@@ -669,6 +685,25 @@ export const TestDetail: React.FC = () => {
     );
     setShortlistSelection(ids);
     toast.success(`Cutoff applied — ${ids.size} candidate${ids.size !== 1 ? 's' : ''} auto-selected.`);
+  };
+
+  // ── Score band cutoff handler ────────────────────────────────────────────────
+
+  const saveBandCutoffs = () => {
+    if (!drive) return;
+    const average = parseInt(bandDraft.average);
+    const good = parseInt(bandDraft.good);
+    const excellent = parseInt(bandDraft.excellent);
+    if (
+      [average, good, excellent].some(n => Number.isNaN(n) || n < 0 || n > 100) ||
+      !(average < good && good < excellent)
+    ) {
+      toast.error('Cutoffs must be increasing values between 0 and 100.');
+      return;
+    }
+    updateDrive({ ...drive, scoreBandCutoffs: { average, good, excellent } });
+    setBandPopoverOpen(false);
+    toast.success('Score band cutoffs updated.');
   };
 
   const toggleShortlistCandidate = (id: string) => {
@@ -1945,7 +1980,47 @@ export const TestDetail: React.FC = () => {
                 </div>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Score bands</p>
+                <div className="flex items-center gap-1.5 mb-3">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Score bands</p>
+                  <Popover open={bandPopoverOpen} onOpenChange={setBandPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="text-muted-foreground hover:text-foreground transition-colors" title="Edit score band cutoffs">
+                        <SlidersHorizontal className="h-3 w-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64">
+                      <p className="text-sm font-medium">Score band cutoffs</p>
+                      <p className="text-xs text-muted-foreground -mt-2">Minimum % to start each band. Below "Average from" is Poor.</p>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs">Average from</Label>
+                          <Input
+                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                            value={bandDraft.average}
+                            onChange={e => setBandDraft(d => ({ ...d, average: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs">Good from</Label>
+                          <Input
+                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                            value={bandDraft.good}
+                            onChange={e => setBandDraft(d => ({ ...d, good: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs">Excellent from</Label>
+                          <Input
+                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                            value={bandDraft.excellent}
+                            onChange={e => setBandDraft(d => ({ ...d, excellent: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <Button size="sm" className="w-full h-8 text-xs" onClick={saveBandCutoffs}>Save</Button>
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <div className="flex gap-4 text-sm">
                   {(['Poor', 'Average', 'Good', 'Excellent'] as const).map(band => (
                     <div key={band}>
@@ -2226,7 +2301,7 @@ export const TestDetail: React.FC = () => {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(scoreBand(pct))}`}>{pct}%</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(scoreBand(pct, bandCutoffs))}`}>{pct}%</span>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-sm">{c.interviewPanel || '—'}</p>

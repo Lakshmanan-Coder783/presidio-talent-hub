@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { Candidate, CampusDrive, Question } from '../../types';
 import type { Database } from '../../utils/db';
-import { scoreBand, scoreBandColor } from '../../utils/scoreBand';
+import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { GaugeChart, SkillRadarChart, PercentileDots, type SkillRadarPoint } from '../../components/Charts';
 
 const SECTION_ORDER: Question['topic'][] = [
@@ -204,7 +204,7 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
   if (!candidate) return null;
 
   const pct = totalMarks > 0 ? Math.round(((candidate.assessmentScore ?? 0) / totalMarks) * 100) : 0;
-  const band = scoreBand(pct);
+  const band = scoreBand(pct, { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs });
   const avgScoreEquivalent = Math.round((avgPercentage / 100) * totalMarks);
   const totalAttended = assessmentPool.length;
   const hasPracticalRound = candidate.sectionScores?.coding != null
