@@ -27,20 +27,30 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Pencil, Share2, Eye, Settings, AlignLeft, Shield, Users,
+  ArrowLeft, Pencil, Share2, Settings, AlignLeft, Shield, Users,
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
-  Tag, Code, HelpCircle, Copy, Link as LinkIcon, Send, BarChart2, FileText,
-  TrendingUp, Award, Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Mail, ExternalLink, Database, SlidersHorizontal,
+  Tag, Code, HelpCircle, Copy, Send, BarChart2, FileText,
+  Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
+  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword } from '../../lib/utils';
 import { computeDriveStatus } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
+import { deriveInterviewStatus, deriveCodingStatus, deriveWhiteboardStatus } from '../../utils/candidateStatus';
+import { useDriveReportData } from '../../hooks/useDriveReportData';
+import { FunnelChart, DonutChart, GaugeChart, HorizontalBarChart } from '../../components/Charts';
 import { EvaluateReport } from './EvaluateReport';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+const SCORE_BAND_TEXT_COLOR: Record<'Poor' | 'Average' | 'Good' | 'Excellent', string> = {
+  Poor: 'text-red-600',
+  Average: 'text-amber-600',
+  Good: 'text-blue-600',
+  Excellent: 'text-green-600',
+};
 
 const SECTION_ORDER: Question['topic'][] = [
   'Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS',
@@ -115,6 +125,7 @@ interface CodingDraft {
   techStack: string;
   exerciseGiven: string;
   exerciseReview: string;
+  score: string;
   checkpoint1: string;
   checkpoint2: string;
   checkpoint3: string;
@@ -138,7 +149,7 @@ const BLANK_IV: InterviewDraft = {
 const BLANK_CD: CodingDraft = {
   panel: '', panelMembers: '', timeSlot: '',
   exerciseStartTime: '', techStack: '', exerciseGiven: '',
-  exerciseReview: '', checkpoint1: '', checkpoint2: '', checkpoint3: '',
+  exerciseReview: '', score: '', checkpoint1: '', checkpoint2: '', checkpoint3: '',
 };
 
 const BLANK_WB: WhiteboardDraft = { culturalFit: '', comments: '', finalResult: '' };
@@ -390,6 +401,10 @@ export const TestDetail: React.FC = () => {
   const [editingSlug, setEditingSlug] = useState(false);
   const [draftSlug, setDraftSlug] = useState('');
 
+  // password edit
+  const [editingPassword, setEditingPassword] = useState(false);
+  const [draftPassword, setDraftPassword] = useState('');
+
   // experience settings
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
   const [expDirty, setExpDirty] = useState(false);
@@ -556,33 +571,10 @@ export const TestDetail: React.FC = () => {
   const assessmentUrl = linkedAssessment?.slug
     ? `${window.location.origin}/take/${linkedAssessment.slug}` : null;
 
-  const sectionAverages = useMemo(() => {
-    const completed = driveCandidates.filter(c => c.sectionScores);
-    const keys = ['aptitude', 'logical', 'technical', 'coding', 'verbal'] as const;
-    return keys.map(k => {
-      const vals = completed.filter(c => c.sectionScores?.[k] != null).map(c => c.sectionScores![k]!);
-      return {
-        section: k.charAt(0).toUpperCase() + k.slice(1),
-        avg: vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—',
-        count: vals.length,
-      };
-    }).filter(s => s.count > 0);
-  }, [driveCandidates]);
-
   const sortedByScore = useMemo(
     () => candidateRows.filter(r => r.status === 'Finished').sort((a, b) => b.percentage - a.percentage),
     [candidateRows]
   );
-
-  const scoreDistribution = useMemo(() => [
-    { label: '0–25%',   count: sortedByScore.filter(r => r.percentage < 25).length },
-    { label: '25–50%',  count: sortedByScore.filter(r => r.percentage >= 25 && r.percentage < 50).length },
-    { label: '50–75%',  count: sortedByScore.filter(r => r.percentage >= 50 && r.percentage < 75).length },
-    { label: '75–100%', count: sortedByScore.filter(r => r.percentage >= 75).length },
-  ], [sortedByScore]);
-
-  const top10 = useMemo(() => sortedByScore.slice(0, 10), [sortedByScore]);
-  const bottom10 = useMemo(() => [...sortedByScore].reverse().slice(0, 10), [sortedByScore]);
 
   // Recruitment pipeline candidate sets
   const interviewCandidates = useMemo(
@@ -597,6 +589,8 @@ export const TestDetail: React.FC = () => {
     () => driveCandidates.filter(c => c.codingShortlisted === true),
     [driveCandidates],
   );
+
+  const reportData = useDriveReportData(driveCandidates, totalMarks);
 
   // ── handlers ────────────────────────────────────────────────────────────────
 
@@ -859,6 +853,7 @@ export const TestDetail: React.FC = () => {
       techStack: candidate.codingTechStack ?? '',
       exerciseGiven: candidate.codingExerciseGiven === true ? 'yes' : candidate.codingExerciseGiven === false ? 'no' : '',
       exerciseReview: candidate.codingExerciseReview ?? '',
+      score: candidate.codingScore != null ? String(candidate.codingScore) : '',
       checkpoint1: candidate.codingCheckpoint1 ?? '',
       checkpoint2: candidate.codingCheckpoint2 ?? '',
       checkpoint3: candidate.codingCheckpoint3 ?? '',
@@ -877,6 +872,10 @@ export const TestDetail: React.FC = () => {
       codingTechStack: cdDraft.techStack,
       codingExerciseGiven: cdDraft.exerciseGiven === 'yes' ? true : cdDraft.exerciseGiven === 'no' ? false : undefined,
       codingExerciseReview: cdDraft.exerciseReview,
+      codingScore: (() => {
+        const parsed = parseFloat(cdDraft.score);
+        return Number.isNaN(parsed) ? undefined : parsed;
+      })(),
       codingCheckpoint1: cdDraft.checkpoint1,
       codingCheckpoint2: cdDraft.checkpoint2,
       codingCheckpoint3: cdDraft.checkpoint3,
@@ -1009,6 +1008,14 @@ export const TestDetail: React.FC = () => {
     updateAssessment({ ...linkedAssessment, slug: draftSlug.trim() });
     setEditingSlug(false);
     toast.success('Test URL updated.');
+  };
+
+  // password save
+  const savePassword = () => {
+    if (!linkedAssessment || !draftPassword.trim()) { setEditingPassword(false); return; }
+    updateAssessment({ ...linkedAssessment, accessPassword: draftPassword.trim() });
+    setEditingPassword(false);
+    toast.success('Password updated.');
   };
 
   // regenerate password
@@ -1220,13 +1227,22 @@ export const TestDetail: React.FC = () => {
           <Button
             variant="outline"
             size="icon"
-            title={assessmentUrl ? 'Copy test URL' : 'No assessment linked yet'}
+            title={
+              !assessmentUrl
+                ? 'No assessment linked yet'
+                : linkedAssessment?.status === 'Active'
+                ? 'View test link & password'
+                : 'Publish test'
+            }
             disabled={!assessmentUrl}
-            onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}
+            onClick={() => {
+              if (!assessmentUrl) return;
+              if (linkedAssessment?.status === 'Active') setPublishSuccessOpen(true);
+              else setConfirmPublishOpen(true);
+            }}
           >
             <Share2 className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon"><Eye className="h-4 w-4" /></Button>
           <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
             <Settings className="h-4 w-4" />
           </Button>
@@ -1234,10 +1250,7 @@ export const TestDetail: React.FC = () => {
             <Button
               size="sm"
               className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-              onClick={() => {
-                if (linkedAssessment) updateAssessment({ ...linkedAssessment, status: 'Active' });
-                toast.success('Test published — candidates can now take the assessment');
-              }}
+              onClick={() => setConfirmPublishOpen(true)}
             >
               <CheckCircle2 className="h-4 w-4" />
               Done
@@ -1254,76 +1267,6 @@ export const TestDetail: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* ── Credentials strip ── */}
-      {assessmentUrl && linkedAssessment && (
-        <div className="flex items-center gap-3 px-6 py-2 bg-muted/40 border-b text-sm flex-wrap">
-          {/* URL / slug edit */}
-          <div className="flex items-center gap-2">
-            <LinkIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="text-xs text-muted-foreground">Test URL:</span>
-            {editingSlug ? (
-              <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring">
-                <span className="pl-2 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
-                <input
-                  autoFocus
-                  className="bg-transparent text-xs font-mono outline-none pr-2 py-1 w-40"
-                  value={draftSlug}
-                  onChange={e => setDraftSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  onKeyDown={e => { if (e.key === 'Enter') saveSlug(); if (e.key === 'Escape') setEditingSlug(false); }}
-                  onBlur={saveSlug}
-                />
-              </div>
-            ) : (
-              <code className="text-xs font-mono text-foreground bg-background border px-2 py-0.5 rounded truncate max-w-xs">
-                {assessmentUrl}
-              </code>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              title="Edit URL slug"
-              onClick={() => { setDraftSlug(linkedAssessment.slug ?? ''); setEditingSlug(true); }}
-            >
-              <Pencil className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              onClick={() => copyToClipboard(assessmentUrl, 'Test URL')}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="w-px h-4 bg-border" />
-          {/* Password edit */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Password:</span>
-            <code className="text-xs font-mono font-semibold text-foreground bg-background border px-2 py-0.5 rounded">
-              {linkedAssessment.accessPassword}
-            </code>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              onClick={() => copyToClipboard(linkedAssessment.accessPassword!, 'Password')}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              title="Regenerate password"
-              onClick={regeneratePassword}
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* ── Tabs ── */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
@@ -1349,10 +1292,6 @@ export const TestDetail: React.FC = () => {
             <TabsTrigger value="candidates" className={TAB_TRIGGER}>
               <Users className="h-4 w-4" />
               Candidates
-            </TabsTrigger>
-            <TabsTrigger value="reports" className={TAB_TRIGGER}>
-              <BarChart2 className="h-4 w-4" />
-              Reports
             </TabsTrigger>
             <TabsTrigger value="interview" className={TAB_TRIGGER}>
               <Users className="h-4 w-4" />
@@ -1380,6 +1319,10 @@ export const TestDetail: React.FC = () => {
                   {whiteboardCandidates.length}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="reports" className={TAB_TRIGGER}>
+              <BarChart2 className="h-4 w-4" />
+              Reports
             </TabsTrigger>
           </TabsList>
         </div>
@@ -2025,7 +1968,7 @@ export const TestDetail: React.FC = () => {
                   {(['Poor', 'Average', 'Good', 'Excellent'] as const).map(band => (
                     <div key={band}>
                       <p className="text-xs text-muted-foreground">{band}</p>
-                      <p className="font-semibold">{overview.bandPct(band)}</p>
+                      <p className={`font-semibold ${SCORE_BAND_TEXT_COLOR[band]}`}>{overview.bandPct(band)}</p>
                     </div>
                   ))}
                 </div>
@@ -2089,155 +2032,6 @@ export const TestDetail: React.FC = () => {
           )}
         </TabsContent>
 
-        {/* ── Reports Tab ── */}
-        <TabsContent value="reports" className="m-0 p-6 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Score distribution */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  Score Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {sortedByScore.length === 0 ? (
-                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
-                    No completed assessments yet.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {scoreDistribution.map(band => (
-                      <div key={band.label} className="flex items-center gap-3 text-sm">
-                        <span className="w-16 text-xs text-muted-foreground shrink-0">{band.label}</span>
-                        <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary/70 rounded-full transition-all"
-                            style={{
-                              width: `${sortedByScore.length > 0 ? (band.count / sortedByScore.length) * 100 : 0}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="w-8 text-right text-xs font-semibold shrink-0">{band.count}</span>
-                      </div>
-                    ))}
-                    <p className="text-xs text-muted-foreground pt-1">
-                      Based on {sortedByScore.length} completed submission{sortedByScore.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Section averages */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BarChart2 className="h-4 w-4 text-primary" />
-                  Section Averages
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {sectionAverages.length === 0 ? (
-                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
-                    No section data yet.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {sectionAverages.map(s => (
-                      <div key={s.section} className="flex items-center justify-between text-sm border rounded px-3 py-2">
-                        <span className="text-muted-foreground">{s.section}</span>
-                        <div className="text-right">
-                          <span className="font-semibold">{s.avg} pts</span>
-                          <span className="text-xs text-muted-foreground ml-2">({s.count} resp.)</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Top 10 / Bottom 10 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Award className="h-4 w-4 text-amber-500" />
-                  Top 10 Candidates
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {top10.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No completed assessments.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {top10.map((r, i) => (
-                      <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 text-xs text-muted-foreground shrink-0">#{i + 1}</span>
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <p className="text-xs text-muted-foreground">{r.email}</p>
-                          </div>
-                        </div>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded shrink-0 ${scoreBandColor(r.band)}`}>
-                          {r.percentage}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-red-400" />
-                  Bottom 10 Candidates
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {bottom10.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No completed assessments.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {bottom10.map((r, i) => (
-                      <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 text-xs text-muted-foreground shrink-0">{i + 1}</span>
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <p className="text-xs text-muted-foreground">{r.email}</p>
-                          </div>
-                        </div>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded shrink-0 ${scoreBandColor(r.band)}`}>
-                          {r.percentage}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Export */}
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={exportCSV}
-              disabled={sortedByScore.length === 0}
-            >
-              <Download className="h-4 w-4" />
-              Export Scores CSV
-            </Button>
-          </div>
-        </TabsContent>
-
         {/* ── Interview Round Tab ── */}
         <TabsContent value="interview" className="m-0 p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -2272,7 +2066,7 @@ export const TestDetail: React.FC = () => {
                 <tbody className="divide-y">
                   {interviewCandidates.map(c => {
                     const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
-                    const statusLabel = c.interviewShortlisted === true ? 'Shortlisted' : c.interviewShortlisted === false ? 'Rejected' : c.interviewPanel ? 'In Progress' : 'Pending';
+                    const statusLabel = deriveInterviewStatus(c);
                     const statusCls = statusLabel === 'Shortlisted' ? 'bg-green-100 text-green-700' : statusLabel === 'Rejected' ? 'bg-red-100 text-red-700' : statusLabel === 'In Progress' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
                     const avgScore = [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter((v): v is number => v != null);
                     return (
@@ -2367,7 +2161,7 @@ export const TestDetail: React.FC = () => {
                   {codingRoundCandidates.map(c => {
                     const ivScores = [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter(Boolean) as number[];
                     const avgIv = ivScores.length > 0 ? (ivScores.reduce((a, b) => a + b, 0) / ivScores.length).toFixed(1) : '—';
-                    const statusLabel = c.codingShortlisted === true ? 'Shortlisted' : c.codingShortlisted === false ? 'Rejected' : c.codingPanel ? 'In Progress' : 'Pending';
+                    const statusLabel = deriveCodingStatus(c);
                     const statusCls = statusLabel === 'Shortlisted' ? 'bg-green-100 text-green-700' : statusLabel === 'Rejected' ? 'bg-red-100 text-red-700' : statusLabel === 'In Progress' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
                     return (
                       <tr key={c.id} className="hover:bg-muted/20 transition-colors">
@@ -2438,7 +2232,8 @@ export const TestDetail: React.FC = () => {
                   {whiteboardCandidates.map(c => {
                     const fitLabel = c.whiteboardSelectedForCulturalFit === true ? 'Yes' : c.whiteboardSelectedForCulturalFit === false ? 'No' : '—';
                     const fitCls = c.whiteboardSelectedForCulturalFit === true ? 'text-green-600' : c.whiteboardSelectedForCulturalFit === false ? 'text-red-500' : 'text-muted-foreground';
-                    const resultCls = c.whiteboardFinalResult === 'Selected' ? 'bg-green-100 text-green-700' : c.whiteboardFinalResult === 'Rejected' ? 'bg-red-100 text-red-700' : c.whiteboardFinalResult === 'Waitlisted' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                    const whiteboardStatus = deriveWhiteboardStatus(c);
+                    const resultCls = whiteboardStatus === 'Selected' ? 'bg-green-100 text-green-700' : whiteboardStatus === 'Rejected' ? 'bg-red-100 text-red-700' : whiteboardStatus === 'Waitlisted' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
                     return (
                       <tr key={c.id} className="hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3">
@@ -2450,7 +2245,7 @@ export const TestDetail: React.FC = () => {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${resultCls}`}>
-                            {c.whiteboardFinalResult ?? 'Pending'}
+                            {whiteboardStatus}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -2471,6 +2266,182 @@ export const TestDetail: React.FC = () => {
               </table>
             </div>
           )}
+        </TabsContent>
+
+        {/* ── Reports Tab ── */}
+        <TabsContent value="reports" className="m-0 p-6 space-y-6">
+          {/* Recruitment Pipeline Funnel */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Filter className="h-4 w-4 text-primary" />
+                Recruitment Pipeline Funnel
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {driveCandidates.length === 0 ? (
+                <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                  No candidates registered yet.
+                </div>
+              ) : (
+                <FunnelChart data={reportData.pipelineFunnel} />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Average Score by Stage */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <BarChart2 className="h-4 w-4 text-primary" />
+                Average Score by Stage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {driveCandidates.length === 0 ? (
+                <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                  No data yet.
+                </div>
+              ) : (
+                <HorizontalBarChart data={reportData.stageScoreAverages} unit="%" maxValue={100} />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Interview Round */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  Interview Round Outcome
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {interviewCandidates.length === 0 ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No candidates have reached Interview Round yet.
+                  </div>
+                ) : (
+                  <DonutChart data={reportData.interviewOutcome} />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart2 className="h-4 w-4 text-primary" />
+                  Interview Criteria Averages
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {interviewCandidates.length === 0 ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No interview scores recorded yet.
+                  </div>
+                ) : (
+                  <HorizontalBarChart data={reportData.interviewCriteriaAverages} unit="/10" maxValue={10} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Coding Round */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Code className="h-4 w-4 text-primary" />
+                  Coding Round Outcome
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {codingRoundCandidates.length === 0 ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No candidates have reached Coding Round yet.
+                  </div>
+                ) : (
+                  <DonutChart data={reportData.codingOutcome} />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Code className="h-4 w-4 text-primary" />
+                  Coding Score
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-center">
+                {reportData.codingScoreAvg == null ? (
+                  <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                    No coding scores recorded yet.
+                  </div>
+                ) : (
+                  <GaugeChart percentage={Math.round(reportData.codingScoreAvg * 10)} label="Avg. Coding Score" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Whiteboarding */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" />
+                Whiteboarding Outcome
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {whiteboardCandidates.length === 0 ? (
+                <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                  No candidates have reached Whiteboarding yet.
+                </div>
+              ) : (
+                <DonutChart data={reportData.whiteboardOutcome} />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Final Offer Outcome */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Briefcase className="h-4 w-4 text-primary" />
+                Final Offer Outcome
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {reportData.offeredCount === 0 ? (
+                <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">
+                  No offers extended yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <DonutChart data={reportData.finalOutcome} />
+                  <p className="text-xs text-muted-foreground pt-1">
+                    {reportData.offeredCount} / {reportData.finalOutcomeTotal} registered candidates converted to offer
+                    {' '}({reportData.finalOutcomeTotal > 0 ? Math.round((reportData.offeredCount / reportData.finalOutcomeTotal) * 100) : 0}%)
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Export */}
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={exportCSV}
+              disabled={sortedByScore.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export Scores CSV
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -2691,7 +2662,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Interview Round Sheet ── */}
       <Sheet open={interviewSheetOpen} onOpenChange={open => { if (!open) { setInterviewSheetOpen(false); setInterviewCandidate(null); } }}>
-        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{interviewCandidate?.name ?? 'Interview Feedback'}</SheetTitle>
             {interviewCandidate && (
@@ -2700,7 +2671,7 @@ export const TestDetail: React.FC = () => {
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             {/* Candidate links */}
-            {interviewCandidate && (interviewCandidate.resumeUrl || interviewCandidate.githubUrl || interviewCandidate.linkedinUrl) && (
+            {interviewCandidate && (
               <div className="flex items-center gap-2 flex-wrap">
                 {interviewCandidate.resumeUrl && (
                   <a href={interviewCandidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
@@ -2720,6 +2691,15 @@ export const TestDetail: React.FC = () => {
                     LinkedIn
                   </a>
                 )}
+                <button
+                  type="button"
+                  title="Online Assessment test report"
+                  onClick={() => { setEvaluateCandidate(interviewCandidate); setEvaluateOpen(true); }}
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors"
+                >
+                  <BarChart2 className="h-3.5 w-3.5" />
+                  OA Report
+                </button>
               </div>
             )}
 
@@ -2814,7 +2794,7 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Coding Round Sheet ── */}
       <Sheet open={codingSheetOpen} onOpenChange={open => { if (!open) { setCodingSheetOpen(false); setCodingCandidate(null); } }}>
-        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
+        <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>{codingCandidate?.name ?? 'Coding Round'}</SheetTitle>
             {codingCandidate && (
@@ -2857,7 +2837,21 @@ export const TestDetail: React.FC = () => {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Coding Exercise Review</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Coding Exercise Review</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-muted-foreground">Score (1–10)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    className="h-7 w-16 text-sm text-center"
+                    value={cdDraft.score}
+                    onChange={e => setCdDraft(d => ({ ...d, score: e.target.value }))}
+                    placeholder="—"
+                  />
+                </div>
+              </div>
               <Textarea
                 rows={3}
                 className="text-xs resize-none"
@@ -2913,16 +2907,6 @@ export const TestDetail: React.FC = () => {
             )}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Selected for Cultural Fit?</Label>
-              <Select value={wbDraft.culturalFit} onValueChange={v => setWbDraft(d => ({ ...d, culturalFit: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="yes">Yes</SelectItem>
-                  <SelectItem value="no">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Comments</Label>
               <Textarea
@@ -3006,7 +2990,16 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Publish Success Dialog — shows link + password ── */}
       <Dialog open={publishSuccessOpen} onOpenChange={setPublishSuccessOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="sm:max-w-md"
+          onEscapeKeyDown={e => {
+            if (editingSlug || editingPassword) {
+              e.preventDefault();
+              setEditingSlug(false);
+              setEditingPassword(false);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" />
@@ -3022,44 +3015,99 @@ export const TestDetail: React.FC = () => {
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Test Link
               </Label>
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={assessmentUrl ?? ''}
-                  className="font-mono text-xs"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  disabled={!assessmentUrl}
-                  onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {editingSlug ? (
+                <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+                  <span className="pl-2 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
+                  <input
+                    autoFocus
+                    className="flex-1 bg-transparent text-xs font-mono outline-none pr-2 py-2"
+                    value={draftSlug}
+                    onChange={e => setDraftSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                    onKeyDown={e => { if (e.key === 'Enter') saveSlug(); if (e.key === 'Escape') { e.stopPropagation(); setEditingSlug(false); } }}
+                    onBlur={saveSlug}
+                  />
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={assessmentUrl ?? ''}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!linkedAssessment}
+                    title="Edit URL slug"
+                    onClick={() => { setDraftSlug(linkedAssessment?.slug ?? ''); setEditingSlug(true); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!assessmentUrl}
+                    onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Password
               </Label>
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={linkedAssessment?.accessPassword ?? ''}
-                  className="font-mono tracking-widest text-sm"
+              {editingPassword ? (
+                <input
+                  autoFocus
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono tracking-widest outline-none focus-within:ring-2 focus-within:ring-ring"
+                  value={draftPassword}
+                  onChange={e => setDraftPassword(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') savePassword(); if (e.key === 'Escape') { e.stopPropagation(); setEditingPassword(false); } }}
+                  onBlur={savePassword}
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  disabled={!linkedAssessment?.accessPassword}
-                  onClick={() => linkedAssessment?.accessPassword && copyToClipboard(linkedAssessment.accessPassword, 'Password')}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={linkedAssessment?.accessPassword ?? ''}
+                    className="font-mono tracking-widest text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!linkedAssessment}
+                    title="Edit password"
+                    onClick={() => { setDraftPassword(linkedAssessment?.accessPassword ?? ''); setEditingPassword(true); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!linkedAssessment?.accessPassword}
+                    onClick={() => linkedAssessment?.accessPassword && copyToClipboard(linkedAssessment.accessPassword, 'Password')}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!linkedAssessment}
+                    title="Regenerate password"
+                    onClick={regeneratePassword}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

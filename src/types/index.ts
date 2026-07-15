@@ -132,6 +132,7 @@ export interface Candidate {
   codingCheckpoint1?: string;
   codingCheckpoint2?: string;
   codingCheckpoint3?: string;
+  codingScore?: number;
   codingShortlisted?: boolean;
 
   // Whiteboarding Round

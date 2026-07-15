@@ -76,6 +76,60 @@ export const FunnelChart: React.FC<{ data: FunnelStage[] }> = ({ data }) => {
   );
 };
 
+// ─── 1b. Horizontal Bar Chart (single-series metric comparison) ──────────────
+
+interface HorizontalBarDatum {
+  label: string;
+  value: number;
+}
+
+export const HorizontalBarChart: React.FC<{
+  data: HorizontalBarDatum[];
+  unit?: string;
+  maxValue?: number;
+}> = ({ data, unit = '', maxValue }) => {
+  const chartData = data.map(d => ({ name: d.label, value: d.value }));
+
+  const chartConfig = {
+    value: { label: unit ? `Value (${unit})` : 'Value', color: 'var(--chart-2)' },
+  } satisfies ChartConfig;
+
+  return (
+    <ChartContainer config={chartConfig} className="h-[260px] w-full">
+      <ReBarChart
+        layout="vertical"
+        data={chartData}
+        margin={{ top: 4, right: 48, left: 90, bottom: 4 }}
+      >
+        <CartesianGrid horizontal={false} stroke="var(--border)" strokeDasharray="3 3" />
+        <YAxis
+          dataKey="name"
+          type="category"
+          tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+          axisLine={false}
+          tickLine={false}
+          width={90}
+        />
+        <XAxis
+          type="number"
+          domain={maxValue != null ? [0, maxValue] : undefined}
+          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value) => `${value}${unit}`}
+            />
+          }
+        />
+        <Bar dataKey="value" fill="var(--chart-2)" radius={[0, 4, 4, 0]} />
+      </ReBarChart>
+    </ChartContainer>
+  );
+};
+
 // ─── 2. Line Chart ────────────────────────────────────────────────────────────
 
 interface LineChartData {
