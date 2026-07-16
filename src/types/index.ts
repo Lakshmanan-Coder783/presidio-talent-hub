@@ -28,6 +28,39 @@ export interface CampusDrive {
     greetingNote: string;
     allowedDevices: 'computers' | 'all';
     integrityLevel: 'basic' | 'ai-proctoring' | 'custom';
+
+    // Test Settings
+    testNavigation: 'fixed-section-order' | 'section-switch';
+    testType: 'multiple-mark-for-review' | 'single-question';
+    practiceTest: boolean;
+    enableCalculator: boolean;
+    sessionTimeoutHours: number;
+    maxRestartAllowed: number;
+
+    // Question Settings
+    randomQuestions: boolean;
+    randomAnswers: boolean;
+    showQuestionScore: boolean;
+
+    // Display & Email Settings
+    displayTimeLeftAlert: boolean;
+    allowCandidateFeedback: boolean;
+    emailOnReportGeneration: boolean;
+
+    // Window Violation Settings
+    allowCopyPasteInDescriptiveCoding: boolean;
+    displayWindowViolationPopup: boolean;
+    terminateOnWindowViolation: boolean;
+    windowViolationTerminateAfter: number;
+
+    // Image Proctoring Settings
+    imageProctoringConsecutiveImages: number;
+    imageProctoringGreenMax: number;
+    imageProctoringYellowMin: number;
+    imageProctoringYellowMax: number;
+    imageProctoringRedMin: number;
+    terminateOnImageViolation: boolean;
+    imageViolationTerminateAfterWarnings: number;
   };
 }
 

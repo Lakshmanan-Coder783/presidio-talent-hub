@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { formatDistanceToNow } from 'date-fns';
 import {
   LayoutDashboard, Database,
   Settings as SettingsIcon,
   LogOut, Bell, Search, User, Monitor,
+  FileCheck2, Award, CalendarClock, type LucideIcon,
 } from 'lucide-react';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
@@ -16,13 +18,14 @@ import {
   BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { CommandPalette } from './CommandPalette';
+import { useRecentActivity, type ActivityType } from '../hooks/useRecentActivity';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -35,12 +38,32 @@ const menuItems = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
+const activityIcons: Record<ActivityType, LucideIcon> = {
+  assessment_submitted: FileCheck2,
+  offer_released: Award,
+  interview_scheduled: CalendarClock,
+};
+
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { logout } = useApp();
+  const { logout, db } = useApp();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const activity = useRecentActivity(db);
+  const hasRecentActivity = activity.length > 0;
 
   const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? 'Dashboard';
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <SidebarProvider>
@@ -129,20 +152,51 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative hidden md:block">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search..."
-                className="w-64 pl-8 h-9 bg-muted/50"
-              />
-            </div>
-            <Button variant="ghost" size="icon" className="relative h-9 w-9">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
+            <Button variant="ghost" size="icon" aria-label="Search" className="h-9 w-9" onClick={() => setPaletteOpen(true)}>
+              <Search className="h-4 w-4" />
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Notifications" className="relative h-9 w-9">
+                  <Bell className="h-4 w-4" />
+                  {hasRecentActivity && (
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuLabel>Recent Activity</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {activity.length === 0 ? (
+                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">No recent activity</div>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {activity.map(entry => {
+                      const Icon = activityIcons[entry.type];
+                      return (
+                        <DropdownMenuItem
+                          key={entry.id}
+                          className="flex items-start gap-2 whitespace-normal"
+                          onClick={() => entry.driveId && navigate(`/admin/online-assessment/${entry.driveId}`)}
+                        >
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="flex flex-col">
+                            <span className="text-sm">{entry.message}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(entry.timestamp), { addSuffix: true })}
+                            </span>
+                          </div>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
+
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
 
         <main className="flex-1 p-6 overflow-auto">
           {children}

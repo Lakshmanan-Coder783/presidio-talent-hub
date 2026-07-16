@@ -161,6 +161,15 @@ export const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 
 
 const DEGREES = ['B.Tech CSE', 'B.Tech ECE', 'B.Tech IT', 'M.Tech CSE', 'MCA', 'M.Sc Software Engg'];
 
+const DEGREE_SPECIALIZATIONS: Record<string, string> = {
+  'B.Tech CSE': 'Computer Science',
+  'B.Tech ECE': 'Electronics & Communication',
+  'B.Tech IT': 'Information Technology',
+  'M.Tech CSE': 'Computer Science Engineering',
+  'MCA': 'Computer Applications',
+  'M.Sc Software Engg': 'Software Engineering',
+};
+
 
 const CTC_STEPS = [7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0];
 const JOINED_CTC_STEPS = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0];
@@ -964,6 +973,9 @@ export function generateMockDatabase(): Database {
 
     const githubHandle = name.toLowerCase().replace(/\s+/g, '-');
     const deviceInfo = (assessmentStatus === 'InProgress' || assessmentStatus === 'Completed') ? randomDeviceInfo() : null;
+    const isPostgrad = !degree.startsWith('B.');
+    const backlogHistory = rnd.next() > 0.7 ? Math.floor(rnd.range(1, 4)) : 0;
+    const currentBacklogs = backlogHistory > 0 && rnd.next() > 0.6 ? Math.floor(rnd.range(1, backlogHistory + 1)) : 0;
     candidates.push({
       id: `PRES2026-${10000 + i}`,
       name,
@@ -977,6 +989,16 @@ export function generateMockDatabase(): Database {
       githubUrl: `https://github.com/${githubHandle}`,
       linkedinUrl: `https://linkedin.com/in/${githubHandle}`,
       resumeUrl: `https://drive.google.com/file/d/mock-resume-${i}/view`,
+      registrationNumber: `REG${2021 + Math.floor(rnd.range(0, 4))}${String(i).padStart(4, '0')}`,
+      specialization: DEGREE_SPECIALIZATIONS[degree],
+      dateOfBirth: new Date(2001 + Math.floor(rnd.range(0, 3)), Math.floor(rnd.range(0, 12)), Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
+      codingPlatformUrls: `https://leetcode.com/${githubHandle}`,
+      tenth: parseFloat(rnd.range(75, 98).toFixed(2)),
+      twelfth: parseFloat(rnd.range(75, 98).toFixed(2)),
+      ugMarks: isPostgrad ? undefined : cgpa,
+      pgMarks: isPostgrad ? cgpa : undefined,
+      backlogHistory,
+      currentBacklogs,
       assessmentStatus,
       assessmentPassword,
       assessmentId: targetAssessment.id,
@@ -1053,7 +1075,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [] };
 }
 
-const DB_VERSION = '19';
+const DB_VERSION = '20';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

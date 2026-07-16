@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { StarRating } from '@/components/ui/star-rating';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -341,6 +343,29 @@ const DEFAULT_EXP: {
   greetingNote: string;
   allowedDevices: 'computers' | 'all';
   integrityLevel: 'basic' | 'ai-proctoring' | 'custom';
+  testNavigation: 'fixed-section-order' | 'section-switch';
+  testType: 'multiple-mark-for-review' | 'single-question';
+  practiceTest: boolean;
+  enableCalculator: boolean;
+  sessionTimeoutHours: number;
+  maxRestartAllowed: number;
+  randomQuestions: boolean;
+  randomAnswers: boolean;
+  showQuestionScore: boolean;
+  displayTimeLeftAlert: boolean;
+  allowCandidateFeedback: boolean;
+  emailOnReportGeneration: boolean;
+  allowCopyPasteInDescriptiveCoding: boolean;
+  displayWindowViolationPopup: boolean;
+  terminateOnWindowViolation: boolean;
+  windowViolationTerminateAfter: number;
+  imageProctoringConsecutiveImages: number;
+  imageProctoringGreenMax: number;
+  imageProctoringYellowMin: number;
+  imageProctoringYellowMax: number;
+  imageProctoringRedMin: number;
+  terminateOnImageViolation: boolean;
+  imageViolationTerminateAfterWarnings: number;
 } = {
   testWindow: 'anytime',
   reminderEnabled: false,
@@ -349,7 +374,46 @@ const DEFAULT_EXP: {
   greetingNote: '',
   allowedDevices: 'computers',
   integrityLevel: 'basic',
+  testNavigation: 'section-switch',
+  testType: 'multiple-mark-for-review',
+  practiceTest: false,
+  enableCalculator: false,
+  sessionTimeoutHours: 4,
+  maxRestartAllowed: 10,
+  randomQuestions: true,
+  randomAnswers: false,
+  showQuestionScore: false,
+  displayTimeLeftAlert: true,
+  allowCandidateFeedback: true,
+  emailOnReportGeneration: false,
+  allowCopyPasteInDescriptiveCoding: false,
+  displayWindowViolationPopup: true,
+  terminateOnWindowViolation: true,
+  windowViolationTerminateAfter: 5,
+  imageProctoringConsecutiveImages: 3,
+  imageProctoringGreenMax: 2,
+  imageProctoringYellowMin: 3,
+  imageProctoringYellowMax: 5,
+  imageProctoringRedMin: 6,
+  terminateOnImageViolation: false,
+  imageViolationTerminateAfterWarnings: 5,
 };
+
+function YesNoField({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="font-medium">{label}</span>
+      <RadioGroup
+        value={value ? 'yes' : 'no'}
+        onValueChange={v => onChange(v === 'yes')}
+        className="flex items-center gap-4"
+      >
+        <label className="flex items-center gap-1.5 text-xs"><RadioGroupItem value="yes" />Yes</label>
+        <label className="flex items-center gap-1.5 text-xs"><RadioGroupItem value="no" />No</label>
+      </RadioGroup>
+    </div>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -359,7 +423,6 @@ export const TestDetail: React.FC = () => {
   const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates } = useApp();
 
   // existing state
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('questions');
@@ -408,6 +471,7 @@ export const TestDetail: React.FC = () => {
   // experience settings
   const [expSettings, setExpSettings] = useState({ ...DEFAULT_EXP });
   const [expDirty, setExpDirty] = useState(false);
+  const [activeExpSection, setActiveExpSection] = useState<'test' | 'proctoring'>('test');
 
   // OA shortlisting
   const [cutoffInput, setCutoffInput] = useState('40');
@@ -476,6 +540,10 @@ export const TestDetail: React.FC = () => {
       .filter(s => s.questions.length > 0);
   }, [driveQuestions]);
 
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    () => new Set(sections.map(s => s.topic))
+  );
+
   const totalMarks = driveQuestions.reduce((s, q) => s + q.marks, 0);
   const estimatedMinutes = driveQuestions.length;
 
@@ -529,6 +597,14 @@ export const TestDetail: React.FC = () => {
           </a>
         ) : <span className="text-muted-foreground text-sm">—</span>,
     },
+    { header: 'Coding Platforms', accessor: 'codingPlatformUrls' as const },
+    { header: '10th %', accessor: 'tenth' as const, sortable: true },
+    { header: '12th %', accessor: 'twelfth' as const, sortable: true },
+    { header: 'Diploma', accessor: 'diploma' as const },
+    { header: 'UG Marks', accessor: 'ugMarks' as const, sortable: true },
+    { header: 'PG Marks', accessor: 'pgMarks' as const, sortable: true },
+    { header: 'Backlog History', accessor: 'backlogHistory' as const },
+    { header: 'Current Backlogs', accessor: 'currentBacklogs' as const },
   ];
 
   const candidateRows = useMemo<CandidateRow[]>(() => {
@@ -1698,7 +1774,33 @@ export const TestDetail: React.FC = () => {
 
         {/* ── Experience Tab ── */}
         <TabsContent value="experience" className="m-0 p-6">
-          <div className="max-w-3xl space-y-4">
+          <div className="flex gap-6">
+            {/* Sub-nav */}
+            <div className="w-56 shrink-0 border rounded-lg p-2 space-y-1 h-fit">
+              <button
+                type="button"
+                onClick={() => setActiveExpSection('test')}
+                className={`w-full text-left text-sm font-medium rounded-md px-3 py-2 transition-colors ${
+                  activeExpSection === 'test' ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                }`}
+              >
+                Test Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveExpSection('proctoring')}
+                className={`w-full text-left text-sm font-medium rounded-md px-3 py-2 transition-colors ${
+                  activeExpSection === 'proctoring' ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                }`}
+              >
+                Proctoring Settings
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 max-w-3xl space-y-4">
+          {activeExpSection === 'test' && (
+          <>
             {/* Candidate experience */}
             <div className="border rounded-lg p-6 flex gap-8">
               <div className="w-56 shrink-0">
@@ -1829,6 +1931,102 @@ export const TestDetail: React.FC = () => {
               </div>
             </div>
 
+            {/* Test Settings */}
+            <div className="border rounded-lg p-6 flex gap-8">
+              <div className="w-56 shrink-0">
+                <h3 className="font-semibold text-base mb-1">Test Settings</h3>
+                <p className="text-sm text-muted-foreground">
+                  Control how candidates navigate and answer questions during the test
+                </p>
+              </div>
+              <div className="flex-1 space-y-4 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Test Navigation:</span>
+                  <Select
+                    value={expSettings.testNavigation}
+                    onValueChange={v => updateExp('testNavigation', v as 'fixed-section-order' | 'section-switch')}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed-section-order">Fixed Section Order</SelectItem>
+                      <SelectItem value="section-switch">Section Switch</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Type of test:</span>
+                  <Select
+                    value={expSettings.testType}
+                    onValueChange={v => updateExp('testType', v as 'multiple-mark-for-review' | 'single-question')}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="multiple-mark-for-review">Multiple Questions with Mark for Review</SelectItem>
+                      <SelectItem value="single-question">Single Question</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <YesNoField label="Practice test:" value={expSettings.practiceTest} onChange={v => updateExp('practiceTest', v)} />
+                <YesNoField label="Enable Calculator:" value={expSettings.enableCalculator} onChange={v => updateExp('enableCalculator', v)} />
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Test Session Timeout (Hours):</span>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs w-52"
+                    value={expSettings.sessionTimeoutHours}
+                    onChange={e => updateExp('sessionTimeoutHours', parseInt(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Max Restart Allowed:</span>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs w-52"
+                    value={expSettings.maxRestartAllowed}
+                    onChange={e => updateExp('maxRestartAllowed', parseInt(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Question Settings */}
+            <div className="border rounded-lg p-6 flex gap-8">
+              <div className="w-56 shrink-0">
+                <h3 className="font-semibold text-base mb-1">Question Settings</h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure question ordering and score visibility
+                </p>
+              </div>
+              <div className="flex-1 space-y-4 text-sm">
+                <YesNoField label="Random Questions:" value={expSettings.randomQuestions} onChange={v => updateExp('randomQuestions', v)} />
+                <YesNoField label="Random Answers:" value={expSettings.randomAnswers} onChange={v => updateExp('randomAnswers', v)} />
+                <YesNoField label="Show Question Score in Test:" value={expSettings.showQuestionScore} onChange={v => updateExp('showQuestionScore', v)} />
+              </div>
+            </div>
+
+            {/* Display & Email Settings */}
+            <div className="border rounded-lg p-6 flex gap-8">
+              <div className="w-56 shrink-0">
+                <h3 className="font-semibold text-base mb-1">Display & Email Settings</h3>
+                <p className="text-sm text-muted-foreground">
+                  Control in-test messaging and candidate email notifications
+                </p>
+              </div>
+              <div className="flex-1 space-y-4 text-sm">
+                <YesNoField label="Display test time left alert:" value={expSettings.displayTimeLeftAlert} onChange={v => updateExp('displayTimeLeftAlert', v)} />
+                <YesNoField label="Allow candidate feedback:" value={expSettings.allowCandidateFeedback} onChange={v => updateExp('allowCandidateFeedback', v)} />
+                <YesNoField label="On Report generation send email to Candidate:" value={expSettings.emailOnReportGeneration} onChange={v => updateExp('emailOnReportGeneration', v)} />
+              </div>
+            </div>
+          </>
+          )}
+
+          {activeExpSection === 'proctoring' && (
+          <>
             {/* Integrity experience */}
             <div className="border rounded-lg p-6 flex gap-8">
               <div className="w-56 shrink-0">
@@ -1869,6 +2067,102 @@ export const TestDetail: React.FC = () => {
               </div>
             </div>
 
+            {/* Window Violation Settings */}
+            <div className="border rounded-lg p-6 flex gap-8">
+              <div className="w-56 shrink-0">
+                <h3 className="font-semibold text-base mb-1">Window Violation Settings</h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure behavior when a candidate leaves the test window
+                </p>
+              </div>
+              <div className="flex-1 space-y-4 text-sm">
+                <YesNoField label="Allow Copy/Paste in Descriptive & Coding Questions:" value={expSettings.allowCopyPasteInDescriptiveCoding} onChange={v => updateExp('allowCopyPasteInDescriptiveCoding', v)} />
+                <YesNoField label="Display Window Violation Pop-up:" value={expSettings.displayWindowViolationPopup} onChange={v => updateExp('displayWindowViolationPopup', v)} />
+                <YesNoField label="Terminate Test on Window Violation:" value={expSettings.terminateOnWindowViolation} onChange={v => updateExp('terminateOnWindowViolation', v)} />
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Test will be terminated after N window violations:</span>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs w-52"
+                    value={expSettings.windowViolationTerminateAfter}
+                    onChange={e => updateExp('windowViolationTerminateAfter', parseInt(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Image Proctoring Settings */}
+            <div className="border rounded-lg p-6 flex gap-8">
+              <div className="w-56 shrink-0">
+                <h3 className="font-semibold text-base mb-1">Image Proctoring Settings</h3>
+                <p className="text-sm text-muted-foreground">
+                  Set tolerance bands for AI-detected image violations
+                </p>
+              </div>
+              <div className="flex-1 space-y-4 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Consecutive images = 1 violation:</span>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs w-52"
+                    value={expSettings.imageProctoringConsecutiveImages}
+                    onChange={e => updateExp('imageProctoringConsecutiveImages', parseInt(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <span className="font-medium">Tolerance Level (No. of Violations):</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 text-xs text-green-600">Green</span>
+                    <Input
+                      type="number"
+                      className="h-8 text-xs w-20"
+                      value={expSettings.imageProctoringGreenMax}
+                      onChange={e => updateExp('imageProctoringGreenMax', parseInt(e.target.value) || 0)}
+                    />
+                    <span className="text-xs text-muted-foreground">max (from 0)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 text-xs text-amber-600">Yellow</span>
+                    <Input
+                      type="number"
+                      className="h-8 text-xs w-20"
+                      value={expSettings.imageProctoringYellowMin}
+                      onChange={e => updateExp('imageProctoringYellowMin', parseInt(e.target.value) || 0)}
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <Input
+                      type="number"
+                      className="h-8 text-xs w-20"
+                      value={expSettings.imageProctoringYellowMax}
+                      onChange={e => updateExp('imageProctoringYellowMax', parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 text-xs text-red-600">Red</span>
+                    <span className="text-xs text-muted-foreground">More Than</span>
+                    <Input
+                      type="number"
+                      className="h-8 text-xs w-20"
+                      value={expSettings.imageProctoringRedMin}
+                      onChange={e => updateExp('imageProctoringRedMin', parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+                <YesNoField label="Terminate Test on Image Violation:" value={expSettings.terminateOnImageViolation} onChange={v => updateExp('terminateOnImageViolation', v)} />
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Test will be terminated after N warnings:</span>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs w-52"
+                    value={expSettings.imageViolationTerminateAfterWarnings}
+                    onChange={e => updateExp('imageViolationTerminateAfterWarnings', parseInt(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+          )}
+
             {/* Save button */}
             <div className="flex justify-end">
               <Button
@@ -1879,6 +2173,7 @@ export const TestDetail: React.FC = () => {
                 <Save className="h-4 w-4" />
                 Save Changes
               </Button>
+            </div>
             </div>
           </div>
         </TabsContent>
@@ -2662,32 +2957,32 @@ export const TestDetail: React.FC = () => {
 
       {/* ── Interview Round Sheet ── */}
       <Sheet open={interviewSheetOpen} onOpenChange={open => { if (!open) { setInterviewSheetOpen(false); setInterviewCandidate(null); } }}>
-        <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
-          <SheetHeader className="px-6 py-4 border-b shrink-0">
+        <SheetContent side="center" className="sm:max-w-3xl flex flex-col p-0">
+          <SheetHeader className="px-8 py-6 border-b shrink-0">
             <SheetTitle>{interviewCandidate?.name ?? 'Interview Feedback'}</SheetTitle>
             {interviewCandidate && (
               <p className="text-sm text-muted-foreground">{interviewCandidate.email}</p>
             )}
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
             {/* Candidate links */}
             {interviewCandidate && (
               <div className="flex items-center gap-2 flex-wrap">
                 {interviewCandidate.resumeUrl && (
-                  <a href={interviewCandidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
-                    <FileText className="h-3.5 w-3.5" />
+                  <a href={interviewCandidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border hover:bg-muted transition-colors">
+                    <FileText className="h-4 w-4" />
                     Resume
                   </a>
                 )}
                 {interviewCandidate.githubUrl && (
-                  <a href={interviewCandidate.githubUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
-                    <ExternalLink className="h-3.5 w-3.5" />
+                  <a href={interviewCandidate.githubUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border hover:bg-muted transition-colors">
+                    <ExternalLink className="h-4 w-4" />
                     GitHub
                   </a>
                 )}
                 {interviewCandidate.linkedinUrl && (
-                  <a href={interviewCandidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors">
-                    <ExternalLink className="h-3.5 w-3.5" />
+                  <a href={interviewCandidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border hover:bg-muted transition-colors">
+                    <ExternalLink className="h-4 w-4" />
                     LinkedIn
                   </a>
                 )}
@@ -2695,9 +2990,9 @@ export const TestDetail: React.FC = () => {
                   type="button"
                   title="Online Assessment test report"
                   onClick={() => { setEvaluateCandidate(interviewCandidate); setEvaluateOpen(true); }}
-                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted transition-colors"
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border hover:bg-muted transition-colors"
                 >
-                  <BarChart2 className="h-3.5 w-3.5" />
+                  <BarChart2 className="h-4 w-4" />
                   OA Report
                 </button>
               </div>
@@ -2706,44 +3001,38 @@ export const TestDetail: React.FC = () => {
             {/* Panel info */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Panel</Label>
+                <Label className="text-sm">Panel</Label>
                 <Input value={ivDraft.panel} onChange={e => setIvDraft(d => ({ ...d, panel: e.target.value }))} placeholder="Panel name" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Time Slot</Label>
+                <Label className="text-sm">Time Slot</Label>
                 <Input value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 10:00 AM – 11:00 AM" />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Panel Members</Label>
+              <Label className="text-sm">Panel Members</Label>
               <Input value={ivDraft.panelMembers} onChange={e => setIvDraft(d => ({ ...d, panelMembers: e.target.value }))} placeholder="Names of interviewers" />
             </div>
 
             <div className="border-t pt-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Evaluation Scores (1–10)</p>
-              <div className="space-y-4">
+              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Evaluation Scores (1–10)</p>
+              <div className="space-y-5">
                 {([
                   { label: 'Aptitude', scoreKey: 'aptitudeScore', commKey: 'aptitudeComments' },
                   { label: 'Technical Skills', scoreKey: 'technicalScore', commKey: 'technicalComments' },
                   { label: 'Problem Solving & Logical Thinking', scoreKey: 'problemSolvingScore', commKey: 'problemSolvingComments' },
                   { label: 'Communication', scoreKey: 'communicationScore', commKey: 'communicationComments' },
                 ] as { label: string; scoreKey: keyof InterviewDraft; commKey: keyof InterviewDraft }[]).map(item => (
-                  <div key={item.label} className="space-y-2 rounded-lg border p-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">{item.label}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={10}
-                        className="h-7 w-16 text-sm text-center"
-                        value={ivDraft[item.scoreKey]}
-                        onChange={e => setIvDraft(d => ({ ...d, [item.scoreKey]: e.target.value }))}
-                        placeholder="—"
-                      />
-                    </div>
+                  <div key={item.label} className="space-y-3 rounded-lg border p-4">
+                    <Label className="text-sm font-medium">{item.label}</Label>
+                    <StarRating
+                      value={Number(ivDraft[item.scoreKey]) || 0}
+                      onChange={val => setIvDraft(d => ({ ...d, [item.scoreKey]: String(val) }))}
+                      max={10}
+                    />
                     <Textarea
                       rows={2}
-                      className="text-xs resize-none"
+                      className="text-sm resize-none"
                       placeholder="Comments…"
                       value={ivDraft[item.commKey] as string}
                       onChange={e => setIvDraft(d => ({ ...d, [item.commKey]: e.target.value }))}
@@ -2754,27 +3043,27 @@ export const TestDetail: React.FC = () => {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Any Other Observations</Label>
+              <Label className="text-sm">Any Other Observations</Label>
               <Textarea
                 rows={2}
-                className="text-xs resize-none"
+                className="text-sm resize-none"
                 placeholder="Additional notes…"
                 value={ivDraft.anyOther}
                 onChange={e => setIvDraft(d => ({ ...d, anyOther: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Overall Feedback</Label>
+              <Label className="text-sm">Overall Feedback</Label>
               <Textarea
                 rows={3}
-                className="text-xs resize-none"
+                className="text-sm resize-none"
                 placeholder="Overall impression and recommendation…"
                 value={ivDraft.overallFeedback}
                 onChange={e => setIvDraft(d => ({ ...d, overallFeedback: e.target.value }))}
               />
             </div>
           </div>
-          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+          <SheetFooter className="px-8 py-6 border-t shrink-0 flex-row gap-2">
             <Button
               variant="outline"
               className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
