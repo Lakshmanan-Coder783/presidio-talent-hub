@@ -33,14 +33,15 @@ import {
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Send, BarChart2, FileText,
   Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase,
+  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase, KeyRound, Cog,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
-import { generateAccessPassword } from '../../lib/utils';
+import { generateAccessPassword, generateSlug } from '../../lib/utils';
 import { computeDriveStatus } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { deriveInterviewStatus, deriveCodingStatus, deriveWhiteboardStatus } from '../../utils/candidateStatus';
+import { DEFAULT_EXPERIENCE_SETTINGS as DEFAULT_EXP } from '../../utils/experienceSettings';
 import { useDriveReportData } from '../../hooks/useDriveReportData';
 import { FunnelChart, DonutChart, GaugeChart, HorizontalBarChart } from '../../components/Charts';
 import { EvaluateReport } from './EvaluateReport';
@@ -101,6 +102,9 @@ interface CandidateRow {
   startTime: string;
   percentage: number;
   band: string;
+  rawStatus: Candidate['assessmentStatus'];
+  invitedAt?: string;
+  password?: string;
 }
 
 interface InterviewDraft {
@@ -333,72 +337,6 @@ const QuestionPicker: React.FC<QuestionPickerProps> = ({
 };
 
 
-// ── Default experience settings ───────────────────────────────────────────────
-
-const DEFAULT_EXP: {
-  testWindow: 'anytime' | 'scheduled';
-  reminderEnabled: boolean;
-  testAttempts: 1 | 3;
-  shareReport: boolean;
-  greetingNote: string;
-  allowedDevices: 'computers' | 'all';
-  integrityLevel: 'basic' | 'ai-proctoring' | 'custom';
-  testNavigation: 'fixed-section-order' | 'section-switch';
-  testType: 'multiple-mark-for-review' | 'single-question';
-  practiceTest: boolean;
-  enableCalculator: boolean;
-  sessionTimeoutHours: number;
-  maxRestartAllowed: number;
-  randomQuestions: boolean;
-  randomAnswers: boolean;
-  showQuestionScore: boolean;
-  displayTimeLeftAlert: boolean;
-  allowCandidateFeedback: boolean;
-  emailOnReportGeneration: boolean;
-  allowCopyPasteInDescriptiveCoding: boolean;
-  displayWindowViolationPopup: boolean;
-  terminateOnWindowViolation: boolean;
-  windowViolationTerminateAfter: number;
-  imageProctoringConsecutiveImages: number;
-  imageProctoringGreenMax: number;
-  imageProctoringYellowMin: number;
-  imageProctoringYellowMax: number;
-  imageProctoringRedMin: number;
-  terminateOnImageViolation: boolean;
-  imageViolationTerminateAfterWarnings: number;
-} = {
-  testWindow: 'anytime',
-  reminderEnabled: false,
-  testAttempts: 1,
-  shareReport: false,
-  greetingNote: '',
-  allowedDevices: 'computers',
-  integrityLevel: 'basic',
-  testNavigation: 'section-switch',
-  testType: 'multiple-mark-for-review',
-  practiceTest: false,
-  enableCalculator: false,
-  sessionTimeoutHours: 4,
-  maxRestartAllowed: 10,
-  randomQuestions: true,
-  randomAnswers: false,
-  showQuestionScore: false,
-  displayTimeLeftAlert: true,
-  allowCandidateFeedback: true,
-  emailOnReportGeneration: false,
-  allowCopyPasteInDescriptiveCoding: false,
-  displayWindowViolationPopup: true,
-  terminateOnWindowViolation: true,
-  windowViolationTerminateAfter: 5,
-  imageProctoringConsecutiveImages: 3,
-  imageProctoringGreenMax: 2,
-  imageProctoringYellowMin: 3,
-  imageProctoringYellowMax: 5,
-  imageProctoringRedMin: 6,
-  terminateOnImageViolation: false,
-  imageViolationTerminateAfterWarnings: 5,
-};
-
 function YesNoField({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -420,7 +358,7 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates } = useApp();
+  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, sendRemoteInvites } = useApp();
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -430,6 +368,7 @@ export const TestDetail: React.FC = () => {
   // evaluate drawer state
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
   const [evaluateOpen, setEvaluateOpen] = useState(false);
+  const [credentialsRow, setCredentialsRow] = useState<CandidateRow | null>(null);
 
   // inline name edit
   const [editingName, setEditingName] = useState(false);
@@ -622,7 +561,10 @@ export const TestDetail: React.FC = () => {
               hour: 'numeric', minute: '2-digit', hour12: true,
             })
           : '—';
-        return { id: c.id, name: c.name, email: c.email, status: statusLabel, startTime, percentage: pct, band };
+        return {
+          id: c.id, name: c.name, email: c.email, status: statusLabel, startTime, percentage: pct, band,
+          rawStatus: c.assessmentStatus, invitedAt: c.inviteEmailSentAt, password: c.assessmentPassword,
+        };
       });
   }, [driveCandidates, totalMarks, bandCutoffs]);
 
@@ -699,7 +641,39 @@ export const TestDetail: React.FC = () => {
     if (!drive) return;
     const unique = ids.filter(id => !alreadyAddedSet.has(id));
     if (unique.length === 0) return;
-    updateDrive({ ...drive, questionIds: [...driveQuestionIds, ...unique] });
+    const newQuestionIds = [...driveQuestionIds, ...unique];
+
+    if (linkedAssessment) {
+      updateDrive({ ...drive, questionIds: newQuestionIds });
+      return;
+    }
+
+    // First questions ever attached to this drive — lazily create the linked
+    // Assessment so Publish/slug/password become reachable (previously only
+    // pre-seeded demo drives had an assessment at all).
+    const newQuestions = db.questions.filter(q => newQuestionIds.includes(q.id));
+    const newSections: AssessmentSection[] = SECTION_ORDER
+      .map(topic => {
+        const topicQuestions = newQuestions.filter(q => q.topic === topic);
+        return { name: topic, questionCount: topicQuestions.length, marks: topicQuestions.reduce((s, q) => s + q.marks, 0) };
+      })
+      .filter(s => s.questionCount > 0);
+
+    createAssessmentForDrive(
+      drive.id,
+      {
+        name: `${drive.name} — Online Assessment`,
+        type: 'Combined',
+        duration: Math.max(30, newQuestions.length * 2),
+        totalMarks: newQuestions.reduce((s, q) => s + q.marks, 0),
+        status: 'Draft',
+        sections: newSections,
+        questionIds: newQuestionIds,
+        slug: `${generateSlug(drive.name)}-${drive.id.toLowerCase()}`,
+        accessPassword: generateAccessPassword(),
+      },
+      newQuestionIds
+    );
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -741,6 +715,15 @@ export const TestDetail: React.FC = () => {
     if (updates.length === 0) return;
     bulkUpdateCandidates(updates);
     toast.success(`${updates.length} candidate${updates.length !== 1 ? 's' : ''} marked as finished.`);
+  };
+
+  const uninvitedCount = driveCandidates.filter(c => c.assessmentStatus === 'Not Invited').length;
+  const canSendInvites = drive?.accessMode === 'remote' && !!linkedAssessment && uninvitedCount > 0;
+
+  const handleSendInvites = () => {
+    if (!drive) return;
+    const count = sendRemoteInvites(drive.id);
+    if (count > 0) toast.success(`Sent ${count} invite${count !== 1 ? 's' : ''} with individual credentials.`);
   };
 
   // ── OA shortlisting handlers ─────────────────────────────────────────────────
@@ -1175,6 +1158,34 @@ export const TestDetail: React.FC = () => {
       },
     },
     {
+      header: 'INVITE',
+      accessor: 'invitedAt' as const,
+      sortable: false,
+      render: (row: CandidateRow) => {
+        if (drive?.accessMode !== 'remote') return <span className="text-sm text-muted-foreground">—</span>;
+        if (row.rawStatus === 'Not Invited') {
+          return <span className="text-xs text-muted-foreground">Not sent</span>;
+        }
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              {row.invitedAt ? new Date(row.invitedAt).toLocaleDateString() : 'Invited'}
+            </span>
+            {row.password && (
+              <button
+                type="button"
+                title="View credentials"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setCredentialsRow(row)}
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       header: 'START TIME',
       accessor: 'startTime' as const,
       sortable: false,
@@ -1318,6 +1329,15 @@ export const TestDetail: React.FC = () => {
             }}
           >
             <Share2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            title={linkedAssessment ? 'Edit assessment (name, type, duration, sections, status)' : 'No assessment linked yet'}
+            disabled={!linkedAssessment}
+            onClick={openAsmEdit}
+          >
+            <Cog className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
             <Settings className="h-4 w-4" />
@@ -2181,17 +2201,30 @@ export const TestDetail: React.FC = () => {
         {/* ── Candidates Tab ── */}
         <TabsContent value="candidates" className="m-0 p-6 space-y-6">
           {/* Toolbar */}
-          {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
+          {(driveCandidates.some(c => c.assessmentStatus !== 'Completed') || canSendInvites) && (
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 text-xs"
-                onClick={markAllFinished}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Mark All Finished
-              </Button>
+              {canSendInvites && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={handleSendInvites}
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Send Invites ({uninvitedCount})
+                </Button>
+              )}
+              {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={markAllFinished}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Mark All Finished
+                </Button>
+              )}
             </div>
           )}
 
@@ -3404,6 +3437,41 @@ export const TestDetail: React.FC = () => {
             <Button className="w-full" onClick={() => setPublishSuccessOpen(false)}>
               Done
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Candidate Credentials Dialog (mocked invite delivery) ── */}
+      <Dialog open={!!credentialsRow} onOpenChange={open => !open && setCredentialsRow(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Candidate Credentials</DialogTitle>
+            <DialogDescription>
+              {credentialsRow?.name} — share these with the candidate if the invite email didn't reach them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Candidate ID</Label>
+              <div className="flex gap-2">
+                <Input readOnly value={credentialsRow?.id ?? ''} className="font-mono text-sm" />
+                <Button variant="outline" size="icon" onClick={() => credentialsRow && copyToClipboard(credentialsRow.id, 'Candidate ID')}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Password</Label>
+              <div className="flex gap-2">
+                <Input readOnly value={credentialsRow?.password ?? ''} className="font-mono text-sm" />
+                <Button variant="outline" size="icon" onClick={() => credentialsRow?.password && copyToClipboard(credentialsRow.password, 'Password')}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button className="w-full" onClick={() => setCredentialsRow(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

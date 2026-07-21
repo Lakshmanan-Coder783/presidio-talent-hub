@@ -119,6 +119,11 @@ export interface Candidate {
   attendanceMarked?: boolean;
   inviteEmailSentAt?: string;
 
+  // Test session tracking
+  restartCount?: number;
+  feedbackRating?: number;
+  feedbackComment?: string;
+
   // Session/device info captured (or mocked) at assessment time
   deviceBrowser?: string;
   deviceOS?: string;

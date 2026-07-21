@@ -12,6 +12,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { resolveExperienceSettings } from '../../utils/experienceSettings';
+
+const isMobileOrTablet = () => /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const INSTRUCTIONS = [
   { icon: WifiHigh,     text: 'Ensure a stable internet connection before starting.' },
@@ -36,6 +39,7 @@ export const TakeTest: React.FC = () => {
   );
 
   const isRemote = drive?.accessMode === 'remote';
+  const exp = useMemo(() => resolveExperienceSettings(drive), [drive]);
 
   const [candidateId, setCandidateId] = useState('');
   const [password, setPassword] = useState('');
@@ -79,6 +83,23 @@ export const TakeTest: React.FC = () => {
             This test is not currently active{' '}
             <Badge variant="outline" className="text-xs">{assessment.status}</Badge>.{' '}
             Please contact your exam coordinator.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (exp.allowedDevices === 'computers' && isMobileOrTablet()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-muted/60 to-background p-6">
+        <div className="w-full max-w-[400px] rounded-2xl border bg-card shadow-2xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+            <AlertCircle className="h-7 w-7 text-amber-500" />
+          </div>
+          <h2 className="text-xl font-bold">Computer Required</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            <b className="text-foreground">{assessment.name}</b> must be taken on a desktop or laptop computer.
+            Please switch devices and reopen this link to continue.
           </p>
         </div>
       </div>

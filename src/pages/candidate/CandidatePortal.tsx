@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CodeEditor } from '../../components/CodeEditor';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { DonutChart } from '../../components/Charts';
+import { toast } from 'sonner';
 import {
   Clock,
   CheckSquare,
@@ -16,6 +17,8 @@ import {
   Activity,
   Award,
   Check,
+  Calculator,
+  FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,10 +28,124 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { StarRating } from '@/components/ui/star-rating';
+import { resolveExperienceSettings } from '../../utils/experienceSettings';
+import { seededShuffle, shuffleQuestionOptions } from '../../utils/seededShuffle';
+import { loadTestSession, saveTestSession, clearTestSession } from '../../utils/testSession';
+
+function SimpleCalculator() {
+  const [display, setDisplay] = useState('0');
+  const [stored, setStored] = useState<number | null>(null);
+  const [operator, setOperator] = useState<string | null>(null);
+  const [waitingForOperand, setWaitingForOperand] = useState(false);
+
+  const compute = (a: number, b: number, op: string) => {
+    switch (op) {
+      case '+': return a + b;
+      case '-': return a - b;
+      case '×': return a * b;
+      case '÷': return b === 0 ? NaN : a / b;
+      default: return b;
+    }
+  };
+
+  const inputDigit = (d: string) => {
+    if (waitingForOperand) {
+      setDisplay(d);
+      setWaitingForOperand(false);
+    } else {
+      setDisplay(display === '0' ? d : display + d);
+    }
+  };
+
+  const inputDot = () => {
+    if (waitingForOperand) {
+      setDisplay('0.');
+      setWaitingForOperand(false);
+      return;
+    }
+    if (!display.includes('.')) setDisplay(display + '.');
+  };
+
+  const backspace = () => setDisplay(display.length > 1 ? display.slice(0, -1) : '0');
+
+  const clear = () => {
+    setDisplay('0');
+    setStored(null);
+    setOperator(null);
+    setWaitingForOperand(false);
+  };
+
+  const handleOperator = (nextOp: string) => {
+    const inputValue = parseFloat(display);
+    if (stored === null) {
+      setStored(inputValue);
+    } else if (operator) {
+      const result = compute(stored, inputValue, operator);
+      setStored(result);
+      setDisplay(String(result));
+    }
+    setOperator(nextOp);
+    setWaitingForOperand(true);
+  };
+
+  const handleEquals = () => {
+    const inputValue = parseFloat(display);
+    if (operator && stored !== null) {
+      const result = compute(stored, inputValue, operator);
+      setDisplay(String(result));
+      setStored(null);
+      setOperator(null);
+      setWaitingForOperand(true);
+    }
+  };
+
+  const btn = (label: string, onClick: () => void, className = '') => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('h-9 rounded-md text-sm font-medium border hover:bg-muted transition-colors', className)}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="w-56 space-y-2">
+      <div className="rounded-md bg-muted px-3 py-2 text-right font-mono text-lg font-bold truncate">{display}</div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {btn('C', clear, 'text-destructive')}
+        {btn('⌫', backspace)}
+        {btn('÷', () => handleOperator('÷'))}
+        {btn('×', () => handleOperator('×'))}
+        {btn('7', () => inputDigit('7'))}
+        {btn('8', () => inputDigit('8'))}
+        {btn('9', () => inputDigit('9'))}
+        {btn('-', () => handleOperator('-'))}
+        {btn('4', () => inputDigit('4'))}
+        {btn('5', () => inputDigit('5'))}
+        {btn('6', () => inputDigit('6'))}
+        {btn('+', () => handleOperator('+'))}
+        {btn('1', () => inputDigit('1'))}
+        {btn('2', () => inputDigit('2'))}
+        {btn('3', () => inputDigit('3'))}
+        {btn('=', handleEquals, 'bg-primary text-primary-foreground hover:bg-primary/90')}
+        {btn('0', () => inputDigit('0'), 'col-span-3')}
+        {btn('.', inputDot)}
+      </div>
+    </div>
+  );
+}
 
 export const CandidatePortal: React.FC = () => {
-  const { currentUser, db, submitCandidateAssessment, logout } = useApp();
-  const candidate = currentUser?.candidate;
+  const { currentUser, db, submitCandidateAssessment, logout, updateCandidate } = useApp();
+  // currentUser.candidate is a snapshot taken at login time (before the status
+  // flip to InProgress) and is never refreshed — always prefer the live record.
+  const candidate = useMemo(() => {
+    if (!currentUser?.id) return null;
+    return db.candidates.find(c => c.id === currentUser.id) ?? currentUser.candidate ?? null;
+  }, [currentUser, db.candidates]);
 
   const [portalStep, setPortalStep] = useState<'instructions' | 'assessment' | 'submitted'>('instructions');
   const [agreed, setAgreed] = useState(false);
@@ -38,36 +155,132 @@ export const CandidatePortal: React.FC = () => {
     return db.assessments.find(a => a.id === candidate.assessmentId) || null;
   }, [candidate, db]);
 
+  const drive = useMemo(() => {
+    if (!candidate) return null;
+    return db.drives.find(d => d.id === candidate.driveId) || null;
+  }, [candidate, db]);
+
+  const exp = useMemo(() => resolveExperienceSettings(drive), [drive]);
+  const singleQuestionMode = exp.testType === 'single-question';
+  const fixedSectionOrder = exp.testNavigation === 'fixed-section-order';
+
   const questions = useMemo(() => {
-    if (!assessment) return [];
-    return db.questions.filter(q => assessment.questionIds.includes(q.id));
-  }, [assessment, db]);
+    if (!assessment || !candidate) return [];
+    // drive.questionIds (Questions tab) is the source of truth for what's attached;
+    // assessment.questionIds is only set once, at creation time.
+    const ids = drive?.questionIds ?? assessment.questionIds;
+    let qs = db.questions.filter(q => ids.includes(q.id));
+
+    if (fixedSectionOrder && assessment.sections?.length) {
+      const bySection: Record<string, typeof qs> = {};
+      qs.forEach(q => {
+        bySection[q.topic] = bySection[q.topic] || [];
+        bySection[q.topic].push(q);
+      });
+      const sectionNames = assessment.sections.map(s => s.name);
+      const ordered = sectionNames.flatMap(name => {
+        const group = bySection[name] || [];
+        return exp.randomQuestions ? seededShuffle(group, `${candidate.id}:${assessment.id}:${name}`) : group;
+      });
+      const coveredIds = new Set(ordered.map(q => q.id));
+      qs = [...ordered, ...qs.filter(q => !coveredIds.has(q.id))];
+    } else if (exp.randomQuestions) {
+      qs = seededShuffle(qs, `${candidate.id}:${assessment.id}`);
+    }
+
+    if (exp.randomAnswers) {
+      qs = qs.map(q => shuffleQuestionOptions(q, `${candidate.id}:${assessment.id}`));
+    }
+
+    return qs;
+  }, [assessment, db.questions, candidate, drive, fixedSectionOrder, exp.randomQuestions, exp.randomAnswers]);
+
+  const questionSectionIdx = useMemo(() => {
+    if (!assessment?.sections?.length) return questions.map(() => 0);
+    return questions.map(q => {
+      const idx = assessment.sections.findIndex(s => s.name === q.topic);
+      return idx === -1 ? assessment.sections.length : idx;
+    });
+  }, [questions, assessment]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [answers, setAnswers] = useState<{ [qId: string]: any }>({});
   const [markedForReview, setMarkedForReview] = useState<{ [qId: string]: boolean }>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [durationUsed, setDurationUsed] = useState(0);
+  const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
+  const [maxUnlockedSection, setMaxUnlockedSection] = useState(0);
+  const [restartBlocked, setRestartBlocked] = useState(false);
+  const timeAlertShownRef = useRef(false);
 
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+
+  // Detect a resumed/restarted session (existing saved progress for an in-progress attempt).
   useEffect(() => {
-    if (assessment) setTimeLeft(assessment.duration * 60);
-  }, [assessment]);
+    if (!candidate || !assessment) return;
+    const saved = loadTestSession(candidate.id);
+    if (saved && candidate.assessmentStatus === 'InProgress') {
+      const maxRestart = exp.maxRestartAllowed;
+      const nextCount = (candidate.restartCount || 0) + 1;
+      if (typeof maxRestart === 'number' && nextCount > maxRestart) {
+        setRestartBlocked(true);
+        return;
+      }
+      updateCandidate({ ...candidate, restartCount: nextCount });
+      setAnswers(saved.answers);
+      setMarkedForReview(saved.markedForReview);
+      setActiveIdx(saved.activeIdx);
+      setSessionStartedAt(saved.sessionStartedAt);
+      setPortalStep('assessment');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.id, assessment?.id]);
+
+  // Compute remaining time from an absolute session-start timestamp, so a page
+  // refresh can't silently grant a fresh full-duration timer.
+  useEffect(() => {
+    if (!assessment || !sessionStartedAt) return;
+    const elapsedSec = Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 1000);
+    setTimeLeft(Math.max(0, assessment.duration * 60 - elapsedSec));
+    setDurationUsed(Math.max(0, elapsedSec));
+  }, [assessment, sessionStartedAt]);
+
+  // Persist in-progress answers/position so a reload can resume instead of resetting.
+  useEffect(() => {
+    if (portalStep !== 'assessment' || !sessionStartedAt || !candidate) return;
+    saveTestSession(candidate.id, { answers, markedForReview, activeIdx, sessionStartedAt });
+  }, [answers, markedForReview, activeIdx, portalStep, sessionStartedAt, candidate]);
 
   useEffect(() => {
     if (portalStep !== 'assessment') return;
     const interval = setInterval(() => {
+      if (sessionStartedAt && exp.sessionTimeoutHours) {
+        const deadline = new Date(sessionStartedAt).getTime() + exp.sessionTimeoutHours * 3600 * 1000;
+        if (Date.now() >= deadline) {
+          clearInterval(interval);
+          handleAutoSubmit();
+          return;
+        }
+      }
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(interval);
           handleAutoSubmit();
           return 0;
         }
+        const next = prev - 1;
+        if (exp.displayTimeLeftAlert && next === 300 && !timeAlertShownRef.current) {
+          timeAlertShownRef.current = true;
+          toast.warning('5 minutes remaining!');
+        }
         setDurationUsed(d => d + 1);
-        return prev - 1;
+        return next;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [portalStep]);
+  }, [portalStep, sessionStartedAt, exp.sessionTimeoutHours, exp.displayTimeLeftAlert]);
 
   const activeQuestion = questions[activeIdx];
 
@@ -101,12 +314,32 @@ export const CandidatePortal: React.FC = () => {
     setMarkedForReview(prev => ({ ...prev, [activeQuestion.id]: !prev[activeQuestion.id] }));
   };
 
-  const handleNext = () => { if (activeIdx < questions.length - 1) setActiveIdx(activeIdx + 1); };
+  const handleNext = () => {
+    if (activeIdx < questions.length - 1) {
+      const nextIdx = activeIdx + 1;
+      if (fixedSectionOrder) {
+        setMaxUnlockedSection(prev => Math.max(prev, questionSectionIdx[nextIdx] ?? 0));
+      }
+      setActiveIdx(nextIdx);
+    }
+  };
   const handlePrev = () => { if (activeIdx > 0) setActiveIdx(activeIdx - 1); };
+
+  const handleLaunch = () => {
+    if (!candidate) return;
+    const startedAt = new Date().toISOString();
+    setSessionStartedAt(startedAt);
+    saveTestSession(candidate.id, { answers: {}, markedForReview: {}, activeIdx: 0, sessionStartedAt: startedAt });
+    setPortalStep('assessment');
+  };
 
   const handleAutoSubmit = () => {
     if (!candidate || !assessment) return;
     submitCandidateAssessment(candidate.id, assessment.id, answers, durationUsed);
+    clearTestSession(candidate.id);
+    if (exp.emailOnReportGeneration) {
+      toast.success(`Report emailed to ${candidate.email}`);
+    }
     setPortalStep('submitted');
   };
 
@@ -114,6 +347,15 @@ export const CandidatePortal: React.FC = () => {
     if (window.confirm('Are you sure you want to end and submit your assessment?')) {
       handleAutoSubmit();
     }
+  };
+
+  const submitFeedback = () => {
+    if (!candidate) return;
+    const dbCandidate = db.candidates.find(c => c.id === candidate.id);
+    if (!dbCandidate) return;
+    updateCandidate({ ...dbCandidate, feedbackRating, feedbackComment });
+    setFeedbackSubmitted(true);
+    toast.success('Thanks for your feedback!');
   };
 
   const sectionBreakdownChartData = () => {
@@ -135,6 +377,45 @@ export const CandidatePortal: React.FC = () => {
               <h3 className="font-bold text-lg">Session Configuration Error</h3>
               <p className="text-muted-foreground text-sm mt-1">
                 No active candidate assessment record detected. Please sign out and log in again.
+              </p>
+            </div>
+            <Button className="w-full" onClick={logout}>Sign Out</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (exp.allowedDevices === 'computers' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card className="max-w-sm w-full">
+          <CardContent className="pt-8 pb-6 flex flex-col items-center gap-4 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive" />
+            <div>
+              <h3 className="font-bold text-lg">Computer Required</h3>
+              <p className="text-muted-foreground text-sm mt-1">
+                This assessment must be taken on a desktop or laptop. Please switch devices and log in again.
+              </p>
+            </div>
+            <Button className="w-full" onClick={logout}>Sign Out</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (restartBlocked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card className="max-w-sm w-full">
+          <CardContent className="pt-8 pb-6 flex flex-col items-center gap-4 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive" />
+            <div>
+              <h3 className="font-bold text-lg">Restart Limit Reached</h3>
+              <p className="text-muted-foreground text-sm mt-1">
+                You've exceeded the maximum of {exp.maxRestartAllowed} restart{exp.maxRestartAllowed === 1 ? '' : 's'} allowed
+                for this assessment. Please contact your exam coordinator.
               </p>
             </div>
             <Button className="w-full" onClick={logout}>Sign Out</Button>
@@ -170,6 +451,13 @@ export const CandidatePortal: React.FC = () => {
           )}
         </div>
       </header>
+
+      {exp.practiceTest && (
+        <div className="flex items-center justify-center gap-1.5 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs font-semibold text-center py-1.5 shrink-0">
+          <FlaskConical className="h-3.5 w-3.5" />
+          Practice Test Mode — this attempt is not scored for evaluation
+        </div>
+      )}
 
       {/* INSTRUCTIONS STEP */}
       {portalStep === 'instructions' && (
@@ -238,7 +526,7 @@ export const CandidatePortal: React.FC = () => {
                     I have read, understood, and agree to comply with the instructions and proctoring rules listed above.
                   </Label>
                 </div>
-                <Button disabled={!agreed} onClick={() => setPortalStep('assessment')} className="px-8">
+                <Button disabled={!agreed} onClick={handleLaunch} className="px-8">
                   Launch Assessment
                 </Button>
               </div>
@@ -250,7 +538,7 @@ export const CandidatePortal: React.FC = () => {
       {/* ASSESSMENT STEP */}
       {portalStep === 'assessment' && activeQuestion && (
         <div className="flex-1 p-4 xl:p-6">
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-4 h-full items-start">
+          <div className={cn('grid grid-cols-1 gap-4 h-full items-start', !singleQuestionMode && 'xl:grid-cols-[1fr_260px]')}>
 
             {/* Question Panel */}
             {activeQuestion.type === 'Coding' ? (
@@ -261,9 +549,11 @@ export const CandidatePortal: React.FC = () => {
                   <span className="text-xs font-bold uppercase tracking-widest text-primary">
                     Question {activeIdx + 1} of {questions.length} • Coding Section
                   </span>
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
-                  </span>
+                  {exp.showQuestionScore && (
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
+                    </span>
+                  )}
                 </div>
 
                 {/* Split body */}
@@ -286,30 +576,34 @@ export const CandidatePortal: React.FC = () => {
                 {/* Navigation footer */}
                 <div className="flex justify-between items-center border-t px-4 py-3 shrink-0">
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
+                    {!singleQuestionMode && (
+                      <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
                       Save &amp; Next
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMarkReview}
-                      className={cn(
-                        'gap-1',
-                        markedForReview[activeQuestion.id]
-                          ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                          : ''
-                      )}
-                    >
-                      <Bookmark className="h-3.5 w-3.5" />
-                      {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
-                    </Button>
+                    {!singleQuestionMode && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMarkReview}
+                        className={cn(
+                          'gap-1',
+                          markedForReview[activeQuestion.id]
+                            ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : ''
+                        )}
+                      >
+                        <Bookmark className="h-3.5 w-3.5" />
+                        {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
+                      </Button>
+                    )}
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
                       Submit Assessment
                     </Button>
@@ -325,9 +619,11 @@ export const CandidatePortal: React.FC = () => {
                       <span className="text-xs font-bold uppercase tracking-widest text-primary">
                         Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
                       </span>
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
-                      </span>
+                      {exp.showQuestionScore && (
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Marks: <b className="text-foreground">{activeQuestion.marks} pts</b>
+                        </span>
+                      )}
                     </div>
 
                     <p className="text-base font-semibold leading-relaxed mb-6">{activeQuestion.text}</p>
@@ -409,30 +705,34 @@ export const CandidatePortal: React.FC = () => {
                   {/* Navigation */}
                   <div className="flex justify-between items-center border-t pt-4 mt-6">
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
-                        <ChevronLeft className="h-4 w-4" />
-                        Previous
-                      </Button>
+                      {!singleQuestionMode && (
+                        <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                          <ChevronLeft className="h-4 w-4" />
+                          Previous
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
                         Save &amp; Next
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleMarkReview}
-                        className={cn(
-                          'gap-1',
-                          markedForReview[activeQuestion.id]
-                            ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                            : ''
-                        )}
-                      >
-                        <Bookmark className="h-3.5 w-3.5" />
-                        {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
-                      </Button>
+                      {!singleQuestionMode && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleMarkReview}
+                          className={cn(
+                            'gap-1',
+                            markedForReview[activeQuestion.id]
+                              ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                              : ''
+                          )}
+                        >
+                          <Bookmark className="h-3.5 w-3.5" />
+                          {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
+                        </Button>
+                      )}
                       <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
                         Submit Assessment
                       </Button>
@@ -457,55 +757,77 @@ export const CandidatePortal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Question Grid */}
-                <p className="text-xs font-bold text-foreground mb-2">Question Navigation</p>
-                <div className="grid grid-cols-5 gap-1 mb-4">
-                  {questions.map((q, idx) => {
-                    const isCur = activeIdx === idx;
-                    const isReview = markedForReview[q.id];
-                    const ans = answers[q.id];
-                    const isAns = ans !== undefined && (
-                      typeof ans === 'string' ? ans.trim().length > 0 : Array.isArray(ans) ? ans.length > 0 : true
-                    );
-                    return (
-                      <button
-                        key={q.id}
-                        onClick={() => setActiveIdx(idx)}
-                        className={cn(
-                          'h-8 w-full text-[11px] font-bold rounded border transition-colors',
-                          isCur
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : isReview
-                            ? 'bg-amber-100 text-amber-700 border-amber-400'
-                            : isAns
-                            ? 'bg-emerald-100 text-emerald-700 border-emerald-400'
-                            : 'bg-muted text-muted-foreground border-border'
-                        )}
-                      >
-                        {idx + 1}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Legend */}
-                <div className="space-y-1.5 border-t pt-3 text-[11px]">
-                  {[
-                    { color: 'bg-muted border', label: 'Unvisited' },
-                    { color: 'bg-primary border-primary', label: 'Active View' },
-                    { color: 'bg-emerald-100 border-emerald-400', label: 'Answered' },
-                    { color: 'bg-amber-100 border-amber-400', label: 'Marked for Review' },
-                  ].map(({ color, label }) => (
-                    <div key={label} className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-sm border shrink-0 ${color}`} />
-                      <span className="text-muted-foreground">{label}</span>
+                {!singleQuestionMode && (
+                  <>
+                    {/* Question Grid */}
+                    <p className="text-xs font-bold text-foreground mb-2">Question Navigation</p>
+                    <div className="grid grid-cols-5 gap-1 mb-4">
+                      {questions.map((q, idx) => {
+                        const isCur = activeIdx === idx;
+                        const isReview = markedForReview[q.id];
+                        const ans = answers[q.id];
+                        const isAns = ans !== undefined && (
+                          typeof ans === 'string' ? ans.trim().length > 0 : Array.isArray(ans) ? ans.length > 0 : true
+                        );
+                        const isLocked = fixedSectionOrder && (questionSectionIdx[idx] ?? 0) > maxUnlockedSection;
+                        return (
+                          <button
+                            key={q.id}
+                            onClick={() => !isLocked && setActiveIdx(idx)}
+                            disabled={isLocked}
+                            title={isLocked ? 'Complete the current section first' : undefined}
+                            className={cn(
+                              'h-8 w-full text-[11px] font-bold rounded border transition-colors',
+                              isLocked
+                                ? 'bg-muted/50 text-muted-foreground/40 border-border cursor-not-allowed'
+                                : isCur
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : isReview
+                                ? 'bg-amber-100 text-amber-700 border-amber-400'
+                                : isAns
+                                ? 'bg-emerald-100 text-emerald-700 border-emerald-400'
+                                : 'bg-muted text-muted-foreground border-border'
+                            )}
+                          >
+                            {idx + 1}
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+
+                    {/* Legend */}
+                    <div className="space-y-1.5 border-t pt-3 text-[11px]">
+                      {[
+                        { color: 'bg-muted border', label: 'Unvisited' },
+                        { color: 'bg-primary border-primary', label: 'Active View' },
+                        { color: 'bg-emerald-100 border-emerald-400', label: 'Answered' },
+                        { color: 'bg-amber-100 border-amber-400', label: 'Marked for Review' },
+                      ].map(({ color, label }) => (
+                        <div key={label} className="flex items-center gap-2">
+                          <span className={`w-3 h-3 rounded-sm border shrink-0 ${color}`} />
+                          <span className="text-muted-foreground">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
         </div>
+      )}
+
+      {portalStep === 'assessment' && exp.enableCalculator && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full shadow-lg">
+              <Calculator className="h-5 w-5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-auto">
+            <SimpleCalculator />
+          </PopoverContent>
+        </Popover>
       )}
 
       {/* RESULTS STEP */}
@@ -522,7 +844,9 @@ export const CandidatePortal: React.FC = () => {
 
                 <h2 className="text-2xl font-black">Assessment Submitted Successfully</h2>
                 <p className="text-muted-foreground text-sm mt-2">
-                  Your score has been registered. Below is your performance breakdown report.
+                  {exp.practiceTest
+                    ? 'This was a practice attempt — your score below is for your own reference and is not counted for evaluation.'
+                    : 'Your score has been registered. Below is your performance breakdown report.'}
                 </p>
 
                 <div className="grid grid-cols-3 gap-4 rounded-xl bg-muted/50 border p-6 my-6">
@@ -576,6 +900,32 @@ export const CandidatePortal: React.FC = () => {
                       </CardContent>
                     </Card>
                   </div>
+                )}
+
+                {exp.allowCandidateFeedback && (
+                  <Card className="text-left mt-6">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Share your feedback</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {feedbackSubmitted ? (
+                        <p className="text-sm text-muted-foreground">Your feedback has been recorded. Thank you!</p>
+                      ) : (
+                        <>
+                          <StarRating value={feedbackRating} onChange={setFeedbackRating} max={5} className="max-w-[220px]" />
+                          <Textarea
+                            rows={3}
+                            placeholder="Tell us about your assessment experience (optional)..."
+                            value={feedbackComment}
+                            onChange={e => setFeedbackComment(e.target.value)}
+                          />
+                          <Button size="sm" variant="outline" disabled={feedbackRating === 0} onClick={submitFeedback}>
+                            Submit Feedback
+                          </Button>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
                 )}
 
                 <Button onClick={logout} className="mt-6 px-10">

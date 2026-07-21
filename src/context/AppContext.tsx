@@ -3,6 +3,7 @@ import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
 import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
+import { generateAccessPassword } from '../lib/utils';
 
 interface UserSession {
   role: 'admin' | 'candidate';
@@ -50,6 +51,11 @@ interface AppContextType {
   ) => void;
   bulkInvite: (assessmentId: string, date: string, driveId: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
+  createAssessmentForDrive: (
+    driveId: string,
+    data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
+    driveQuestionIds: string[]
+  ) => Assessment;
   updateAssessment: (assessment: Assessment) => void;
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
   loginCandidateByTestSlug: (slug: string, candidateId: string, password: string) => { success: boolean; message: string };
@@ -264,10 +270,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const assessment = db.assessments.find(a => a.id === assessmentId);
     if (!candidate || !assessment) return;
 
+    // The drive's questionIds (managed in the Questions tab) are the source of
+    // truth for what's actually attached to the test; assessment.questionIds
+    // is set once at creation and isn't kept in sync with later edits.
+    const drive = db.drives.find(d => d.id === candidate.driveId);
+    const questionIds = drive?.questionIds ?? assessment.questionIds;
+
     let score = 0;
     const scoresBreakdown = { aptitude: 0, logical: 0, technical: 0, coding: 0, verbal: 0, quants: 0, cpp: 0, oops: 0, sql: 0, htmlcssjs: 0, subjective: 0, sqlQuery: 0 };
 
-    assessment.questionIds.forEach(qId => {
+    questionIds.forEach(qId => {
       const question = db.questions.find(q => q.id === qId);
       if (!question) return;
 
@@ -382,6 +394,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       candidatesAssignedCount: 0,
     };
     const updatedDb = { ...db, assessments: [newAsm, ...db.assessments] };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+    return newAsm;
+  };
+
+  // Atomically creates a new assessment AND links it (+ its question list) to
+  // the drive in a single db update, since two separate update calls in the
+  // same tick would each overwrite the other's change (both read the same
+  // pre-update `db` closure).
+  const createAssessmentForDrive = (
+    driveId: string,
+    data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
+    driveQuestionIds: string[]
+  ): Assessment => {
+    const newAsm: Assessment = {
+      ...data,
+      id: `ASM-${2000 + db.assessments.length + 1}`,
+      candidatesAssignedCount: 0,
+    };
+    const updatedDrives = db.drives.map(d =>
+      d.id === driveId ? { ...d, assessmentId: newAsm.id, questionIds: driveQuestionIds } : d
+    );
+    const updatedDb = { ...db, assessments: [newAsm, ...db.assessments], drives: updatedDrives };
     setDb(updatedDb);
     saveDatabase(updatedDb);
     return newAsm;
@@ -514,20 +549,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCandidates.length;
   };
 
+  // Assigns each un-invited remote candidate their own login credentials
+  // (assessmentId + individual password) and stamps the invite as sent.
   const sendRemoteInvites = (driveId: string): number => {
     const drive = db.drives.find(d => d.id === driveId);
-    if (!drive || drive.accessMode !== 'remote') return 0;
+    if (!drive || drive.accessMode !== 'remote' || !drive.assessmentId) return 0;
 
     const now = new Date().toISOString();
     let count = 0;
 
     const updatedCandidates = db.candidates.map(c => {
-      if (c.driveId === driveId && c.assessmentStatus === 'Pending' && !c.inviteEmailSentAt) {
+      if (c.driveId === driveId && c.assessmentStatus === 'Not Invited') {
         count++;
-        return { ...c, inviteEmailSentAt: now };
+        return {
+          ...c,
+          assessmentStatus: 'Pending' as const,
+          assessmentId: drive.assessmentId,
+          assessmentPassword: generateAccessPassword(),
+          inviteEmailSentAt: now,
+        };
       }
       return c;
     });
+
+    if (count === 0) return 0;
 
     const updatedDb = { ...db, candidates: updatedCandidates };
     setDb(updatedDb);
@@ -597,6 +642,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitCandidateAssessment,
       bulkInvite,
       createAssessment,
+      createAssessmentForDrive,
       updateAssessment,
       updateQuestion,
       loginCandidateByTestSlug,
