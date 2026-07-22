@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CodeEditor } from '../../components/CodeEditor';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
-import { DonutChart } from '../../components/Charts';
 import { toast } from 'sonner';
 import {
   Clock,
@@ -13,9 +12,6 @@ import {
   ChevronLeft,
   Bookmark,
   LogOut,
-  Trophy,
-  Activity,
-  Award,
   Check,
   Calculator,
   FlaskConical,
@@ -30,9 +26,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { StarRating } from '@/components/ui/star-rating';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { resolveExperienceSettings } from '../../utils/experienceSettings';
 import { seededShuffle, shuffleQuestionOptions } from '../../utils/seededShuffle';
 import { loadTestSession, saveTestSession, clearTestSession } from '../../utils/testSession';
+import { useProctoring } from '../../hooks/useProctoring';
+import { Camera, Video, VideoOff } from 'lucide-react';
 
 function SimpleCalculator() {
   const [display, setDisplay] = useState('0');
@@ -147,8 +148,28 @@ export const CandidatePortal: React.FC = () => {
     return db.candidates.find(c => c.id === currentUser.id) ?? currentUser.candidate ?? null;
   }, [currentUser, db.candidates]);
 
-  const [portalStep, setPortalStep] = useState<'instructions' | 'assessment' | 'submitted'>('instructions');
+  const [portalStep, setPortalStep] = useState<'instructions' | 'personal-info' | 'assessment' | 'submitted'>('instructions');
   const [agreed, setAgreed] = useState(false);
+
+  const [personalInfo, setPersonalInfo] = useState(() => ({
+    phone: candidate?.phone ?? '',
+    dateOfBirth: candidate?.dateOfBirth ?? '',
+    gender: candidate?.gender ?? '',
+    registrationNumber: candidate?.registrationNumber ?? '',
+    specialization: candidate?.specialization ?? '',
+    tenth: candidate?.tenth?.toString() ?? '',
+    twelfth: candidate?.twelfth?.toString() ?? '',
+    diploma: candidate?.diploma?.toString() ?? '',
+    ugMarks: candidate?.ugMarks?.toString() ?? '',
+    pgMarks: candidate?.pgMarks?.toString() ?? '',
+    backlogHistory: candidate?.backlogHistory?.toString() ?? '',
+    currentBacklogs: candidate?.currentBacklogs?.toString() ?? '',
+    githubUrl: candidate?.githubUrl ?? '',
+    linkedinUrl: candidate?.linkedinUrl ?? '',
+    resumeUrl: candidate?.resumeUrl ?? '',
+    codingPlatformUrls: candidate?.codingPlatformUrls ?? '',
+  }));
+  const [personalInfoError, setPersonalInfoError] = useState('');
 
   const assessment = useMemo(() => {
     if (!candidate) return null;
@@ -163,6 +184,19 @@ export const CandidatePortal: React.FC = () => {
   const exp = useMemo(() => resolveExperienceSettings(drive), [drive]);
   const singleQuestionMode = exp.testType === 'single-question';
   const fixedSectionOrder = exp.testNavigation === 'fixed-section-order';
+
+  const [terminatedForViolations, setTerminatedForViolations] = useState(false);
+  const proctoring = useProctoring({
+    active: portalStep === 'assessment',
+    exp,
+    // handleAutoSubmit is declared further down in this component but this callback is only
+    // ever invoked later (asynchronously, from a DOM event), by which point it's initialized.
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    onTerminate: () => {
+      setTerminatedForViolations(true);
+      handleAutoSubmit(true);
+    },
+  });
 
   const questions = useMemo(() => {
     if (!assessment || !candidate) return [];
@@ -203,15 +237,51 @@ export const CandidatePortal: React.FC = () => {
     });
   }, [questions, assessment]);
 
+  // Group the flat, already-ordered `questions` array by Question.type into exactly two
+  // switchable UI buckets — MCQ-family (MCQ, Multiple Select, SQL, Descriptive) vs Coding.
+  // This is a distinct axis from assessment.sections/topic (which doesn't reliably match the
+  // topics of questions actually delivered via drive.questionIds) and is intentionally
+  // independent of the fixedSectionOrder/questionSectionIdx lock mechanism above.
+  const questionTypeGroups = useMemo(() => {
+    const mcq: number[] = [];
+    const coding: number[] = [];
+    questions.forEach((q, idx) => {
+      (q.type === 'Coding' ? coding : mcq).push(idx);
+    });
+    return { mcq, coding };
+  }, [questions]);
+
+  // Only worth showing the switcher when there's genuinely something to switch between.
+  const showSectionTabs = questionTypeGroups.mcq.length > 0 && questionTypeGroups.coding.length > 0;
+
   const [activeIdx, setActiveIdx] = useState(0);
   const [answers, setAnswers] = useState<{ [qId: string]: any }>({});
   const [markedForReview, setMarkedForReview] = useState<{ [qId: string]: boolean }>({});
+  // Questions the candidate has moved past via "Save & Next" without answering — shown as a
+  // distinct "not answered" (red) state in the grid, separate from never-visited (gray).
+  const [visitedIds, setVisitedIds] = useState<{ [qId: string]: boolean }>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [durationUsed, setDurationUsed] = useState(0);
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
   const [maxUnlockedSection, setMaxUnlockedSection] = useState(0);
   const [restartBlocked, setRestartBlocked] = useState(false);
   const timeAlertShownRef = useRef(false);
+
+  const [activeSectionTab, setActiveSectionTab] = useState<'mcq' | 'coding'>(
+    () => (questions[0]?.type === 'Coding' ? 'coding' : 'mcq')
+  );
+  // Remembers the last-viewed flat index per bucket so switching tabs returns you to where
+  // you left off rather than always resetting to the bucket's first question.
+  const lastVisitedIdxRef = useRef<{ mcq: number | null; coding: number | null }>({ mcq: null, coding: null });
+
+  // The ordered sequence Next/Prev should traverse: the current tab's bucket when there's a
+  // split, otherwise the full flat list (so single-type tests are unaffected). MCQ and Coding
+  // questions are interleaved in the underlying `questions` array, not grouped, so without this
+  // Next/Prev would otherwise wander across sections mid-navigation.
+  const activeSectionIndices = useMemo(() => {
+    if (!showSectionTabs) return questions.map((_, idx) => idx);
+    return questionTypeGroups[activeSectionTab];
+  }, [showSectionTabs, questionTypeGroups, activeSectionTab, questions]);
 
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState('');
@@ -231,6 +301,7 @@ export const CandidatePortal: React.FC = () => {
       updateCandidate({ ...candidate, restartCount: nextCount });
       setAnswers(saved.answers);
       setMarkedForReview(saved.markedForReview);
+      setVisitedIds(saved.visitedIds ?? {});
       setActiveIdx(saved.activeIdx);
       setSessionStartedAt(saved.sessionStartedAt);
       setPortalStep('assessment');
@@ -250,8 +321,8 @@ export const CandidatePortal: React.FC = () => {
   // Persist in-progress answers/position so a reload can resume instead of resetting.
   useEffect(() => {
     if (portalStep !== 'assessment' || !sessionStartedAt || !candidate) return;
-    saveTestSession(candidate.id, { answers, markedForReview, activeIdx, sessionStartedAt });
-  }, [answers, markedForReview, activeIdx, portalStep, sessionStartedAt, candidate]);
+    saveTestSession(candidate.id, { answers, markedForReview, visitedIds, activeIdx, sessionStartedAt });
+  }, [answers, markedForReview, visitedIds, activeIdx, portalStep, sessionStartedAt, candidate]);
 
   useEffect(() => {
     if (portalStep !== 'assessment') return;
@@ -284,6 +355,23 @@ export const CandidatePortal: React.FC = () => {
 
   const activeQuestion = questions[activeIdx];
 
+  // Keep the tab indicator (and the "last visited" memory) in lockstep with activeIdx no
+  // matter how it changed — Next/Prev crossing the MCQ/Coding boundary, a grid-button click,
+  // or a resumed session restoring a saved activeIdx.
+  useEffect(() => {
+    if (!activeQuestion) return;
+    const bucket: 'mcq' | 'coding' = activeQuestion.type === 'Coding' ? 'coding' : 'mcq';
+    lastVisitedIdxRef.current[bucket] = activeIdx;
+    setActiveSectionTab(bucket);
+  }, [activeIdx, activeQuestion]);
+
+  // Same shape as `questions.map((q, idx) => ...)`, just restricted to the active tab's
+  // bucket while keeping `idx` as the true flat index into `questions`/`answers`/etc.
+  const visibleGridEntries = useMemo(() => {
+    if (!showSectionTabs) return questions.map((q, idx) => ({ q, idx }));
+    return questionTypeGroups[activeSectionTab].map(idx => ({ q: questions[idx], idx }));
+  }, [questions, questionTypeGroups, showSectionTabs, activeSectionTab]);
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -314,29 +402,99 @@ export const CandidatePortal: React.FC = () => {
     setMarkedForReview(prev => ({ ...prev, [activeQuestion.id]: !prev[activeQuestion.id] }));
   };
 
+  // Marks the question being navigated away from as visited, regardless of how navigation
+  // happens (Save & Next, Previous, or jumping directly via a Question Navigation grid button) —
+  // it's this, not just the Next button, that should turn an unanswered question red.
+  const markCurrentVisited = () => {
+    if (activeQuestion) {
+      setVisitedIds(prev => ({ ...prev, [activeQuestion.id]: true }));
+    }
+  };
+
   const handleNext = () => {
-    if (activeIdx < questions.length - 1) {
-      const nextIdx = activeIdx + 1;
+    markCurrentVisited();
+    const pos = activeSectionIndices.indexOf(activeIdx);
+    if (pos !== -1 && pos < activeSectionIndices.length - 1) {
+      const nextIdx = activeSectionIndices[pos + 1];
       if (fixedSectionOrder) {
         setMaxUnlockedSection(prev => Math.max(prev, questionSectionIdx[nextIdx] ?? 0));
       }
       setActiveIdx(nextIdx);
     }
   };
-  const handlePrev = () => { if (activeIdx > 0) setActiveIdx(activeIdx - 1); };
+  const handlePrev = () => {
+    const pos = activeSectionIndices.indexOf(activeIdx);
+    if (pos > 0) {
+      markCurrentVisited();
+      setActiveIdx(activeSectionIndices[pos - 1]);
+    }
+  };
+  const handleGridJump = (idx: number) => {
+    markCurrentVisited();
+    setActiveIdx(idx);
+  };
+
+  // Tabs are freely switchable regardless of fixedSectionOrder/maxUnlockedSection — that lock
+  // is a separate, topic-based mechanism that keeps operating independently of this feature.
+  const handleSectionTabChange = (tab: 'mcq' | 'coding') => {
+    const bucket = questionTypeGroups[tab];
+    if (bucket.length === 0) return;
+    setActiveSectionTab(tab);
+    const remembered = lastVisitedIdxRef.current[tab];
+    const targetIdx = remembered !== null && bucket.includes(remembered) ? remembered : bucket[0];
+    setActiveIdx(targetIdx);
+  };
 
   const handleLaunch = () => {
     if (!candidate) return;
     const startedAt = new Date().toISOString();
     setSessionStartedAt(startedAt);
     saveTestSession(candidate.id, { answers: {}, markedForReview: {}, activeIdx: 0, sessionStartedAt: startedAt });
+    proctoring.enterFullscreen();
     setPortalStep('assessment');
   };
 
-  const handleAutoSubmit = () => {
+  const handlePersonalInfoSubmit = () => {
+    if (!candidate) return;
+    if (!personalInfo.phone.trim() || !personalInfo.dateOfBirth.trim() || !personalInfo.gender.trim()) {
+      setPersonalInfoError('Phone, Date of Birth, and Gender are required to continue.');
+      return;
+    }
+    setPersonalInfoError('');
+    const dbCandidate = db.candidates.find(c => c.id === candidate.id);
+    if (!dbCandidate) return;
+    const toNum = (v: string) => (v.trim() === '' ? undefined : Number(v));
+    updateCandidate({
+      ...dbCandidate,
+      phone: personalInfo.phone.trim(),
+      dateOfBirth: personalInfo.dateOfBirth.trim(),
+      gender: personalInfo.gender as typeof dbCandidate.gender,
+      registrationNumber: personalInfo.registrationNumber.trim() || undefined,
+      specialization: personalInfo.specialization.trim() || undefined,
+      tenth: toNum(personalInfo.tenth),
+      twelfth: toNum(personalInfo.twelfth),
+      diploma: toNum(personalInfo.diploma),
+      ugMarks: toNum(personalInfo.ugMarks),
+      pgMarks: toNum(personalInfo.pgMarks),
+      backlogHistory: toNum(personalInfo.backlogHistory),
+      currentBacklogs: toNum(personalInfo.currentBacklogs),
+      githubUrl: personalInfo.githubUrl.trim() || undefined,
+      linkedinUrl: personalInfo.linkedinUrl.trim() || undefined,
+      resumeUrl: personalInfo.resumeUrl.trim() || undefined,
+      codingPlatformUrls: personalInfo.codingPlatformUrls.trim() || undefined,
+    });
+    handleLaunch();
+  };
+
+  const handleAutoSubmit = (terminated = false) => {
     if (!candidate || !assessment) return;
-    submitCandidateAssessment(candidate.id, assessment.id, answers, durationUsed);
+    submitCandidateAssessment(candidate.id, assessment.id, answers, durationUsed, {
+      windowViolationCount: proctoring.violationCount,
+      proctoringTerminated: terminated,
+    });
     clearTestSession(candidate.id);
+    proctoring.exitFullscreen();
+    proctoring.stopCamera();
     if (exp.emailOnReportGeneration) {
       toast.success(`Report emailed to ${candidate.email}`);
     }
@@ -356,15 +514,6 @@ export const CandidatePortal: React.FC = () => {
     updateCandidate({ ...dbCandidate, feedbackRating, feedbackComment });
     setFeedbackSubmitted(true);
     toast.success('Thanks for your feedback!');
-  };
-
-  const sectionBreakdownChartData = () => {
-    const dbCandidate = db.candidates.find(c => c.id === candidate?.id);
-    if (!dbCandidate || !dbCandidate.sectionScores) return [];
-    const colors = ['#2563eb', '#8b5cf6', '#06b6d4', '#f59e0b', '#22c55e'];
-    return Object.entries(dbCandidate.sectionScores)
-      .map(([label, value], idx) => ({ label, value: Number(value), color: colors[idx % colors.length] }))
-      .filter(item => item.value > 0);
   };
 
   if (!candidate || !assessment) {
@@ -443,7 +592,7 @@ export const CandidatePortal: React.FC = () => {
           <span className="text-muted-foreground">
             Name: <b className="text-foreground">{candidate.name}</b>
           </span>
-          {portalStep === 'instructions' && (
+          {(portalStep === 'instructions' || portalStep === 'personal-info') && (
             <Button variant="outline" size="sm" onClick={logout} className="gap-1.5 h-7 text-xs">
               <LogOut className="h-3 w-3" />
               Exit
@@ -487,28 +636,71 @@ export const CandidatePortal: React.FC = () => {
                     <p className="text-muted-foreground">
                       - Fullscreen mode is mandatory. Switching tabs or shifting window focus triggers violations.<br />
                       - Right-click, text selection, and copy-paste are blocked inside the editor layout.<br />
+                      - Screenshots and screen recordings are prohibited; attempts are logged as violations where technically detectable.<br />
                       - Ensure your camera is active and you remain in frame throughout the assessment.
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-xl border bg-muted/50 p-5">
-                  <h4 className="font-bold text-sm mb-4 flex items-center gap-2">
-                    <CheckSquare className="h-4 w-4 text-primary" />
-                    Exam Parameters
-                  </h4>
-                  <div className="space-y-2.5 text-sm">
-                    {[
-                      { label: 'Exam Title', value: assessment.name },
-                      { label: 'Duration', value: `${assessment.duration} mins` },
-                      { label: 'Total Questions', value: `${questions.length} items` },
-                      { label: 'Total Marks', value: `${assessment.totalMarks} pts` },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex justify-between border-b pb-2 last:border-0 last:pb-0">
-                        <span className="text-muted-foreground">{label}</span>
-                        <b>{value}</b>
+                <div className="space-y-4">
+                  <div className="rounded-xl border bg-muted/50 p-5">
+                    <h4 className="font-bold text-sm mb-4 flex items-center gap-2">
+                      <CheckSquare className="h-4 w-4 text-primary" />
+                      Exam Parameters
+                    </h4>
+                    <div className="space-y-2.5 text-sm">
+                      {[
+                        { label: 'Exam Title', value: assessment.name },
+                        { label: 'Duration', value: `${assessment.duration} mins` },
+                        { label: 'Total Questions', value: `${questions.length} items` },
+                        { label: 'Total Marks', value: `${assessment.totalMarks} pts` },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex justify-between border-b pb-2 last:border-0 last:pb-0">
+                          <span className="text-muted-foreground">{label}</span>
+                          <b>{value}</b>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border bg-muted/50 p-5">
+                    <h4 className="font-bold text-sm mb-3 flex items-center gap-2">
+                      <Camera className="h-4 w-4 text-primary" />
+                      Camera &amp; Microphone Check
+                    </h4>
+                    {proctoring.cameraStatus === 'granted' && (
+                      <div className="space-y-2">
+                        <video
+                          ref={proctoring.videoRef}
+                          autoPlay
+                          muted
+                          playsInline
+                          className="w-full aspect-video rounded-lg bg-black object-cover"
+                        />
+                        <p className="text-xs text-primary font-semibold flex items-center gap-1.5">
+                          <Video className="h-3.5 w-3.5" />
+                          Camera &amp; microphone are active
+                        </p>
                       </div>
-                    ))}
+                    )}
+                    {(proctoring.cameraStatus === 'idle' || proctoring.cameraStatus === 'requesting') && (
+                      <p className="text-xs text-muted-foreground">Requesting camera &amp; microphone access…</p>
+                    )}
+                    {(proctoring.cameraStatus === 'denied' || proctoring.cameraStatus === 'unsupported') && (
+                      <div className="space-y-2.5">
+                        <Alert variant="destructive">
+                          <AlertDescription className="text-xs font-semibold flex items-center gap-1.5">
+                            <VideoOff className="h-3.5 w-3.5 shrink-0" />
+                            {proctoring.cameraStatus === 'unsupported'
+                              ? "Your browser doesn't support camera/microphone access."
+                              : 'Camera and microphone access is required to begin this assessment.'}
+                          </AlertDescription>
+                        </Alert>
+                        <Button size="sm" variant="outline" className="w-full" onClick={proctoring.retryCameraAccess}>
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -526,10 +718,223 @@ export const CandidatePortal: React.FC = () => {
                     I have read, understood, and agree to comply with the instructions and proctoring rules listed above.
                   </Label>
                 </div>
-                <Button disabled={!agreed} onClick={handleLaunch} className="px-8">
-                  Launch Assessment
+                <Button
+                  disabled={!agreed || proctoring.cameraStatus !== 'granted'}
+                  onClick={() => setPortalStep('personal-info')}
+                  className="px-8"
+                >
+                  Continue
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* PERSONAL INFORMATION STEP */}
+      {portalStep === 'personal-info' && (
+        <div className="max-w-5xl mx-auto w-full px-4 py-8">
+          <Card>
+            <CardContent className="p-8">
+              <div className="pb-5 mb-6 border-b">
+                <h2 className="text-2xl font-bold">Personal Information</h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Please review and complete your details before starting the test.
+                </p>
+              </div>
+
+              <div className="rounded-xl border bg-muted/50 p-5 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                  {[
+                    { label: 'Name', value: candidate.name },
+                    { label: 'Email', value: candidate.email },
+                    { label: 'College', value: candidate.college },
+                    { label: 'Degree', value: candidate.degree },
+                    { label: 'CGPA', value: candidate.cgpa },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
+                      <p className="font-semibold truncate">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {personalInfoError && (
+                <Alert variant="destructive" className="mb-6">
+                  <AlertDescription className="text-xs font-semibold">{personalInfoError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-6">
+                <div>
+                  <h4 className="font-bold mb-3">Contact Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-phone">Phone *</Label>
+                      <Input
+                        id="pi-phone"
+                        value={personalInfo.phone}
+                        onChange={e => setPersonalInfo(p => ({ ...p, phone: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-dob">Date of Birth *</Label>
+                      <Input
+                        id="pi-dob"
+                        type="date"
+                        value={personalInfo.dateOfBirth}
+                        onChange={e => setPersonalInfo(p => ({ ...p, dateOfBirth: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-gender">Gender *</Label>
+                      <Select
+                        value={personalInfo.gender}
+                        onValueChange={v => setPersonalInfo(p => ({ ...p, gender: v }))}
+                      >
+                        <SelectTrigger id="pi-gender" className="w-full">
+                          <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold mb-3">Academic Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-regno">Registration Number</Label>
+                      <Input
+                        id="pi-regno"
+                        value={personalInfo.registrationNumber}
+                        onChange={e => setPersonalInfo(p => ({ ...p, registrationNumber: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-spec">Specialization</Label>
+                      <Input
+                        id="pi-spec"
+                        value={personalInfo.specialization}
+                        onChange={e => setPersonalInfo(p => ({ ...p, specialization: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-tenth">10th Marks (%)</Label>
+                      <Input
+                        id="pi-tenth"
+                        type="number"
+                        value={personalInfo.tenth}
+                        onChange={e => setPersonalInfo(p => ({ ...p, tenth: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-twelfth">12th Marks (%)</Label>
+                      <Input
+                        id="pi-twelfth"
+                        type="number"
+                        value={personalInfo.twelfth}
+                        onChange={e => setPersonalInfo(p => ({ ...p, twelfth: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-diploma">Diploma Marks (%)</Label>
+                      <Input
+                        id="pi-diploma"
+                        type="number"
+                        value={personalInfo.diploma}
+                        onChange={e => setPersonalInfo(p => ({ ...p, diploma: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-ug">UG Marks (%)</Label>
+                      <Input
+                        id="pi-ug"
+                        type="number"
+                        value={personalInfo.ugMarks}
+                        onChange={e => setPersonalInfo(p => ({ ...p, ugMarks: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-pg">PG Marks (%)</Label>
+                      <Input
+                        id="pi-pg"
+                        type="number"
+                        value={personalInfo.pgMarks}
+                        onChange={e => setPersonalInfo(p => ({ ...p, pgMarks: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-backlog-hist">Backlog History</Label>
+                      <Input
+                        id="pi-backlog-hist"
+                        type="number"
+                        value={personalInfo.backlogHistory}
+                        onChange={e => setPersonalInfo(p => ({ ...p, backlogHistory: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-backlog-cur">Current Backlogs</Label>
+                      <Input
+                        id="pi-backlog-cur"
+                        type="number"
+                        value={personalInfo.currentBacklogs}
+                        onChange={e => setPersonalInfo(p => ({ ...p, currentBacklogs: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold mb-3">Professional Links</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-github">GitHub URL</Label>
+                      <Input
+                        id="pi-github"
+                        value={personalInfo.githubUrl}
+                        onChange={e => setPersonalInfo(p => ({ ...p, githubUrl: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-linkedin">LinkedIn URL</Label>
+                      <Input
+                        id="pi-linkedin"
+                        value={personalInfo.linkedinUrl}
+                        onChange={e => setPersonalInfo(p => ({ ...p, linkedinUrl: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-resume">Resume URL</Label>
+                      <Input
+                        id="pi-resume"
+                        value={personalInfo.resumeUrl}
+                        onChange={e => setPersonalInfo(p => ({ ...p, resumeUrl: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pi-coding">Coding Platform URLs</Label>
+                      <Input
+                        id="pi-coding"
+                        value={personalInfo.codingPlatformUrls}
+                        onChange={e => setPersonalInfo(p => ({ ...p, codingPlatformUrls: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator className="my-6" />
+
+              <Button onClick={handlePersonalInfoSubmit} className="px-8">
+                Start Test
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -538,6 +943,33 @@ export const CandidatePortal: React.FC = () => {
       {/* ASSESSMENT STEP */}
       {portalStep === 'assessment' && activeQuestion && (
         <div className="flex-1 p-4 xl:p-6">
+          {proctoring.cameraStatus === 'granted' && (
+            <video
+              ref={proctoring.videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="fixed bottom-4 right-4 z-50 w-40 aspect-video rounded-lg border-2 border-primary shadow-lg bg-black object-cover"
+            />
+          )}
+
+          {/* Tiled watermark: can't prevent OS-level screenshots, but bakes the candidate's
+              identity into any captured image so leaked screenshots are traceable. */}
+          <div className="fixed inset-0 z-40 pointer-events-none select-none overflow-hidden flex flex-wrap gap-16 content-start p-8 -rotate-12 opacity-[0.06]">
+            {Array.from({ length: 60 }).map((_, i) => (
+              <span key={i} className="text-xs font-bold whitespace-nowrap">
+                {candidate.id} • {candidate.name}
+              </span>
+            ))}
+          </div>
+
+          {/* Best-effort screenshot deterrent overlay — see useProctoring.ts for why this can't
+              be a real block, only a signal + violation log for what's technically detectable. */}
+          {proctoring.screenshotGuardActive && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-xl">
+              <p className="text-sm font-bold text-destructive">Screenshots are prohibited during this assessment.</p>
+            </div>
+          )}
           <div className={cn('grid grid-cols-1 gap-4 h-full items-start', !singleQuestionMode && 'xl:grid-cols-[1fr_260px]')}>
 
             {/* Question Panel */}
@@ -547,7 +979,7 @@ export const CandidatePortal: React.FC = () => {
                 {/* Toolbar */}
                 <div className="flex items-center justify-between px-4 py-2 border-b shrink-0">
                   <span className="text-xs font-bold uppercase tracking-widest text-primary">
-                    Question {activeIdx + 1} of {questions.length} • Coding Section
+                    Question {activeIdx + 1} of {questions.length}
                   </span>
                   {exp.showQuestionScore && (
                     <span className="text-xs font-semibold text-muted-foreground">
@@ -577,12 +1009,12 @@ export const CandidatePortal: React.FC = () => {
                 <div className="flex justify-between items-center border-t px-4 py-3 shrink-0">
                   <div className="flex gap-2">
                     {!singleQuestionMode && (
-                      <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                      <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeSectionIndices.indexOf(activeIdx) === 0} className="gap-1">
                         <ChevronLeft className="h-4 w-4" />
                         Previous
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
+                    <Button variant="outline" size="sm" onClick={handleNext} disabled={activeSectionIndices.indexOf(activeIdx) === activeSectionIndices.length - 1} className="gap-1">
                       Save &amp; Next
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -604,7 +1036,7 @@ export const CandidatePortal: React.FC = () => {
                         {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
                       </Button>
                     )}
-                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
+                    <Button size="sm" className="gap-1 bg-primary hover:bg-primary/90" onClick={handleSubmitTest}>
                       Submit Assessment
                     </Button>
                   </div>
@@ -617,7 +1049,7 @@ export const CandidatePortal: React.FC = () => {
                   <div>
                     <div className="flex justify-between items-center border-b pb-3 mb-5">
                       <span className="text-xs font-bold uppercase tracking-widest text-primary">
-                        Question {activeIdx + 1} of {questions.length} • {activeQuestion.topic} Section
+                        Question {activeIdx + 1} of {questions.length}
                       </span>
                       {exp.showQuestionScore && (
                         <span className="text-xs font-semibold text-muted-foreground">
@@ -706,12 +1138,12 @@ export const CandidatePortal: React.FC = () => {
                   <div className="flex justify-between items-center border-t pt-4 mt-6">
                     <div className="flex gap-2">
                       {!singleQuestionMode && (
-                        <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeIdx === 0} className="gap-1">
+                        <Button variant="outline" size="sm" onClick={handlePrev} disabled={activeSectionIndices.indexOf(activeIdx) === 0} className="gap-1">
                           <ChevronLeft className="h-4 w-4" />
                           Previous
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={handleNext} disabled={activeIdx === questions.length - 1} className="gap-1">
+                      <Button variant="outline" size="sm" onClick={handleNext} disabled={activeSectionIndices.indexOf(activeIdx) === activeSectionIndices.length - 1} className="gap-1">
                         Save &amp; Next
                         <ChevronRight className="h-4 w-4" />
                       </Button>
@@ -733,7 +1165,7 @@ export const CandidatePortal: React.FC = () => {
                           {markedForReview[activeQuestion.id] ? 'Marked' : 'Mark for Review'}
                         </Button>
                       )}
-                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTest}>
+                      <Button size="sm" className="gap-1 bg-primary hover:bg-primary/90" onClick={handleSubmitTest}>
                         Submit Assessment
                       </Button>
                     </div>
@@ -761,8 +1193,26 @@ export const CandidatePortal: React.FC = () => {
                   <>
                     {/* Question Grid */}
                     <p className="text-xs font-bold text-foreground mb-2">Question Navigation</p>
+
+                    {showSectionTabs && (
+                      <Tabs
+                        value={activeSectionTab}
+                        onValueChange={v => handleSectionTabChange(v as 'mcq' | 'coding')}
+                        className="mb-3"
+                      >
+                        <TabsList className="w-full">
+                          <TabsTrigger value="mcq" className="flex-1">
+                            MCQ ({questionTypeGroups.mcq.length})
+                          </TabsTrigger>
+                          <TabsTrigger value="coding" className="flex-1">
+                            Coding ({questionTypeGroups.coding.length})
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    )}
+
                     <div className="grid grid-cols-5 gap-1 mb-4">
-                      {questions.map((q, idx) => {
+                      {visibleGridEntries.map(({ q, idx }, position) => {
                         const isCur = activeIdx === idx;
                         const isReview = markedForReview[q.id];
                         const ans = answers[q.id];
@@ -770,10 +1220,11 @@ export const CandidatePortal: React.FC = () => {
                           typeof ans === 'string' ? ans.trim().length > 0 : Array.isArray(ans) ? ans.length > 0 : true
                         );
                         const isLocked = fixedSectionOrder && (questionSectionIdx[idx] ?? 0) > maxUnlockedSection;
+                        const isVisitedNotAnswered = visitedIds[q.id] && !isAns;
                         return (
                           <button
                             key={q.id}
-                            onClick={() => !isLocked && setActiveIdx(idx)}
+                            onClick={() => !isLocked && handleGridJump(idx)}
                             disabled={isLocked}
                             title={isLocked ? 'Complete the current section first' : undefined}
                             className={cn(
@@ -786,10 +1237,12 @@ export const CandidatePortal: React.FC = () => {
                                 ? 'bg-amber-100 text-amber-700 border-amber-400'
                                 : isAns
                                 ? 'bg-emerald-100 text-emerald-700 border-emerald-400'
+                                : isVisitedNotAnswered
+                                ? 'bg-red-100 text-red-700 border-red-400'
                                 : 'bg-muted text-muted-foreground border-border'
                             )}
                           >
-                            {idx + 1}
+                            {position + 1}
                           </button>
                         );
                       })}
@@ -802,6 +1255,7 @@ export const CandidatePortal: React.FC = () => {
                         { color: 'bg-primary border-primary', label: 'Active View' },
                         { color: 'bg-emerald-100 border-emerald-400', label: 'Answered' },
                         { color: 'bg-amber-100 border-amber-400', label: 'Marked for Review' },
+                        { color: 'bg-red-100 border-red-400', label: 'Not Answered' },
                       ].map(({ color, label }) => (
                         <div key={label} className="flex items-center gap-2">
                           <span className={`w-3 h-3 rounded-sm border shrink-0 ${color}`} />
@@ -838,69 +1292,23 @@ export const CandidatePortal: React.FC = () => {
           <div className="max-w-4xl mx-auto w-full px-4 py-8">
             <Card>
               <CardContent className="p-8 text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
-                  <FileCheck2 className="h-8 w-8" />
+                <div className={cn(
+                  'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4',
+                  terminatedForViolations ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+                )}>
+                  {terminatedForViolations ? <AlertCircle className="h-8 w-8" /> : <FileCheck2 className="h-8 w-8" />}
                 </div>
 
-                <h2 className="text-2xl font-black">Assessment Submitted Successfully</h2>
+                <h2 className="text-2xl font-black">
+                  {terminatedForViolations ? 'Assessment Terminated' : 'Assessment Submitted Successfully'}
+                </h2>
                 <p className="text-muted-foreground text-sm mt-2">
-                  {exp.practiceTest
-                    ? 'This was a practice attempt — your score below is for your own reference and is not counted for evaluation.'
-                    : 'Your score has been registered. Below is your performance breakdown report.'}
+                  {terminatedForViolations
+                    ? 'Your assessment was auto-submitted after exceeding the allowed number of policy violations (fullscreen exits / tab switches).'
+                    : exp.practiceTest
+                    ? 'This was a practice attempt and is not counted for evaluation.'
+                    : 'Your responses have been recorded. Our recruitment team will review them.'}
                 </p>
-
-                <div className="grid grid-cols-3 gap-4 rounded-xl bg-muted/50 border p-6 my-6">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Marks Scored</p>
-                    <p className="text-2xl font-black text-emerald-600 mt-1">
-                      {dbCandidate.assessmentScore} / {assessment.totalMarks}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Percentile Rank</p>
-                    <p className="text-2xl font-black text-primary mt-1">{dbCandidate.assessmentPercentile}%</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">State-wide Rank</p>
-                    <p className="text-2xl font-black mt-1">#{dbCandidate.assessmentRank}</p>
-                  </div>
-                </div>
-
-                {dbCandidate.sectionScores && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-left mt-2">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Trophy className="h-4 w-4 text-primary" />
-                          Section-wise Breakdown
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <DonutChart data={sectionBreakdownChartData()} />
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-primary" />
-                          Next Steps
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          Your assessment responses and compiling analysis logs have been synced to the Presidio Talent Recruitment database. The Talent Acquisition panel will review your codes and scorecards for interview shortlist scheduling.
-                        </p>
-                        <Alert className="border-emerald-300 bg-emerald-50 text-emerald-700">
-                          <Award className="h-4 w-4" />
-                          <AlertDescription className="text-xs font-semibold">
-                            Eligible for shortlisting parameters check!
-                          </AlertDescription>
-                        </Alert>
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
 
                 {exp.allowCandidateFeedback && (
                   <Card className="text-left mt-6">

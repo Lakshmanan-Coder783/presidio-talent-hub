@@ -149,6 +149,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             onChange={e => onChange(e.target.value)}
             placeholder="// Enter your solution here"
             spellCheck={false}
+            data-allow-copy-paste="true"
           />
         </div>
 

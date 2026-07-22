@@ -124,6 +124,10 @@ export interface Candidate {
   feedbackRating?: number;
   feedbackComment?: string;
 
+  // Proctoring telemetry (recorded during the assessment)
+  windowViolationCount?: number; // fullscreen-exit / tab-switch events
+  proctoringTerminated?: boolean; // auto-submitted for exceeding the violation threshold
+
   // Session/device info captured (or mocked) at assessment time
   deviceBrowser?: string;
   deviceOS?: string;

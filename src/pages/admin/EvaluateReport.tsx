@@ -417,28 +417,49 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
             </div>
 
             {/* Proctoring */}
-            <div ref={el => { sectionRefs.current['proctoring'] = el; }} className="rounded-lg border p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" />Proctoring</h3>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-green-50 text-green-700 border-green-200">0 potential violations flagged</span>
-              </div>
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground mb-4 flex items-center gap-2">
-                <MonitorCheck className="h-4 w-4 shrink-0" />
-                There was no summary generated because proctoring wasn't enabled for this test.
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Device activity</p>
-              <div className="grid md:grid-cols-2 gap-x-8 gap-y-3 mb-5 text-sm">
-                {['Full-screen exit not detected', 'Tab or window switch not detected', 'External copy-paste not detected', 'Session interruption not detected'].map(item => (
-                  <div key={item} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />{item}</div>
-                ))}
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">External activity</p>
-              <div className="grid md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-muted-foreground">
-                {['Background voice monitoring disabled', 'Additional person or object monitoring disabled', 'Additional screen monitoring disabled', 'External device monitoring disabled'].map(item => (
-                  <div key={item} className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />{item}</div>
-                ))}
-              </div>
-            </div>
+            {(() => {
+              const violationCount = candidate.windowViolationCount ?? 0;
+              const hasViolations = violationCount > 0;
+              const deviceActivity = [
+                { label: 'Full-screen exit', detected: hasViolations },
+                { label: 'Tab or window switch', detected: hasViolations },
+                { label: 'External copy-paste', detected: false },
+                { label: 'Session interruption', detected: candidate.proctoringTerminated ?? false },
+              ];
+              return (
+                <div ref={el => { sectionRefs.current['proctoring'] = el; }} className="rounded-lg border p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" />Proctoring</h3>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${hasViolations ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                      {violationCount} potential violation{violationCount === 1 ? '' : 's'} flagged
+                    </span>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground mb-4 flex items-center gap-2">
+                    <MonitorCheck className="h-4 w-4 shrink-0" />
+                    {candidate.proctoringTerminated
+                      ? 'This assessment was auto-submitted after exceeding the allowed number of policy violations.'
+                      : 'Fullscreen, tab-switch and copy-paste monitoring were active for this test.'}
+                  </div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Device activity</p>
+                  <div className="grid md:grid-cols-2 gap-x-8 gap-y-3 mb-5 text-sm">
+                    {deviceActivity.map(({ label, detected }) => (
+                      <div key={label} className="flex items-center gap-2">
+                        {detected
+                          ? <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                          : <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
+                        {label} {detected ? 'detected' : 'not detected'}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">External activity</p>
+                  <div className="grid md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-muted-foreground">
+                    {['Background voice monitoring disabled', 'Additional person or object monitoring disabled', 'Additional screen monitoring disabled', 'External device monitoring disabled'].map(item => (
+                      <div key={item} className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />{item}</div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Profile */}
             <div ref={el => { sectionRefs.current['profile'] = el; }} className="rounded-lg border p-5">

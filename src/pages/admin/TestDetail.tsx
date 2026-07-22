@@ -1368,10 +1368,6 @@ export const TestDetail: React.FC = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
         <div className="border-b bg-background">
           <TabsList className="h-auto rounded-none bg-transparent p-0 px-6 gap-0">
-            <TabsTrigger value="questions" className={TAB_TRIGGER}>
-              <AlignLeft className="h-4 w-4" />
-              Questions
-            </TabsTrigger>
             <TabsTrigger value="students-database" className={TAB_TRIGGER}>
               <Database className="h-4 w-4" />
               Students Database
@@ -1380,6 +1376,10 @@ export const TestDetail: React.FC = () => {
                   {driveCandidates.length}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="questions" className={TAB_TRIGGER}>
+              <AlignLeft className="h-4 w-4" />
+              Questions
             </TabsTrigger>
             <TabsTrigger value="experience" className={TAB_TRIGGER}>
               <Shield className="h-4 w-4" />

@@ -849,6 +849,7 @@ export function generateMockDatabase(): Database {
     const driveTotal = driveTotalMarksById.get(drive.id) ?? 0;
     const name = `${FIRST_NAMES[i % FIRST_NAMES.length]} ${LAST_NAMES[(i * 3) % LAST_NAMES.length]}`;
     const cleanEmailName = name.toLowerCase().replace(/\s+/g, '.');
+    const collegeEmailSlug = drive.college.split(',')[0].trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
     const degree = rnd.pick(DEGREES);
     const cgpa = parseFloat(rnd.range(6.5, 9.8).toFixed(2));
     const genderRoll = rnd.range(0, 100);
@@ -984,7 +985,7 @@ export function generateMockDatabase(): Database {
       degree,
       gender,
       cgpa,
-      email: `${cleanEmailName}@${drive.college.toLowerCase().replace(/\s+/g, '')}.edu.in`,
+      email: `${cleanEmailName}@${collegeEmailSlug}.edu.in`,
       phone: `+91 ${Math.floor(rnd.range(8000000000, 9999999999))}`,
       githubUrl: `https://github.com/${githubHandle}`,
       linkedinUrl: `https://linkedin.com/in/${githubHandle}`,

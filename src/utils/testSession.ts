@@ -1,6 +1,7 @@
 export interface TestSessionState {
   answers: { [qId: string]: string | number | number[] };
   markedForReview: { [qId: string]: boolean };
+  visitedIds?: { [qId: string]: boolean }; // optional: absent in sessions saved before this field existed
   activeIdx: number;
   sessionStartedAt: string; // ISO timestamp — set once, on first save
 }

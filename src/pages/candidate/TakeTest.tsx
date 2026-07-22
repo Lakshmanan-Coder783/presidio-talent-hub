@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import {
-  ArrowRight, KeyRound, UserCheck, Loader2, AlertCircle,
+  ArrowRight, KeyRound, Mail, Loader2, AlertCircle,
   Clock, Star, Tag, CheckCircle2, WifiHigh, ShieldCheck,
   ListChecks, Timer,
 } from 'lucide-react';
@@ -41,7 +41,7 @@ export const TakeTest: React.FC = () => {
   const isRemote = drive?.accessMode === 'remote';
   const exp = useMemo(() => resolveExperienceSettings(drive), [drive]);
 
-  const [candidateId, setCandidateId] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -108,18 +108,18 @@ export const TakeTest: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!candidateId.trim() || !password.trim()) {
+    if (!email.trim() || !password.trim()) {
       setErrorMsg(
         isRemote
-          ? 'Please enter your Candidate ID and your individual password.'
-          : 'Please enter both your Candidate ID and the test password.'
+          ? 'Please enter your email and your individual password.'
+          : 'Please enter both your email and the test password.'
       );
       return;
     }
     setLoading(true);
     setErrorMsg('');
     setTimeout(() => {
-      const res = loginCandidateByTestSlug(slug!, candidateId.trim(), password.trim());
+      const res = loginCandidateByTestSlug(slug!, email.trim(), password.trim());
       setLoading(false);
       if (!res.success) setErrorMsg(res.message);
     }, 1200);
@@ -215,8 +215,8 @@ export const TakeTest: React.FC = () => {
             <h2 className="text-2xl font-bold tracking-tight">Sign in to begin</h2>
             <p className="text-sm text-muted-foreground">
               {isRemote
-                ? 'Use your Candidate ID and individual password from your invite email.'
-                : 'Use your Candidate ID and the shared password provided in the exam hall.'}
+                ? 'Use your email and individual password from your invite email.'
+                : 'Use your email and the shared password provided in the exam hall.'}
             </p>
           </div>
 
@@ -235,17 +235,17 @@ export const TakeTest: React.FC = () => {
               )}
 
               <div className="space-y-1.5">
-                <Label htmlFor="candidate-id">Candidate ID</Label>
+                <Label htmlFor="candidate-email">Email</Label>
                 <div className="relative">
-                  <UserCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="candidate-id"
-                    type="text"
-                    placeholder="e.g. PRES2026-10025"
+                    id="candidate-email"
+                    type="email"
+                    placeholder="you@college.edu.in"
                     className="pl-9 h-10"
-                    value={candidateId}
-                    onChange={e => setCandidateId(e.target.value)}
-                    autoComplete="username"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    autoComplete="email"
                   />
                 </div>
               </div>

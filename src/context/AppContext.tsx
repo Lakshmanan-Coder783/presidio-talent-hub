@@ -47,7 +47,8 @@ interface AppContextType {
     candidateId: string,
     assessmentId: string,
     answers: { [qId: string]: string | number[] | number },
-    durationUsed: number
+    durationUsed: number,
+    proctoring?: { windowViolationCount?: number; proctoringTerminated?: boolean }
   ) => void;
   bulkInvite: (assessmentId: string, date: string, driveId: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
@@ -264,7 +265,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     candidateId: string,
     assessmentId: string,
     answers: { [qId: string]: string | number[] | number },
-    durationUsed: number
+    durationUsed: number,
+    proctoring?: { windowViolationCount?: number; proctoringTerminated?: boolean }
   ) => {
     const candidate = db.candidates.find(c => c.id === candidateId);
     const assessment = db.assessments.find(a => a.id === assessmentId);
@@ -333,6 +335,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           funnelStage: 'Online Test' as const, // Ensure funnel updates
           deviceBrowser: browser,
           deviceOS: os,
+          windowViolationCount: proctoring?.windowViolationCount,
+          proctoringTerminated: proctoring?.proctoringTerminated,
         };
       }
       return c;
@@ -422,14 +426,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newAsm;
   };
 
-  const loginCandidateByTestSlug = (slug: string, candidateId: string, password: string) => {
+  const loginCandidateByTestSlug = (slug: string, email: string, password: string) => {
     const asm = db.assessments.find(a => a.slug === slug);
     if (!asm) return { success: false, message: 'Test not found. Check the URL.' };
     if (asm.status !== 'Active') return { success: false, message: 'This test is not currently active.' };
 
-    const candidate = db.candidates.find(c => c.id === candidateId);
-    if (!candidate) return { success: false, message: 'Invalid Candidate ID.' };
-    if (candidate.assessmentId !== asm.id) return { success: false, message: 'You are not registered for this test.' };
+    const normalizedEmail = email.trim().toLowerCase();
+    const candidate = db.candidates.find(
+      c => c.email.trim().toLowerCase() === normalizedEmail && c.assessmentId === asm.id
+    );
+    if (!candidate) return { success: false, message: 'Invalid email or you are not registered for this test.' };
     if (candidate.assessmentStatus === 'Completed') return { success: false, message: 'Assessment already completed.' };
 
     // Determine drive access mode to decide which password to validate
@@ -472,12 +478,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const session: UserSession = { role: 'candidate', id: candidateId, candidate };
+    const session: UserSession = { role: 'candidate', id: candidate.id, candidate };
     setCurrentUser(session);
     localStorage.setItem('presidio_session', JSON.stringify(session));
 
     const updatedCandidates = db.candidates.map(c =>
-      c.id === candidateId ? { ...c, assessmentStatus: 'InProgress' as const } : c
+      c.id === candidate.id ? { ...c, assessmentStatus: 'InProgress' as const } : c
     );
     const updatedDb = { ...db, candidates: updatedCandidates };
     setDb(updatedDb);
