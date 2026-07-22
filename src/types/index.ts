@@ -1,3 +1,21 @@
+export interface User {
+  id: string;
+  name: string;
+  email: string; // unique, Entra-style org email
+  isSuperAdmin: boolean; // global flag, independent of any DriveMembership
+}
+
+export type DriveRole = 'SPOC' | 'Panel';
+
+export interface DriveMembership {
+  id: string;
+  driveId: string;
+  userId: string;
+  role: DriveRole;
+  addedAt: string; // ISO timestamp — historical record, kept even after removal is undone
+  addedByUserId: string;
+}
+
 export interface CampusDrive {
   id: string;
   name: string;
@@ -8,8 +26,6 @@ export interface CampusDrive {
   targetHiring?: number;
   registered: number;
   selected: number;
-  spocName: string;
-  spocEmail: string;
   description: string;
   status: 'Draft' | 'Ongoing' | 'Completed';
   accessMode: 'in-person' | 'remote';

@@ -7,7 +7,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { computeDriveStatus } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveStatus';
 
 export const Dashboard: React.FC = () => {
   const { db } = useApp();
@@ -46,9 +46,11 @@ export const Dashboard: React.FC = () => {
 
   const kpiStats = useMemo(() => {
     const totalCandidates = filteredCandidates.length;
-    const activeDrives = filteredDrives.filter(
-      d => computeDriveStatus(db.candidates.filter(c => c.driveId === d.id)) === 'Ongoing'
-    ).length;
+    const activeDrives = filteredDrives.filter(d => {
+      const driveCandidates = db.candidates.filter(c => c.driveId === d.id);
+      const isPublished = getDriveLinkedAssessment(d, driveCandidates, db.assessments)?.status === 'Active';
+      return computeDriveStatus(driveCandidates, isPublished) === 'Ongoing';
+    }).length;
     const assessmentsActive = db.assessments.filter(a => a.status === 'Active').length;
     const joined = filteredCandidates.filter(c => c.offerStatus === 'Joined').length;
     const accepted = filteredCandidates.filter(c => c.offerStatus === 'Accepted').length;

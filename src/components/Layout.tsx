@@ -31,12 +31,18 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-const menuItems = [
+const FULL_MENU = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
+
+const DRIVE_MEMBER_MENU = [
+  { id: 'online-assessment', label: 'My Drives', icon: Monitor },
+];
+
+const getMenuItems = (isSuperAdmin: boolean) => isSuperAdmin ? FULL_MENU : DRIVE_MEMBER_MENU;
 
 const activityIcons: Record<ActivityType, LucideIcon> = {
   assessment_submitted: FileCheck2,
@@ -45,14 +51,20 @@ const activityIcons: Record<ActivityType, LucideIcon> = {
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { logout, db } = useApp();
+  const { logout, db, currentUser } = useApp();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const activity = useRecentActivity(db);
   const hasRecentActivity = activity.length > 0;
+  const isSuperAdmin = !!currentUser?.user?.isSuperAdmin;
+  const menuItems = getMenuItems(isSuperAdmin);
 
-  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? 'Dashboard';
+  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? menuItems[0]?.label ?? '';
+
+  const displayName = currentUser?.user?.name ?? 'TA Admin';
+  const displayEmail = currentUser?.user?.email ?? 'admin@presidio.com';
+  const initials = displayName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -110,11 +122,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <DropdownMenuTrigger asChild>
               <button className="flex w-full items-center gap-2 rounded-lg p-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">AD</AvatarFallback>
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{initials || 'TA'}</AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col items-start text-left overflow-hidden">
-                  <span className="font-medium text-xs truncate">TA Admin</span>
-                  <span className="text-xs text-muted-foreground truncate">admin@presidio.com</span>
+                  <span className="font-medium text-xs truncate">{displayName}</span>
+                  <span className="text-xs text-muted-foreground truncate">{displayEmail}</span>
                 </div>
               </button>
             </DropdownMenuTrigger>

@@ -38,6 +38,10 @@ import {
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword, generateSlug } from '../../lib/utils';
+import {
+  getUserRoleForDrive, canEditDriveConfig, canAdvanceCandidate,
+  redactCandidateForViewer,
+} from '../../utils/permissions';
 import { computeDriveStatus } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { deriveInterviewStatus, deriveCodingStatus, deriveWhiteboardStatus } from '../../utils/candidateStatus';
@@ -358,7 +362,7 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, sendRemoteInvites } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, sendRemoteInvites, addDriveMembership, removeDriveMembership } = useApp();
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -388,8 +392,6 @@ export const TestDetail: React.FC = () => {
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
 
-  const [draftDriveSpocName, setDraftDriveSpocName] = useState('');
-  const [draftDriveSpocEmail, setDraftDriveSpocEmail] = useState('');
 
   // edit assessment sheet
   const [asmEditOpen, setAsmEditOpen] = useState(false);
@@ -486,12 +488,56 @@ export const TestDetail: React.FC = () => {
   const totalMarks = driveQuestions.reduce((s, q) => s + q.marks, 0);
   const estimatedMinutes = driveQuestions.length;
 
+  const myDriveRole = drive ? getUserRoleForDrive(currentUser?.user, drive.id, db) : null;
+  const canEditThisDrive = canEditDriveConfig(currentUser?.user);
+  const canDecide = (stage: 'Interview' | 'Coding Exercise' | 'Whiteboard Interview') =>
+    drive ? canAdvanceCandidate(currentUser?.user, drive.id, stage, db) : false;
+
   const driveCandidates = useMemo(
-    () => (drive ? db.candidates.filter(c => c.driveId === drive.id) : []),
-    [db.candidates, drive],
+    () => (
+      drive
+        ? db.candidates
+            .filter(c => c.driveId === drive.id)
+            .map(c => redactCandidateForViewer(c, currentUser?.user, drive.id, db))
+        : []
+    ),
+    [db.candidates, drive, currentUser?.user, db],
   );
 
-  const liveStatus = useMemo(() => computeDriveStatus(driveCandidates), [driveCandidates]);
+  const linkedAssessment = useMemo(() => {
+    if (drive?.assessmentId) return db.assessments.find(a => a.id === drive.assessmentId) ?? null;
+    const c = driveCandidates.find(c => c.assessmentId);
+    return c ? db.assessments.find(a => a.id === c.assessmentId) ?? null : null;
+  }, [db.assessments, drive, driveCandidates]);
+
+  const liveStatus = useMemo(
+    () => computeDriveStatus(driveCandidates, linkedAssessment?.status === 'Active'),
+    [driveCandidates, linkedAssessment],
+  );
+
+  // ── Drive membership (Access tab) ────────────────────────────────────────────
+  const driveMembers = useMemo(() => {
+    if (!drive) return [];
+    return db.driveMemberships
+      .filter(m => m.driveId === drive.id)
+      .map(m => ({ membership: m, user: db.users.find(u => u.id === m.userId) }))
+      .filter((row): row is { membership: typeof row.membership; user: NonNullable<typeof row.user> } => !!row.user);
+  }, [db.driveMemberships, db.users, drive]);
+
+  const [addMemberUserId, setAddMemberUserId] = useState('');
+  const [addMemberRole, setAddMemberRole] = useState<'SPOC' | 'Panel'>('Panel');
+
+  const availableUsersToAdd = useMemo(() => {
+    const memberIds = new Set(driveMembers.map(m => m.user.id));
+    return db.users.filter(u => !u.isSuperAdmin && !memberIds.has(u.id));
+  }, [db.users, driveMembers]);
+
+  const handleAddMember = () => {
+    if (!drive || !addMemberUserId) return;
+    addDriveMembership(drive.id, addMemberUserId, addMemberRole);
+    setAddMemberUserId('');
+    toast.success('Member added.');
+  };
 
   type StudentsDbRow = { sno: number } & Candidate;
   const studentsDbRows = useMemo<StudentsDbRow[]>(
@@ -579,12 +625,6 @@ export const TestDetail: React.FC = () => {
       invited ? ((counts[k] / invited) * 100).toFixed(2) + '%' : '0%';
     return { invited, completed, participationPct, bandPct };
   }, [candidateRows]);
-
-  const linkedAssessment = useMemo(() => {
-    if (drive?.assessmentId) return db.assessments.find(a => a.id === drive.assessmentId) ?? null;
-    const c = driveCandidates.find(c => c.assessmentId);
-    return c ? db.assessments.find(a => a.id === c.assessmentId) ?? null : null;
-  }, [db.assessments, drive, driveCandidates]);
 
   const assessmentUrl = linkedAssessment?.slug
     ? `${window.location.origin}/take/${linkedAssessment.slug}` : null;
@@ -990,9 +1030,6 @@ export const TestDetail: React.FC = () => {
     setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
-
-    setDraftDriveSpocName(drive.spocName);
-    setDraftDriveSpocEmail(drive.spocEmail);
     setDriveEditOpen(true);
   };
 
@@ -1007,8 +1044,6 @@ export const TestDetail: React.FC = () => {
       accessMode: draftDriveAccessMode,
       examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
       examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
-      spocName: draftDriveSpocName,
-      spocEmail: draftDriveSpocEmail,
     });
     setDriveEditOpen(false);
     toast.success('Drive details updated.');
@@ -1302,13 +1337,15 @@ export const TestDetail: React.FC = () => {
               ? 'bg-gray-100 text-gray-500 border-gray-200'
               : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}>{liveStatus}</span>
-          <button
-            title="Edit drive name"
-            onClick={() => { setDraftName(drive.name); setEditingName(true); }}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+          {canEditThisDrive && (
+            <button
+              title="Edit drive name"
+              onClick={() => { setDraftName(drive.name); setEditingName(true); }}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -1339,9 +1376,11 @@ export const TestDetail: React.FC = () => {
           >
             <Cog className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
-            <Settings className="h-4 w-4" />
-          </Button>
+          {canEditThisDrive && (
+            <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {liveStatus === 'Draft' ? (
             <Button
               size="sm"
@@ -1420,6 +1459,17 @@ export const TestDetail: React.FC = () => {
               <BarChart2 className="h-4 w-4" />
               Reports
             </TabsTrigger>
+            {myDriveRole !== 'Panel' && (
+              <TabsTrigger value="access" className={TAB_TRIGGER}>
+                <KeyRound className="h-4 w-4" />
+                Access
+                {driveMembers.length > 0 && (
+                  <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                    {driveMembers.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -1756,7 +1806,7 @@ export const TestDetail: React.FC = () => {
           </div>
 
           {/* Confirm & Publish button — shown only in Draft state with questions */}
-          {drive?.status === 'Draft' && driveQuestions.length > 0 && linkedAssessment && (
+          {liveStatus === 'Draft' && driveQuestions.length > 0 && linkedAssessment && (
             <div className="mt-6 pt-4 border-t flex justify-end">
               <Button
                 className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1794,7 +1844,15 @@ export const TestDetail: React.FC = () => {
 
         {/* ── Experience Tab ── */}
         <TabsContent value="experience" className="m-0 p-6">
-          <div className="flex gap-6">
+          {!canEditThisDrive && (
+            <Alert className="mb-4">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Experience settings and score-band cutoffs are managed by Super Admin. You can view the current configuration below, but cannot make changes.
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className={`flex gap-6 ${!canEditThisDrive ? 'opacity-60 pointer-events-none' : ''}`}>
             {/* Sub-nav */}
             <div className="w-56 shrink-0 border rounded-lg p-2 space-y-1 h-fit">
               <button
@@ -2253,6 +2311,7 @@ export const TestDetail: React.FC = () => {
               <div>
                 <div className="flex items-center gap-1.5 mb-3">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Score bands</p>
+                  {canEditThisDrive && (
                   <Popover open={bandPopoverOpen} onOpenChange={setBandPopoverOpen}>
                     <PopoverTrigger asChild>
                       <button className="text-muted-foreground hover:text-foreground transition-colors" title="Edit score band cutoffs">
@@ -2291,6 +2350,7 @@ export const TestDetail: React.FC = () => {
                       <Button size="sm" className="w-full h-8 text-xs" onClick={saveBandCutoffs}>Save</Button>
                     </PopoverContent>
                   </Popover>
+                  )}
                 </div>
                 <div className="flex gap-4 text-sm">
                   {(['Poor', 'Average', 'Good', 'Excellent'] as const).map(band => (
@@ -2771,6 +2831,88 @@ export const TestDetail: React.FC = () => {
             </Button>
           </div>
         </TabsContent>
+
+        {/* ── Access Tab (drive membership management) ── */}
+        {myDriveRole !== 'Panel' && (
+        <TabsContent value="access" className="m-0 p-6 space-y-6 max-w-2xl">
+          <div>
+            <h3 className="font-semibold text-sm mb-1">Drive Access</h3>
+            <p className="text-xs text-muted-foreground">
+              People assigned SPOC or Panel on this drive. Super Admins always have access and aren't listed here.
+            </p>
+          </div>
+
+          <div className="border rounded-lg divide-y">
+            {driveMembers.length === 0 && (
+              <p className="text-sm text-muted-foreground p-4">No SPOC or Panel members assigned yet.</p>
+            )}
+            {(['SPOC', 'Panel'] as const).map(roleGroup => {
+              const rows = driveMembers.filter(m => m.membership.role === roleGroup);
+              if (rows.length === 0) return null;
+              return (
+                <div key={roleGroup} className="p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{roleGroup}</p>
+                  {rows.map(({ membership, user }) => {
+                    const canRemove = membership.role === 'SPOC'
+                      ? !!currentUser?.user?.isSuperAdmin
+                      : (myDriveRole === 'SuperAdmin' || myDriveRole === 'SPOC');
+                    return (
+                      <div key={membership.id} className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {user.email} · added {new Date(membership.addedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        {canRemove && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            title="Remove from drive"
+                            onClick={() => removeDriveMembership(membership.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="border rounded-lg p-4 space-y-3">
+            <p className="text-sm font-semibold">Add member</p>
+            <div className="flex items-center gap-2">
+              <Select value={addMemberUserId} onValueChange={setAddMemberUserId}>
+                <SelectTrigger className="flex-1"><SelectValue placeholder="Search people…" /></SelectTrigger>
+                <SelectContent>
+                  {availableUsersToAdd.map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {currentUser?.user?.isSuperAdmin ? (
+                <Select value={addMemberRole} onValueChange={v => setAddMemberRole(v as 'SPOC' | 'Panel')}>
+                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SPOC">SPOC</SelectItem>
+                    <SelectItem value="Panel">Panel</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="text-xs text-muted-foreground w-32">as Panel</span>
+              )}
+              <Button onClick={handleAddMember} disabled={!addMemberUserId}>Add</Button>
+            </div>
+            {!currentUser?.user?.isSuperAdmin && (
+              <p className="text-xs text-muted-foreground">SPOCs can add Panel members but cannot add or remove SPOCs.</p>
+            )}
+          </div>
+        </TabsContent>
+        )}
       </Tabs>
 
       {/* ── Question picker sheet ── */}
@@ -2859,14 +3001,6 @@ export const TestDetail: React.FC = () => {
                 </div>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label>SPOC Name</Label>
-              <Input value={draftDriveSpocName} onChange={e => setDraftDriveSpocName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>SPOC Email</Label>
-              <Input type="email" value={draftDriveSpocEmail} onChange={e => setDraftDriveSpocEmail(e.target.value)} />
-            </div>
           </div>
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setDriveEditOpen(false)}>Cancel</Button>
@@ -3241,7 +3375,11 @@ export const TestDetail: React.FC = () => {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Final Result</Label>
-              <Select value={wbDraft.finalResult} onValueChange={v => setWbDraft(d => ({ ...d, finalResult: v }))}>
+              <Select
+                value={wbDraft.finalResult}
+                onValueChange={v => setWbDraft(d => ({ ...d, finalResult: v }))}
+                disabled={!canDecide('Whiteboard Interview')}
+              >
                 <SelectTrigger><SelectValue placeholder="Select result…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Selected">Selected</SelectItem>
@@ -3252,11 +3390,14 @@ export const TestDetail: React.FC = () => {
               {wbDraft.finalResult === 'Selected' && (
                 <p className="text-xs text-green-600 mt-1">Candidate will be moved to the Offered stage.</p>
               )}
+              {!canDecide('Whiteboard Interview') && (
+                <p className="text-xs text-muted-foreground mt-1">Only the SPOC or Super Admin can decide the Whiteboard round outcome. You may still leave comments above.</p>
+              )}
             </div>
           </div>
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setWbSheetOpen(false)}>Cancel</Button>
-            <Button className="flex-1" onClick={saveWbFeedback}>Save Result</Button>
+            <Button className="flex-1" onClick={saveWbFeedback} disabled={!canDecide('Whiteboard Interview')}>Save Result</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

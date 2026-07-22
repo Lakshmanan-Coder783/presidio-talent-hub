@@ -38,12 +38,26 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Er
   }
 }
 
+const defaultAdminRoute = (user?: { isSuperAdmin: boolean }) =>
+  user?.isSuperAdmin ? '/admin/dashboard' : '/admin/online-assessment';
+
 const ProtectedRoute: React.FC<{ allowedRole: 'admin' | 'candidate' }> = ({ allowedRole }) => {
   const { currentUser } = useApp();
   if (!currentUser) return <Navigate to="/" replace />;
   if (currentUser.role !== allowedRole)
-    return <Navigate to={currentUser.role === 'admin' ? '/admin/dashboard' : '/portal'} replace />;
+    return <Navigate to={currentUser.role === 'admin' ? defaultAdminRoute(currentUser.user) : '/portal'} replace />;
   return <Outlet />;
+};
+
+const SuperAdminOnlyRoute: React.FC = () => {
+  const { currentUser } = useApp();
+  if (!currentUser?.user?.isSuperAdmin) return <Navigate to="/admin/online-assessment" replace />;
+  return <Outlet />;
+};
+
+const AdminIndexRedirect: React.FC = () => {
+  const { currentUser } = useApp();
+  return <Navigate to={defaultAdminRoute(currentUser?.user)} replace />;
 };
 
 const AppRoutes: React.FC = () => {
@@ -53,13 +67,13 @@ const AppRoutes: React.FC = () => {
       {/* Public auth routes */}
       <Route
         path="/"
-        element={currentUser?.role === 'admin' ? <Navigate to="/admin/dashboard" replace /> : <Login />}
+        element={currentUser?.role === 'admin' ? <Navigate to={defaultAdminRoute(currentUser.user)} replace /> : <Login />}
       />
       <Route
         path="/candidate"
         element={
           currentUser
-            ? <Navigate to={currentUser.role === 'admin' ? '/admin/dashboard' : '/portal'} replace />
+            ? <Navigate to={currentUser.role === 'admin' ? defaultAdminRoute(currentUser.user) : '/portal'} replace />
             : <CandidateLogin />
         }
       />
@@ -71,13 +85,15 @@ const AppRoutes: React.FC = () => {
 
       {/* Protected: admin */}
       <Route element={<ProtectedRoute allowedRole="admin" />}>
-        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin" element={<AdminIndexRedirect />} />
         <Route element={<Layout><Outlet /></Layout>}>
-          <Route path="/admin/dashboard"         element={<Dashboard />} />
           <Route path="/admin/online-assessment" element={<OnlineAssessment />} />
           <Route path="/admin/online-assessment/:id" element={<TestDetail />} />
-          <Route path="/admin/question-bank"     element={<QuestionBank />} />
-          <Route path="/admin/settings"          element={<Settings />} />
+          <Route element={<SuperAdminOnlyRoute />}>
+            <Route path="/admin/dashboard"     element={<Dashboard />} />
+            <Route path="/admin/question-bank" element={<QuestionBank />} />
+            <Route path="/admin/settings"      element={<Settings />} />
+          </Route>
         </Route>
       </Route>
 

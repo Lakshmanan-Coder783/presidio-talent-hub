@@ -19,7 +19,8 @@ import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload, Pencil, Trash2 
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
-import { computeDriveStatus } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveStatus';
+import { getVisibleDrives, canEditDriveConfig } from '../../utils/permissions';
 
 interface TestRow {
   id: string;
@@ -65,8 +66,10 @@ const computePipelineProgress = (candidates: Candidate[]): number => {
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
+  const { db, currentUser, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
   const navigate = useNavigate();
+  const canEditDrives = canEditDriveConfig(currentUser?.user);
+  const visibleDrives = useMemo(() => getVisibleDrives(currentUser?.user, db), [currentUser?.user, db]);
 
   // ── Delete drive state ───────────────────────────────────────────────────────
   const [deleteDriveId, setDeleteDriveId] = useState<string | null>(null);
@@ -83,8 +86,7 @@ export const OnlineAssessment: React.FC = () => {
   const [draftLocation, setDraftLocation] = useState('');
   const [draftAccessMode, setDraftAccessMode] = useState<CampusDrive['accessMode']>('in-person');
 
-  const [draftSpocName, setDraftSpocName] = useState('');
-  const [draftSpocEmail, setDraftSpocEmail] = useState('');
+  const [spocUserId, setSpocUserId] = useState('');
 
   // ── College student pool state ───────────────────────────────────────────────
   const collegeFileInputRef = useRef<HTMLInputElement>(null);
@@ -121,9 +123,6 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDay2Date(drive.day2Date ?? '');
     setDraftLocation(drive.location);
     setDraftAccessMode(drive.accessMode ?? 'in-person');
-
-    setDraftSpocName(drive.spocName);
-    setDraftSpocEmail(drive.spocEmail);
     setEditOpen(true);
   };
 
@@ -136,9 +135,7 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDay2Date('');
     setDraftLocation('');
     setDraftAccessMode('in-person');
-
-    setDraftSpocName('');
-    setDraftSpocEmail('');
+    setSpocUserId('');
     setEditOpen(true);
   };
 
@@ -154,12 +151,10 @@ export const OnlineAssessment: React.FC = () => {
         date: draftDate,
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
-        spocName: draftSpocName,
-        spocEmail: draftSpocEmail,
         description: '',
         status: 'Draft',
         accessMode: draftAccessMode,
-      });
+      }, spocUserId || undefined);
       toast.success('Drive created successfully.');
     } else {
       if (!editDrive) return;
@@ -170,8 +165,6 @@ export const OnlineAssessment: React.FC = () => {
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
         accessMode: draftAccessMode,
-        spocName: draftSpocName,
-        spocEmail: draftSpocEmail,
       });
       toast.success('Drive updated successfully.');
     }
@@ -361,7 +354,7 @@ export const OnlineAssessment: React.FC = () => {
 
   // ── Rows ──────────────────────────────────────────────────────────────────────
   const rows = useMemo<TestRow[]>(() => {
-    return db.drives.map((drive) => {
+    return visibleDrives.map((drive) => {
       const driveCandidates = db.candidates.filter(c => c.driveId === drive.id);
 
       const submissionTimes = driveCandidates
@@ -372,6 +365,9 @@ export const OnlineAssessment: React.FC = () => {
       const createdOn = new Date(drive.date).toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       });
+
+      const isPublished = getDriveLinkedAssessment(drive, driveCandidates, db.assessments)?.status === 'Active';
+      const liveStatus = computeDriveStatus(driveCandidates, isPublished);
 
       return {
         id:               drive.id,
@@ -385,14 +381,14 @@ export const OnlineAssessment: React.FC = () => {
         driveDate:        drive.date,
         driveDay2Date:    drive.day2Date,
         pipelineProgress: computePipelineProgress(driveCandidates),
-        status:           computeDriveStatus(driveCandidates),
+        status:           liveStatus,
         ownerInitials:    OWNER.initials,
         ownerName:        OWNER.name,
         ownerColor:       OWNER.color,
-        team:             computeDriveStatus(driveCandidates),
+        team:             liveStatus,
       };
     });
-  }, [db.drives, db.candidates]);
+  }, [visibleDrives, db.candidates, db.assessments]);
 
   // ── Columns ──────────────────────────────────────────────────────────────────
   const columns = [
@@ -506,7 +502,7 @@ export const OnlineAssessment: React.FC = () => {
         </div>
       ),
     },
-    {
+    ...(canEditDrives ? [{
       header: 'ACTIONS',
       render: (row: TestRow) => (
         <div className="flex items-center gap-1">
@@ -530,7 +526,7 @@ export const OnlineAssessment: React.FC = () => {
           </Button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const filters = [
@@ -549,10 +545,12 @@ export const OnlineAssessment: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Tests</h1>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="h-4 w-4" />
-          New Drive
-        </Button>
+        {canEditDrives && (
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="h-4 w-4" />
+            New Drive
+          </Button>
+        )}
       </div>
 
       <Table
@@ -662,14 +660,24 @@ export const OnlineAssessment: React.FC = () => {
                   : 'Students receive the test link via email and log in with their individual password.'}
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>SPOC Name</Label>
-              <Input value={draftSpocName} onChange={e => setDraftSpocName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>SPOC Email</Label>
-              <Input type="email" value={draftSpocEmail} onChange={e => setDraftSpocEmail(e.target.value)} />
-            </div>
+            {isCreating && (
+              <div className="space-y-1.5">
+                <Label>SPOC</Label>
+                <Select value={spocUserId} onValueChange={setSpocUserId}>
+                  <SelectTrigger><SelectValue placeholder="Select SPOC (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    {db.users.filter(u => !u.isSuperAdmin).map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {spocUserId && (
+                  <p className="text-xs text-muted-foreground">
+                    SPOC email: {db.users.find(u => u.id === spocUserId)?.email}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">

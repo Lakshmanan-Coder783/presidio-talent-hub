@@ -1,4 +1,4 @@
-import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection, CollegeStudent } from '../types';
+import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, AssessmentSection, CollegeStudent, User, DriveMembership } from '../types';
 import { generateSlug } from '../lib/utils';
 import { computeDriveStatus } from './driveStatus';
 
@@ -27,6 +27,8 @@ export interface Database {
   interviews: Interview[];
   offers: Offer[];
   collegeStudents: CollegeStudent[];
+  users: User[];
+  driveMemberships: DriveMembership[];
 }
 
 const DRIVE_DATA: { college: string; year: number }[] = [
@@ -155,6 +157,21 @@ const LAST_NAMES = [
   'Rao', 'Murthy', 'Prasad', 'Mishra', 'Singhal', 'Chawla', 'Gill', 'Mehta', 'Trivedi', 'Bhat',
   'Deshmukh', 'Kulkarni', 'Hegde', 'Pillai', 'Menon', 'Patil', 'Saxena', 'Malhotra', 'Kapoor', 'Das',
   'Dubey', 'Jha', 'Bose', 'Choudhury', 'Banerjee', 'Chatterjee', 'Roy', 'Narayanan', 'Shenoy', 'Prabhu'
+];
+
+// Small pool of real staff identities used for drive-level SPOC/Panel assignment.
+// A person can hold different DriveMembership roles across different drives.
+const MOCK_USERS: Omit<User, 'id'>[] = [
+  { name: 'Ananya Krishnan', email: 'ananya.krishnan@presidio.com', isSuperAdmin: true },
+  { name: 'Vivek Subramaniam', email: 'vivek.subramaniam@presidio.com', isSuperAdmin: true },
+  { name: 'Priyanka Menon', email: 'priyanka.menon@presidio.com', isSuperAdmin: false },
+  { name: 'Rohit Verma', email: 'rohit.verma@presidio.com', isSuperAdmin: false },
+  { name: 'Kavya Nair', email: 'kavya.nair@presidio.com', isSuperAdmin: false },
+  { name: 'Arjun Reddy', email: 'arjun.reddy@presidio.com', isSuperAdmin: false },
+  { name: 'Divya Shankar', email: 'divya.shankar@presidio.com', isSuperAdmin: false },
+  { name: 'Karthik Iyer', email: 'karthik.iyer@presidio.com', isSuperAdmin: false },
+  { name: 'Meera Joshi', email: 'meera.joshi@presidio.com', isSuperAdmin: false },
+  { name: 'Sanjay Kapoor', email: 'sanjay.kapoor@presidio.com', isSuperAdmin: false },
 ];
 
 export const LOCATIONS = ['Chennai', 'Bangalore', 'Hyderabad', 'Pune', 'Noida', 'Mumbai', 'Kolkata', 'Coimbatore', 'Delhi'];
@@ -754,7 +771,6 @@ export function generateMockDatabase(): Database {
       ...[0,1,2].map(k => `Q-${1401 + ((i * 11 + k) % 60)}`),  // Coding/Programming (3)
     ];
 
-    const spocName = `${rnd.pick(FIRST_NAMES)} ${rnd.pick(LAST_NAMES)}`;
     drives.push({
       id: `DRV-${year}-${100 + i}`,
       name: `${college} Campus Recruitment Drive ${year}`,
@@ -764,14 +780,60 @@ export function generateMockDatabase(): Database {
       targetHiring: target,
       registered,
       selected,
-      spocName,
-      spocEmail: `${spocName.toLowerCase().replace(/\s+/g, '.')}@${college.toLowerCase().replace(/[^a-z0-9]+/g, '')}.edu.in`,
       description: DRIVE_DESCRIPTIONS[i % DRIVE_DESCRIPTIONS.length](college),
       status,
       accessMode: i % 3 === 0 ? 'remote' : 'in-person',
       questionIds: driveQIds,
     });
   }
+
+  // 2b. Seed the staff directory and assign per-drive SPOC/Panel memberships.
+  // Membership is the real source of truth for role-gating; it is independent
+  // of the legacy spocName/spocEmail free-text fields generated above.
+  const users: User[] = MOCK_USERS.map((u, idx) => ({ ...u, id: `USR-${String(idx + 1).padStart(3, '0')}` }));
+  const assignableUsers = users.filter(u => !u.isSuperAdmin); // Super Admins already have implicit global access
+  const superAdminUser = users.find(u => u.isSuperAdmin)!;
+
+  const driveMemberships: DriveMembership[] = [];
+  drives.forEach((drive, i) => {
+    const spoc = rnd.pick(assignableUsers);
+    driveMemberships.push({
+      id: `MEM-${driveMemberships.length + 1}`,
+      driveId: drive.id,
+      userId: spoc.id,
+      role: 'SPOC',
+      addedAt: drive.date,
+      addedByUserId: superAdminUser.id,
+    });
+
+    // Every ~15th drive also gets a co-SPOC, to exercise the multi-SPOC edge case.
+    if (i % 15 === 0) {
+      const coSpoc = rnd.pick(assignableUsers.filter(u => u.id !== spoc.id));
+      driveMemberships.push({
+        id: `MEM-${driveMemberships.length + 1}`,
+        driveId: drive.id,
+        userId: coSpoc.id,
+        role: 'SPOC',
+        addedAt: drive.date,
+        addedByUserId: superAdminUser.id,
+      });
+    }
+
+    const panelCount = Math.floor(rnd.range(1, 4)); // 1-3 panel members
+    const panelPool = assignableUsers.filter(u => u.id !== spoc.id);
+    for (let p = 0; p < panelCount; p++) {
+      const panelist = rnd.pick(panelPool);
+      if (driveMemberships.some(m => m.driveId === drive.id && m.userId === panelist.id)) continue;
+      driveMemberships.push({
+        id: `MEM-${driveMemberships.length + 1}`,
+        driveId: drive.id,
+        userId: panelist.id,
+        role: 'Panel',
+        addedAt: drive.date,
+        addedByUserId: superAdminUser.id,
+      });
+    }
+  });
 
   // Per-drive total marks (mirrors TestDetail.tsx's own driveQuestions/totalMarks calc),
   // used so a candidate's assessmentScore is always generated — and later displayed —
@@ -1073,10 +1135,10 @@ export function generateMockDatabase(): Database {
     drive.status = computeDriveStatus(candidates.filter(c => c.driveId === drive.id));
   });
 
-  return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [] };
+  return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [], users, driveMemberships };
 }
 
-const DB_VERSION = '20';
+const DB_VERSION = '22';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {
@@ -1088,6 +1150,8 @@ export function getDatabase(): Database {
     try {
       const parsed = JSON.parse(data);
       if (!parsed.collegeStudents) parsed.collegeStudents = [];
+      if (!parsed.users) parsed.users = [];
+      if (!parsed.driveMemberships) parsed.driveMemberships = [];
       return parsed;
     } catch (e) {
       console.error('Failed to parse database from localStorage, re-seeding.', e);

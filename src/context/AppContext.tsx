@@ -1,14 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
-import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer } from '../types';
+import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer, User, DriveRole } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
 import { generateAccessPassword } from '../lib/utils';
+import { canEditDriveConfig, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
 
 interface UserSession {
   role: 'admin' | 'candidate';
-  id?: string; // Candidate ID if candidate
+  id?: string; // Candidate ID if candidate; User ID if admin
   candidate?: Candidate;
+  user?: User; // populated when role === 'admin'
 }
 
 const parseUserAgent = (): { browser: string; os: string } => {
@@ -32,10 +34,10 @@ const parseUserAgent = (): { browser: string; os: string } => {
 interface AppContextType {
   db: Database;
   currentUser: UserSession | null;
-  loginAdmin: () => Promise<void>;
+  loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
   logout: () => void;
-  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => void;
+  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>, initialSpocUserId?: string) => CampusDrive | undefined;
   updateDrive: (drive: CampusDrive) => void;
   deleteDrive: (driveId: string) => void;
   updateCandidate: (candidate: Candidate) => void;
@@ -65,6 +67,8 @@ interface AppContextType {
   markAttendance: (candidateId: string, present: boolean) => void;
   importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => number;
   deleteCollegeStudents: (college: string) => void;
+  addDriveMembership: (driveId: string, userId: string, role: DriveRole) => void;
+  removeDriveMembership: (membershipId: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -86,11 +90,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('presidio-db-updated', handleDbUpdate);
   }, []);
 
-  const loginAdmin = async () => {
+  const loginAdmin = async (userId: string) => {
     // Simulates an async Microsoft Entra ID authentication delay
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       setTimeout(() => {
-        const session: UserSession = { role: 'admin' };
+        const user = db.users.find(u => u.id === userId);
+        if (!user) {
+          reject(new Error('Unknown user'));
+          return;
+        }
+        const session: UserSession = { role: 'admin', id: user.id, user };
         setCurrentUser(session);
         localStorage.setItem('presidio_session', JSON.stringify(session));
         resolve();
@@ -136,19 +145,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem('presidio_session');
   };
 
-  const createDrive = (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>) => {
+  // Optionally grants an initial SPOC membership in the same update as the
+  // drive creation itself — doing this as two separate mutator calls would
+  // have the second call's setDb/saveDatabase overwrite the first (each
+  // reads the same pre-update `db` closure), silently losing the new drive.
+  const createDrive = (
+    driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>,
+    initialSpocUserId?: string,
+  ): CampusDrive | undefined => {
+    if (!canEditDriveConfig(currentUser?.user)) return undefined;
     const newDrive: CampusDrive = {
       ...driveData,
       id: `DRV-2026-${100 + db.drives.length + 1}`,
       registered: 0,
       selected: 0
     };
-    const updatedDb = { ...db, drives: [newDrive, ...db.drives] };
+    const driveMemberships = initialSpocUserId
+      ? [...db.driveMemberships, {
+          id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
+          driveId: newDrive.id,
+          userId: initialSpocUserId,
+          role: 'SPOC' as const,
+          addedAt: new Date().toISOString(),
+          addedByUserId: currentUser?.user?.id ?? '',
+        }]
+      : db.driveMemberships;
+    const updatedDb = { ...db, drives: [newDrive, ...db.drives], driveMemberships };
     setDb(updatedDb);
     saveDatabase(updatedDb);
+    return newDrive;
   };
 
   const updateDrive = (updatedDrive: CampusDrive) => {
+    if (!canEditDriveConfig(currentUser?.user)) return;
     const updatedDrives = db.drives.map(d => d.id === updatedDrive.id ? updatedDrive : d);
     const updatedDb = { ...db, drives: updatedDrives };
     setDb(updatedDb);
@@ -156,6 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteDrive = (driveId: string) => {
+    if (!canEditDriveConfig(currentUser?.user)) return;
     const updatedDb = {
       ...db,
       drives: db.drives.filter(d => d.id !== driveId),
@@ -191,6 +221,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createInterview = (intData: Omit<Interview, 'id'>) => {
+    if (intData.stage === 'Whiteboard Interview') {
+      const targetCandidate = db.candidates.find(c => c.id === intData.candidateId);
+      if (!targetCandidate || !canAdvanceCandidate(currentUser?.user, targetCandidate.driveId, 'Whiteboard Interview', db)) return;
+    }
     const newInt: Interview = {
       ...intData,
       id: `INT-2026-${1000 + db.interviews.length + 1}`
@@ -217,6 +251,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateOfferStatus = (candidateId: string, status: Candidate['offerStatus']) => {
+    const targetCandidate = db.candidates.find(c => c.id === candidateId);
+    if (!targetCandidate || !canReleaseOffer(currentUser?.user, targetCandidate.driveId, db)) return;
     const updatedCandidates = db.candidates.map(c => {
       if (c.id === candidateId) {
         let stage: Candidate['funnelStage'] = c.funnelStage;
@@ -631,6 +667,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveDatabase(updatedDb);
   };
 
+  const addDriveMembership = (driveId: string, userId: string, role: DriveRole) => {
+    if (!canManageMembership(currentUser?.user, driveId, role, db)) return;
+    const alreadyMember = db.driveMemberships.some(m => m.driveId === driveId && m.userId === userId && m.role === role);
+    if (alreadyMember) return;
+    const newMembership = {
+      id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
+      driveId,
+      userId,
+      role,
+      addedAt: new Date().toISOString(),
+      addedByUserId: currentUser?.user?.id ?? '',
+    };
+    const updatedDb = { ...db, driveMemberships: [...db.driveMemberships, newMembership] };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
+  const removeDriveMembership = (membershipId: string) => {
+    const membership = db.driveMemberships.find(m => m.id === membershipId);
+    if (!membership || !canManageMembership(currentUser?.user, membership.driveId, membership.role, db)) return;
+    // Removal only revokes future access — it never touches the candidate records
+    // this person already scored/decided on, so historical attribution is preserved.
+    const updatedDb = { ...db, driveMemberships: db.driveMemberships.filter(m => m.id !== membershipId) };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
   return (
     <AppContext.Provider value={{
       db,
@@ -658,6 +721,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bulkUpdateCandidates,
       importCollegeStudents,
       deleteCollegeStudents,
+      addDriveMembership,
+      removeDriveMembership,
     }}>
       {children}
     </AppContext.Provider>

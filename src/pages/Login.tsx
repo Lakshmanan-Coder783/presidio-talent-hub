@@ -3,6 +3,9 @@ import { useApp } from '../context/AppContext';
 import { HelpCircle, Shield, Users, Lock, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import buildingImg from '../assets/presidio-building.png';
 
 const MicrosoftLogo = () => (
@@ -16,13 +19,16 @@ const MicrosoftLogo = () => (
 
 
 export const Login: React.FC = () => {
-  const { loginAdmin } = useApp();
+  const { loginAdmin, db } = useApp();
   const [loading, setLoading] = useState(false);
+  const defaultUserId = db.users.find(u => u.isSuperAdmin)?.id ?? db.users[0]?.id;
+  const [selectedUserId, setSelectedUserId] = useState(defaultUserId);
 
   const handleMicrosoftLogin = () => {
+    if (!selectedUserId) return;
     setLoading(true);
     setTimeout(() => {
-      loginAdmin();
+      loginAdmin(selectedUserId);
     }, 1200);
   };
 
@@ -95,6 +101,23 @@ export const Login: React.FC = () => {
             </CardHeader>
 
             <CardContent className="px-8 pb-8 pt-5 space-y-5">
+              {/* Demo persona picker — stands in for the real Entra directory lookup */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500">Sign in as</label>
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="w-full h-11 rounded-xl">
+                    <SelectValue placeholder="Select a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {db.users.map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name} {u.isSuperAdmin ? '(Super Admin)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Microsoft button */}
               <Button
                 variant="outline"
