@@ -39,7 +39,6 @@ export interface CampusDrive {
   experienceSettings?: {
     testWindow: 'anytime' | 'scheduled';
     reminderEnabled: boolean;
-    testAttempts: 1 | 3;
     shareReport: boolean;
     greetingNote: string;
     allowedDevices: 'computers' | 'all';
@@ -142,6 +141,7 @@ export interface Candidate {
 
   // Proctoring telemetry (recorded during the assessment)
   windowViolationCount?: number; // fullscreen-exit / tab-switch events
+  imageViolationCount?: number; // simulated flagged-frame violations from image proctoring
   proctoringTerminated?: boolean; // auto-submitted for exceeding the violation threshold
 
   // Session/device info captured (or mocked) at assessment time

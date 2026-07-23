@@ -50,7 +50,7 @@ interface AppContextType {
     assessmentId: string,
     answers: { [qId: string]: string | number[] | number },
     durationUsed: number,
-    proctoring?: { windowViolationCount?: number; proctoringTerminated?: boolean }
+    proctoring?: { windowViolationCount?: number; imageViolationCount?: number; proctoringTerminated?: boolean }
   ) => void;
   bulkInvite: (assessmentId: string, date: string, driveId: string) => void;
   createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
@@ -302,7 +302,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     assessmentId: string,
     answers: { [qId: string]: string | number[] | number },
     durationUsed: number,
-    proctoring?: { windowViolationCount?: number; proctoringTerminated?: boolean }
+    proctoring?: { windowViolationCount?: number; imageViolationCount?: number; proctoringTerminated?: boolean }
   ) => {
     const candidate = db.candidates.find(c => c.id === candidateId);
     const assessment = db.assessments.find(a => a.id === assessmentId);
@@ -372,6 +372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           deviceBrowser: browser,
           deviceOS: os,
           windowViolationCount: proctoring?.windowViolationCount,
+          imageViolationCount: proctoring?.imageViolationCount,
           proctoringTerminated: proctoring?.proctoringTerminated,
         };
       }
@@ -462,6 +463,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newAsm;
   };
 
+  // Returns an error message if `now` falls outside the drive's configured exam date/time
+  // window, or null if there's no window set (or it's currently within range).
+  const checkExamWindow = (drive: CampusDrive): string | null => {
+    if (!drive.examDate || !drive.examStartTime || !drive.examEndTime) return null;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    if (todayStr !== drive.examDate) return `Test is only accessible on ${drive.examDate}.`;
+    const [sh, sm] = drive.examStartTime.split(':').map(Number);
+    const [eh, em] = drive.examEndTime.split(':').map(Number);
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin < startMin) return `Test window opens at ${drive.examStartTime}.`;
+    if (nowMin > endMin) return `Test window closed at ${drive.examEndTime}.`;
+    return null;
+  };
+
   const loginCandidateByTestSlug = (slug: string, email: string, password: string) => {
     const asm = db.assessments.find(a => a.slug === slug);
     if (!asm) return { success: false, message: 'Test not found. Check the URL.' };
@@ -483,6 +501,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (candidate.assessmentPassword !== password) {
         return { success: false, message: 'Incorrect password.' };
       }
+      // Remote: only enforce the exam time window when explicitly scheduled
+      if (drive?.experienceSettings?.testWindow === 'scheduled') {
+        const windowError = checkExamWindow(drive);
+        if (windowError) return { success: false, message: windowError };
+      }
     } else {
       // In-person drive: validate against the shared test password
       if (asm.accessPassword !== password) {
@@ -494,23 +517,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'You are not marked as present for this test. Please contact your coordinator.' };
       }
       // In-person: check exam time window if drive has one set
-      if (drive?.examDate && drive?.examStartTime && drive?.examEndTime) {
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
-        if (todayStr !== drive.examDate) {
-          return { success: false, message: `Test is only accessible on ${drive.examDate}.` };
-        }
-        const [sh, sm] = drive.examStartTime.split(':').map(Number);
-        const [eh, em] = drive.examEndTime.split(':').map(Number);
-        const startMin = sh * 60 + sm;
-        const endMin = eh * 60 + em;
-        const nowMin = now.getHours() * 60 + now.getMinutes();
-        if (nowMin < startMin) {
-          return { success: false, message: `Test window opens at ${drive.examStartTime}.` };
-        }
-        if (nowMin > endMin) {
-          return { success: false, message: `Test window closed at ${drive.examEndTime}.` };
-        }
+      if (drive) {
+        const windowError = checkExamWindow(drive);
+        if (windowError) return { success: false, message: windowError };
       }
     }
 

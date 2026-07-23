@@ -389,6 +389,7 @@ export const TestDetail: React.FC = () => {
   const [draftDriveDay2Date, setDraftDriveDay2Date] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
   const [draftDriveAccessMode, setDraftDriveAccessMode] = useState<CampusDrive['accessMode']>('in-person');
+  const [draftDriveExamDate, setDraftDriveExamDate] = useState('');
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
 
@@ -763,7 +764,12 @@ export const TestDetail: React.FC = () => {
   const handleSendInvites = () => {
     if (!drive) return;
     const count = sendRemoteInvites(drive.id);
-    if (count > 0) toast.success(`Sent ${count} invite${count !== 1 ? 's' : ''} with individual credentials.`);
+    if (count > 0) {
+      toast.success(`Sent ${count} invite${count !== 1 ? 's' : ''} with individual credentials.`);
+      if (drive.experienceSettings?.reminderEnabled) {
+        toast.info('Reminder emails scheduled for invited candidates.');
+      }
+    }
   };
 
   // ── OA shortlisting handlers ─────────────────────────────────────────────────
@@ -1028,6 +1034,7 @@ export const TestDetail: React.FC = () => {
     setDraftDriveDay2Date(drive.day2Date ?? '');
     setDraftDriveLocation(drive.location);
     setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
+    setDraftDriveExamDate(drive.examDate ?? '');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
     setDriveEditOpen(true);
@@ -1042,8 +1049,9 @@ export const TestDetail: React.FC = () => {
       day2Date: draftDriveDay2Date || undefined,
       location: draftDriveLocation,
       accessMode: draftDriveAccessMode,
-      examStartTime: draftDriveAccessMode === 'in-person' && draftDriveExamStart ? draftDriveExamStart : undefined,
-      examEndTime: draftDriveAccessMode === 'in-person' && draftDriveExamEnd ? draftDriveExamEnd : undefined,
+      examDate: draftDriveExamDate || undefined,
+      examStartTime: draftDriveExamStart || undefined,
+      examEndTime: draftDriveExamEnd || undefined,
     });
     setDriveEditOpen(false);
     toast.success('Drive details updated.');
@@ -1933,26 +1941,6 @@ export const TestDetail: React.FC = () => {
                       {expSettings.reminderEnabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
-                </div>
-
-                {/* Test attempts */}
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                    <span className="font-medium">Test attempts:</span>
-                  </div>
-                  <Select
-                    value={String(expSettings.testAttempts)}
-                    onValueChange={v => updateExp('testAttempts', parseInt(v) as 1 | 3)}
-                  >
-                    <SelectTrigger className="h-8 text-xs w-52">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">1 attempt only</SelectItem>
-                      <SelectItem value="3">Up to 3 attempts</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 {/* Share Report */}
@@ -2985,22 +2973,28 @@ export const TestDetail: React.FC = () => {
                   : 'Students receive the test link via email and log in with their individual password.'}
               </p>
             </div>
-            {draftDriveAccessMode === 'in-person' && (
-              <div className="space-y-3 rounded-lg border p-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Test Window (optional)</p>
-                <p className="text-xs text-muted-foreground">If set, the test link will only be accessible on the exam date within this time range.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Start Time</Label>
-                    <Input type="time" value={draftDriveExamStart} onChange={e => setDraftDriveExamStart(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">End Time</Label>
-                    <Input type="time" value={draftDriveExamEnd} onChange={e => setDraftDriveExamEnd(e.target.value)} />
-                  </div>
+            <div className="space-y-3 rounded-lg border p-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Test Window (optional)</p>
+              <p className="text-xs text-muted-foreground">
+                {draftDriveAccessMode === 'in-person'
+                  ? 'If set, the test link will only be accessible on the exam date within this time range.'
+                  : 'If set and the Experience tab\'s "Test window" is Scheduled, candidates can only log in on the exam date within this time range.'}
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Exam Date</Label>
+                <Input type="date" value={draftDriveExamDate} onChange={e => setDraftDriveExamDate(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Start Time</Label>
+                  <Input type="time" value={draftDriveExamStart} onChange={e => setDraftDriveExamStart(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">End Time</Label>
+                  <Input type="time" value={draftDriveExamEnd} onChange={e => setDraftDriveExamEnd(e.target.value)} />
                 </div>
               </div>
-            )}
+            </div>
           </div>
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setDriveEditOpen(false)}>Cancel</Button>

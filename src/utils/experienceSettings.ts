@@ -5,7 +5,6 @@ export type ExperienceSettings = NonNullable<CampusDrive['experienceSettings']>;
 export const DEFAULT_EXPERIENCE_SETTINGS: ExperienceSettings = {
   testWindow: 'anytime',
   reminderEnabled: false,
-  testAttempts: 1,
   shareReport: false,
   greetingNote: '',
   allowedDevices: 'computers',

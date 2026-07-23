@@ -20,6 +20,11 @@ export function useProctoring({ active, exp, onTerminate }: UseProctoringOptions
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle');
   const [violationCount, setViolationCount] = useState(0);
   const [screenshotGuardActive, setScreenshotGuardActive] = useState(false);
+  const [imageViolationCount, setImageViolationCount] = useState(0);
+  const [imageBand, setImageBand] = useState<'green' | 'yellow' | 'red'>('green');
+
+  // Basic integrity level never touches the camera at all — only window/tab/copy-paste checks apply.
+  const imageProctoringEnabled = exp.integrityLevel !== 'basic';
 
   const videoRef = useCallback((el: HTMLVideoElement | null) => {
     videoElRef.current = el;
@@ -44,6 +49,8 @@ export function useProctoring({ active, exp, onTerminate }: UseProctoringOptions
 
   // Attempt camera/mic access as soon as the candidate reaches the portal (covers both a
   // fresh instructions screen and a resumed in-progress session that skips straight to it).
+  // Requested for every test regardless of integrity level; `imageProctoringEnabled` still
+  // gates the simulated image-violation monitoring further below.
   useEffect(() => {
     requestCameraAccess();
     return () => {
@@ -164,6 +171,52 @@ export function useProctoring({ active, exp, onTerminate }: UseProctoringOptions
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [active, registerViolation]);
 
+  const imageViolationCountRef = useRef(0);
+  const consecutiveFlaggedRef = useRef(0);
+
+  // Simulated "AI" image proctoring: there's no real vision model here, so each tick fakes
+  // whether the current frame looks flagged (person out of frame, looking away, etc.) with a
+  // fixed probability — the same "believable mock" convention TestDetail.tsx's
+  // generateAiEvaluation already uses for fake AI scoring elsewhere in this app. A run of
+  // `imageProctoringConsecutiveImages` flagged frames in a row counts as one violation, and the
+  // cumulative violation count is banded into green/yellow/red using the admin-configured
+  // thresholds, optionally terminating the session — mirroring registerViolation above.
+  useEffect(() => {
+    if (!active || !imageProctoringEnabled || cameraStatus !== 'granted') return;
+
+    const FLAG_PROBABILITY = 0.18;
+    const CAPTURE_INTERVAL_MS = 6000;
+
+    const interval = setInterval(() => {
+      const flagged = Math.random() < FLAG_PROBABILITY;
+      consecutiveFlaggedRef.current = flagged ? consecutiveFlaggedRef.current + 1 : 0;
+      if (consecutiveFlaggedRef.current < exp.imageProctoringConsecutiveImages) return;
+
+      consecutiveFlaggedRef.current = 0;
+      const next = imageViolationCountRef.current + 1;
+      imageViolationCountRef.current = next;
+      setImageViolationCount(next);
+
+      const band = next <= exp.imageProctoringGreenMax ? 'green'
+        : next <= exp.imageProctoringYellowMax ? 'yellow'
+        : 'red';
+      setImageBand(band);
+
+      if (band !== 'green') {
+        toast.warning(`Image proctoring flagged unusual activity (${band}) — ${next}/${exp.imageViolationTerminateAfterWarnings}`);
+      }
+      if (exp.terminateOnImageViolation && next >= exp.imageViolationTerminateAfterWarnings) {
+        onTerminate();
+      }
+    }, CAPTURE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [
+    active, imageProctoringEnabled, cameraStatus,
+    exp.imageProctoringConsecutiveImages, exp.imageProctoringGreenMax, exp.imageProctoringYellowMax,
+    exp.terminateOnImageViolation, exp.imageViolationTerminateAfterWarnings, onTerminate,
+  ]);
+
   return {
     videoRef,
     cameraStatus,
@@ -173,5 +226,8 @@ export function useProctoring({ active, exp, onTerminate }: UseProctoringOptions
     exitFullscreen,
     violationCount,
     screenshotGuardActive,
+    imageProctoringEnabled,
+    imageViolationCount,
+    imageBand,
   };
 }

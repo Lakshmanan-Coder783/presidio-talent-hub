@@ -490,6 +490,7 @@ export const CandidatePortal: React.FC = () => {
     if (!candidate || !assessment) return;
     submitCandidateAssessment(candidate.id, assessment.id, answers, durationUsed, {
       windowViolationCount: proctoring.violationCount,
+      imageViolationCount: proctoring.imageViolationCount,
       proctoringTerminated: terminated,
     });
     clearTestSession(candidate.id);
@@ -619,6 +620,12 @@ export const CandidatePortal: React.FC = () => {
                   Please read the instructions carefully before launching the test environment.
                 </p>
               </div>
+
+              {exp.greetingNote.trim() && (
+                <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+                  {exp.greetingNote}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.2fr] gap-8 mb-8">
                 <div className="space-y-5 text-sm leading-relaxed">
@@ -944,13 +951,25 @@ export const CandidatePortal: React.FC = () => {
       {portalStep === 'assessment' && activeQuestion && (
         <div className="flex-1 p-4 xl:p-6">
           {proctoring.cameraStatus === 'granted' && (
-            <video
-              ref={proctoring.videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="fixed bottom-4 right-4 z-50 w-40 aspect-video rounded-lg border-2 border-primary shadow-lg bg-black object-cover"
-            />
+            <div className="fixed bottom-4 right-4 z-50 w-40 space-y-1">
+              <video
+                ref={proctoring.videoRef}
+                autoPlay
+                muted
+                playsInline
+                className="w-full aspect-video rounded-lg border-2 border-primary shadow-lg bg-black object-cover"
+              />
+              {proctoring.imageProctoringEnabled && (
+                <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold shadow-lg ${
+                  proctoring.imageBand === 'red' ? 'bg-destructive text-destructive-foreground'
+                    : proctoring.imageBand === 'yellow' ? 'bg-amber-500 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/80 animate-pulse" />
+                  Monitoring: {proctoring.imageBand === 'red' ? 'Alert' : proctoring.imageBand === 'yellow' ? 'Warning' : 'Normal'}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Tiled watermark: can't prevent OS-level screenshots, but bakes the candidate's
