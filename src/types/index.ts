@@ -27,6 +27,7 @@ export interface CampusDrive {
   registered: number;
   selected: number;
   description: string;
+  createdAt: string; // ISO timestamp — when this drive record was created, for newest-first sorting
   status: 'Draft' | 'Ongoing' | 'Completed';
   accessMode: 'in-person' | 'remote';
   questionIds?: string[];

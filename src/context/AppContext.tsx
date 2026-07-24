@@ -37,7 +37,7 @@ interface AppContextType {
   loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
   logout: () => void;
-  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>, initialSpocUserId?: string) => CampusDrive | undefined;
+  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>, initialSpocUserId?: string) => CampusDrive | undefined;
   updateDrive: (drive: CampusDrive) => void;
   deleteDrive: (driveId: string) => void;
   updateCandidate: (candidate: Candidate) => void;
@@ -150,7 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // have the second call's setDb/saveDatabase overwrite the first (each
   // reads the same pre-update `db` closure), silently losing the new drive.
   const createDrive = (
-    driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected'>,
+    driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>,
     initialSpocUserId?: string,
   ): CampusDrive | undefined => {
     if (!canEditDriveConfig(currentUser?.user)) return undefined;
@@ -158,7 +158,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...driveData,
       id: `DRV-2026-${100 + db.drives.length + 1}`,
       registered: 0,
-      selected: 0
+      selected: 0,
+      createdAt: new Date().toISOString(),
     };
     const driveMemberships = initialSpocUserId
       ? [...db.driveMemberships, {

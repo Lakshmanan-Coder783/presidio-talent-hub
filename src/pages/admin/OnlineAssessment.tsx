@@ -29,6 +29,7 @@ interface TestRow {
   accessMode: 'in-person' | 'remote';
   group: string;
   createdOn: string;
+  createdAt: string;
   lastActivity: string;
   registered: number;
   driveDate: string;
@@ -376,6 +377,7 @@ export const OnlineAssessment: React.FC = () => {
         accessMode:       drive.accessMode ?? 'in-person',
         group:            'Default Group',
         createdOn,
+        createdAt:        drive.createdAt,
         lastActivity:     relativeTime(lastTs),
         registered:       driveCandidates.length,
         driveDate:        drive.date,
@@ -559,7 +561,7 @@ export const OnlineAssessment: React.FC = () => {
         filters={filters}
         searchPlaceholder="Search Test"
         searchKey="name"
-        initialSort={{ key: 'driveDate', direction: 'desc' }}
+        initialSort={{ key: 'createdAt', direction: 'desc' }}
         exportFileName="Tests_Export"
       />
 

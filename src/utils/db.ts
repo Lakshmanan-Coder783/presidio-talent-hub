@@ -781,6 +781,10 @@ export function generateMockDatabase(): Database {
       registered,
       selected,
       description: DRIVE_DESCRIPTIONS[i % DRIVE_DESCRIPTIONS.length](college),
+      // Deterministic, strictly-in-the-past timestamp (tracks the drive's own year, ordered by
+      // seed position within it) so any drive genuinely created later in the running app — which
+      // stamps createdAt with the real current time — always sorts above every seeded drive.
+      createdAt: new Date(year, 0, 1 + (i % 28)).toISOString(),
       status,
       accessMode: i % 3 === 0 ? 'remote' : 'in-person',
       questionIds: driveQIds,
@@ -1138,7 +1142,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [], users, driveMemberships };
 }
 
-const DB_VERSION = '22';
+const DB_VERSION = '23';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {
