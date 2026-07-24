@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   LayoutDashboard, Database,
   Settings as SettingsIcon,
-  LogOut, Bell, Search, User, Monitor,
+  LogOut, Bell, Search, User, Monitor, Trash2,
   FileCheck2, Award, CalendarClock, type LucideIcon,
 } from 'lucide-react';
 import {
@@ -36,6 +36,7 @@ const FULL_MENU = [
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  { id: 'trash', label: 'Trash', icon: Trash2 },
 ];
 
 const DRIVE_MEMBER_MENU = [

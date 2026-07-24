@@ -14,9 +14,10 @@ export function getUserRoleForDrive(user: User | undefined, driveId: string, db:
 
 export function getVisibleDrives(user: User | undefined, db: Database): CampusDrive[] {
   if (!user) return [];
-  if (user.isSuperAdmin) return db.drives;
+  const activeDrives = db.drives.filter(d => !d.deletedAt);
+  if (user.isSuperAdmin) return activeDrives;
   const myDriveIds = new Set(db.driveMemberships.filter(m => m.userId === user.id).map(m => m.driveId));
-  return db.drives.filter(d => myDriveIds.has(d.id));
+  return activeDrives.filter(d => myDriveIds.has(d.id));
 }
 
 // Drive CRUD, scoreBandCutoffs, and experienceSettings — Super Admin only.

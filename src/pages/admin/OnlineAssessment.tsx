@@ -21,6 +21,7 @@ import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
 import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveStatus';
 import { getVisibleDrives, canEditDriveConfig } from '../../utils/permissions';
+import { formatDriveDateRange } from '../../utils/dateFormat';
 
 interface TestRow {
   id: string;
@@ -176,7 +177,7 @@ export const OnlineAssessment: React.FC = () => {
   const confirmDeleteDrive = () => {
     if (!deleteDriveId) return;
     deleteDrive(deleteDriveId);
-    toast.success('Drive deleted.');
+    toast.success('Drive moved to Trash.');
     setDeleteConfirmOpen(false);
     setDeleteDriveId(null);
   };
@@ -436,19 +437,9 @@ export const OnlineAssessment: React.FC = () => {
       header: 'DRIVE DATES',
       accessor: 'driveDate' as const,
       sortable: true,
-      render: (row: TestRow) => {
-        const fmt = (d: string) => new Date(d).toLocaleDateString('en-GB', {
-          day: 'numeric', month: 'short', year: 'numeric',
-        });
-        return (
-          <div className="space-y-0.5">
-            <p className="text-sm font-medium">{fmt(row.driveDate)}</p>
-            {row.driveDay2Date && (
-              <p className="text-xs text-muted-foreground">{fmt(row.driveDay2Date)}</p>
-            )}
-          </div>
-        );
-      },
+      render: (row: TestRow) => (
+        <p className="text-sm font-medium">{formatDriveDateRange(row.driveDate, row.driveDay2Date)}</p>
+      ),
     },
     {
       header: 'PROGRESS',
@@ -569,9 +560,9 @@ export const OnlineAssessment: React.FC = () => {
       <AlertDialog open={deleteConfirmOpen} onOpenChange={v => { setDeleteConfirmOpen(v); if (!v) setDeleteDriveId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this drive?</AlertDialogTitle>
+            <AlertDialogTitle>Move this drive to Trash?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this drive and all candidates registered under it. This cannot be undone.
+              This drive and its candidates will be moved to Trash and hidden from this list. You can restore it anytime from Trash, or delete it permanently from there.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -580,7 +571,7 @@ export const OnlineAssessment: React.FC = () => {
               className="bg-destructive hover:bg-destructive/90 text-white"
               onClick={confirmDeleteDrive}
             >
-              Yes, Delete
+              Move to Trash
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

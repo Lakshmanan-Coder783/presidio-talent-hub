@@ -1,13 +1,13 @@
 import type { Candidate } from '../types';
 
 export const deriveInterviewStatus = (
-  c: Pick<Candidate, 'interviewShortlisted' | 'interviewPanel'>,
+  c: Pick<Candidate, 'interviewShortlisted' | 'interviewPrimaryPanelistId'>,
 ): 'Shortlisted' | 'Rejected' | 'In Progress' | 'Pending' =>
   c.interviewShortlisted === true
     ? 'Shortlisted'
     : c.interviewShortlisted === false
     ? 'Rejected'
-    : c.interviewPanel
+    : c.interviewPrimaryPanelistId
     ? 'In Progress'
     : 'Pending';
 

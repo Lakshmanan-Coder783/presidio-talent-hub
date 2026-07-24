@@ -12,6 +12,7 @@ import { OnlineAssessment } from './pages/admin/OnlineAssessment';
 import { QuestionBank } from './pages/admin/QuestionBank';
 import { Settings } from './pages/admin/Settings';
 import { TestDetail } from './pages/admin/TestDetail';
+import { Trash } from './pages/admin/Trash';
 
 // Candidate Pages
 import { CandidatePortal } from './pages/candidate/CandidatePortal';
@@ -93,6 +94,7 @@ const AppRoutes: React.FC = () => {
             <Route path="/admin/dashboard"     element={<Dashboard />} />
             <Route path="/admin/question-bank" element={<QuestionBank />} />
             <Route path="/admin/settings"      element={<Settings />} />
+            <Route path="/admin/trash"         element={<Trash />} />
           </Route>
         </Route>
       </Route>

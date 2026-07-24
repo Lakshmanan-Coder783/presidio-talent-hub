@@ -112,8 +112,8 @@ interface CandidateRow {
 }
 
 interface InterviewDraft {
-  panel: string;
-  panelMembers: string;
+  primaryPanelistId: string;
+  secondaryPanelistId: string;
   timeSlot: string;
   aptitudeScore: string;
   aptitudeComments: string;
@@ -148,7 +148,7 @@ interface WhiteboardDraft {
 }
 
 const BLANK_IV: InterviewDraft = {
-  panel: '', panelMembers: '', timeSlot: '',
+  primaryPanelistId: '', secondaryPanelistId: '', timeSlot: '',
   aptitudeScore: '', aptitudeComments: '',
   technicalScore: '', technicalComments: '',
   problemSolvingScore: '', problemSolvingComments: '',
@@ -524,6 +524,11 @@ export const TestDetail: React.FC = () => {
       .map(m => ({ membership: m, user: db.users.find(u => u.id === m.userId) }))
       .filter((row): row is { membership: typeof row.membership; user: NonNullable<typeof row.user> } => !!row.user);
   }, [db.driveMemberships, db.users, drive]);
+
+  const drivePanelMembers = useMemo(
+    () => driveMembers.filter(m => m.membership.role === 'Panel'),
+    [driveMembers],
+  );
 
   const [addMemberUserId, setAddMemberUserId] = useState('');
   const [addMemberRole, setAddMemberRole] = useState<'SPOC' | 'Panel'>('Panel');
@@ -904,8 +909,8 @@ export const TestDetail: React.FC = () => {
   const openInterviewSheet = (candidate: Candidate) => {
     setInterviewCandidate(candidate);
     setIvDraft({
-      panel: candidate.interviewPanel ?? '',
-      panelMembers: candidate.interviewPanelMembers ?? '',
+      primaryPanelistId: candidate.interviewPrimaryPanelistId ?? '',
+      secondaryPanelistId: candidate.interviewSecondaryPanelistId ?? '',
       timeSlot: candidate.interviewTimeSlot ?? '',
       aptitudeScore: String(candidate.interviewAptitudeScore ?? ''),
       aptitudeComments: candidate.interviewAptitudeComments ?? '',
@@ -925,8 +930,8 @@ export const TestDetail: React.FC = () => {
     if (!interviewCandidate) return;
     updateCandidate({
       ...interviewCandidate,
-      interviewPanel: ivDraft.panel,
-      interviewPanelMembers: ivDraft.panelMembers,
+      interviewPrimaryPanelistId: ivDraft.primaryPanelistId || undefined,
+      interviewSecondaryPanelistId: ivDraft.secondaryPanelistId || undefined,
       interviewTimeSlot: ivDraft.timeSlot,
       interviewAptitudeScore: parseFloat(ivDraft.aptitudeScore) || undefined,
       interviewAptitudeComments: ivDraft.aptitudeComments,
@@ -2474,7 +2479,7 @@ export const TestDetail: React.FC = () => {
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded ${scoreBandColor(scoreBand(pct, bandCutoffs))}`}>{pct}%</span>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-sm">{c.interviewPanel || '—'}</p>
+                          <p className="text-sm">{db.users.find(u => u.id === c.interviewPrimaryPanelistId)?.name || '—'}</p>
                           {avgScore.length > 0 && (
                             <p className="text-xs text-muted-foreground">Avg: {(avgScore.reduce((a: number, b: number) => a + b, 0) / avgScore.length).toFixed(1)}/10</p>
                           )}
@@ -2490,7 +2495,7 @@ export const TestDetail: React.FC = () => {
                             onClick={() => openInterviewSheet(c)}
                           >
                             <Pencil className="h-3 w-3" />
-                            {c.interviewPanel ? 'Edit Feedback' : 'Fill Feedback'}
+                            {c.interviewPrimaryPanelistId ? 'Edit Feedback' : 'Fill Feedback'}
                           </Button>
                         </td>
                       </tr>
@@ -3162,17 +3167,41 @@ export const TestDetail: React.FC = () => {
             {/* Panel info */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-sm">Panel</Label>
-                <Input value={ivDraft.panel} onChange={e => setIvDraft(d => ({ ...d, panel: e.target.value }))} placeholder="Panel name" />
+                <Label className="text-sm">Primary Panelist</Label>
+                <Select
+                  value={ivDraft.primaryPanelistId}
+                  onValueChange={v => setIvDraft(d => ({ ...d, primaryPanelistId: v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select panelist" /></SelectTrigger>
+                  <SelectContent>
+                    {drivePanelMembers
+                      .filter(m => m.user.id !== ivDraft.secondaryPanelistId)
+                      .map(m => (
+                        <SelectItem key={m.user.id} value={m.user.id}>{m.user.name} ({m.user.email})</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm">Time Slot</Label>
-                <Input value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 10:00 AM – 11:00 AM" />
+                <Label className="text-sm">Secondary Panelist</Label>
+                <Select
+                  value={ivDraft.secondaryPanelistId}
+                  onValueChange={v => setIvDraft(d => ({ ...d, secondaryPanelistId: v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select panelist" /></SelectTrigger>
+                  <SelectContent>
+                    {drivePanelMembers
+                      .filter(m => m.user.id !== ivDraft.primaryPanelistId)
+                      .map(m => (
+                        <SelectItem key={m.user.id} value={m.user.id}>{m.user.name} ({m.user.email})</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm">Panel Members</Label>
-              <Input value={ivDraft.panelMembers} onChange={e => setIvDraft(d => ({ ...d, panelMembers: e.target.value }))} placeholder="Names of interviewers" />
+              <Label className="text-sm">Time Slot</Label>
+              <Input value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 10:00 AM – 11:00 AM" />
             </div>
 
             <div className="border-t pt-3">

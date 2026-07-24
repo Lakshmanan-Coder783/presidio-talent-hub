@@ -28,6 +28,7 @@ export interface CampusDrive {
   selected: number;
   description: string;
   createdAt: string; // ISO timestamp — when this drive record was created, for newest-first sorting
+  deletedAt?: string; // ISO timestamp — set when moved to Trash; drive/candidates stay intact until permanently deleted
   status: 'Draft' | 'Ongoing' | 'Completed';
   accessMode: 'in-person' | 'remote';
   questionIds?: string[];
@@ -165,8 +166,8 @@ export interface Candidate {
   };
 
   // Interview Round
-  interviewPanel?: string;
-  interviewPanelMembers?: string;
+  interviewPrimaryPanelistId?: string;
+  interviewSecondaryPanelistId?: string;
   interviewTimeSlot?: string;
   interviewAptitudeScore?: number;
   interviewAptitudeComments?: string;

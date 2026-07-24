@@ -12,20 +12,22 @@ import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveS
 export const Dashboard: React.FC = () => {
   const { db } = useApp();
 
+  const activeDrives = useMemo(() => db.drives.filter(d => !d.deletedAt), [db.drives]);
+
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedCollege, setSelectedCollege] = useState<string>('all');
 
   const availableYears = useMemo(() =>
-    Array.from(new Set(db.drives.map(d => new Date(d.date).getFullYear().toString())))
+    Array.from(new Set(activeDrives.map(d => new Date(d.date).getFullYear().toString())))
       .sort((a, b) => Number(b) - Number(a)),
-    [db.drives]);
+    [activeDrives]);
 
   const availableColleges = useMemo(() => {
     const base = selectedYear === 'all'
-      ? db.drives
-      : db.drives.filter(d => new Date(d.date).getFullYear().toString() === selectedYear);
+      ? activeDrives
+      : activeDrives.filter(d => new Date(d.date).getFullYear().toString() === selectedYear);
     return Array.from(new Set(base.map(d => d.college))).sort();
-  }, [db.drives, selectedYear]);
+  }, [activeDrives, selectedYear]);
 
   useEffect(() => {
     if (selectedCollege !== 'all' && !availableColleges.includes(selectedCollege))
@@ -33,11 +35,11 @@ export const Dashboard: React.FC = () => {
   }, [availableColleges]);
 
   const filteredDrives = useMemo(() =>
-    db.drives.filter(d => {
+    activeDrives.filter(d => {
       if (selectedYear !== 'all' && new Date(d.date).getFullYear().toString() !== selectedYear) return false;
       if (selectedCollege !== 'all' && d.college !== selectedCollege) return false;
       return true;
-    }), [db.drives, selectedYear, selectedCollege]);
+    }), [activeDrives, selectedYear, selectedCollege]);
 
   const filteredCandidates = useMemo(() => {
     const collegeSet = new Set(filteredDrives.map(d => d.college));

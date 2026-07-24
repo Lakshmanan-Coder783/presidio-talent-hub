@@ -40,6 +40,8 @@ interface AppContextType {
   createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>, initialSpocUserId?: string) => CampusDrive | undefined;
   updateDrive: (drive: CampusDrive) => void;
   deleteDrive: (driveId: string) => void;
+  restoreDrive: (driveId: string) => void;
+  permanentlyDeleteDrive: (driveId: string) => void;
   updateCandidate: (candidate: Candidate) => void;
   bulkUpdateCandidates: (updates: Candidate[]) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
@@ -185,7 +187,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveDatabase(updatedDb);
   };
 
+  // Soft-delete: moves the drive to Trash without touching it or its candidates, so
+  // restoreDrive can bring it back exactly as it was. Permanent removal is a separate,
+  // explicit action (permanentlyDeleteDrive) taken from within the Trash view.
   const deleteDrive = (driveId: string) => {
+    if (!canEditDriveConfig(currentUser?.user)) return;
+    const updatedDb = {
+      ...db,
+      drives: db.drives.map(d => d.id === driveId ? { ...d, deletedAt: new Date().toISOString() } : d),
+    };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
+  const restoreDrive = (driveId: string) => {
+    if (!canEditDriveConfig(currentUser?.user)) return;
+    const updatedDb = {
+      ...db,
+      drives: db.drives.map(d => d.id === driveId ? { ...d, deletedAt: undefined } : d),
+    };
+    setDb(updatedDb);
+    saveDatabase(updatedDb);
+  };
+
+  const permanentlyDeleteDrive = (driveId: string) => {
     if (!canEditDriveConfig(currentUser?.user)) return;
     const updatedDb = {
       ...db,
@@ -714,6 +739,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createDrive,
       updateDrive,
       deleteDrive,
+      restoreDrive,
+      permanentlyDeleteDrive,
       updateCandidate,
       createQuestion,
       createInterview,
