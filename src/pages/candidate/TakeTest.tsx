@@ -108,10 +108,10 @@ export const TakeTest: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim()) {
+    if (!email.trim() || (!isRemote && !password.trim())) {
       setErrorMsg(
         isRemote
-          ? 'Please enter your email and your individual password.'
+          ? 'Please enter your registered email.'
           : 'Please enter both your email and the test password.'
       );
       return;
@@ -119,7 +119,7 @@ export const TakeTest: React.FC = () => {
     setLoading(true);
     setErrorMsg('');
     setTimeout(() => {
-      const res = loginCandidateByTestSlug(slug!, email.trim(), password.trim());
+      const res = loginCandidateByTestSlug(slug!, email.trim(), isRemote ? '' : password.trim());
       setLoading(false);
       if (!res.success) setErrorMsg(res.message);
     }, 1200);
@@ -215,7 +215,7 @@ export const TakeTest: React.FC = () => {
             <h2 className="text-2xl font-bold tracking-tight">Sign in to begin</h2>
             <p className="text-sm text-muted-foreground">
               {isRemote
-                ? 'Use your email and individual password from your invite email.'
+                ? 'Use the email address you were invited with — no password needed.'
                 : 'Use your email and the shared password provided in the exam hall.'}
             </p>
           </div>
@@ -250,28 +250,26 @@ export const TakeTest: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="test-password">
-                  {isRemote ? 'Your Password' : 'Test Password'}
-                </Label>
-                <div className="relative">
-                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="test-password"
-                    type="password"
-                    placeholder={isRemote ? 'Your individual password' : 'Shared test password'}
-                    className="pl-9 h-10"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                  />
+              {!isRemote && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="test-password">Test Password</Label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="test-password"
+                      type="password"
+                      placeholder="Shared test password"
+                      className="pl-9 h-10"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Provided by your exam coordinator in the lab.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {isRemote
-                    ? 'Sent to your registered email address.'
-                    : 'Provided by your exam coordinator in the lab.'}
-                </p>
-              </div>
+              )}
 
               <Button type="submit" className="w-full h-10 gap-2 font-semibold">
                 Enter Assessment

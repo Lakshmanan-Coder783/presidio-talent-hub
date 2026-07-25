@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   LayoutDashboard, Database,
   Settings as SettingsIcon,
-  LogOut, Bell, Search, User, Monitor, Trash2,
+  LogOut, Bell, Search, User, Monitor,
   FileCheck2, Award, CalendarClock, type LucideIcon,
 } from 'lucide-react';
 import {
@@ -36,7 +36,6 @@ const FULL_MENU = [
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  { id: 'trash', label: 'Trash', icon: Trash2 },
 ];
 
 const DRIVE_MEMBER_MENU = [
@@ -61,7 +60,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isSuperAdmin = !!currentUser?.user?.isSuperAdmin;
   const menuItems = getMenuItems(isSuperAdmin);
 
-  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label ?? menuItems[0]?.label ?? '';
+  // Pages reachable but not in the sidebar nav (e.g. Trash, linked from Campus Drive) still need a breadcrumb label.
+  const UNLISTED_PAGE_TITLES: Record<string, string> = { trash: 'Trash' };
+  const activeLabel = menuItems.find(item => pathname === `/admin/${item.id}`)?.label
+    ?? UNLISTED_PAGE_TITLES[pathname.replace('/admin/', '')]
+    ?? menuItems[0]?.label ?? '';
 
   const displayName = currentUser?.user?.name ?? 'TA Admin';
   const displayEmail = currentUser?.user?.email ?? 'admin@presidio.com';

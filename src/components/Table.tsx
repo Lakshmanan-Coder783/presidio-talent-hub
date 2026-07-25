@@ -44,6 +44,8 @@ interface TableProps<T> {
   searchKey?: keyof T | ((row: T) => string);
   initialSort?: { key: string; direction: 'asc' | 'desc' };
   exportFileName?: string;
+  /** Replaces the default Export CSV button in the toolbar when provided. */
+  toolbarAction?: React.ReactNode;
 }
 
 export function Table<T>({
@@ -54,6 +56,7 @@ export function Table<T>({
   searchKey,
   initialSort,
   exportFileName = 'export',
+  toolbarAction,
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<{ [key: string]: string }>({});
@@ -218,10 +221,12 @@ export function Table<T>({
           ))}
         </div>
 
-        <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
-          <Download className="h-4 w-4" />
-          Export CSV
-        </Button>
+        {toolbarAction ?? (
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
+            <Download className="h-4 w-4" />
+            Export CSV
+          </Button>
+        )}
       </div>
 
       {/* Table */}

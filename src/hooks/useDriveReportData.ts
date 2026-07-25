@@ -99,7 +99,7 @@ export function useDriveReportData(driveCandidates: Candidate[], totalMarks: num
     const codingStatusLabels = ['Shortlisted', 'Rejected', 'In Progress', 'Pending'] as const;
     const codingOutcome = countBy(codingRoundCandidates.map(deriveCodingStatus), codingStatusLabels);
 
-    const whiteboardStatusLabels = ['Selected', 'Rejected', 'Waitlisted', 'Pending'] as const;
+    const whiteboardStatusLabels = ['Selected', 'Not Selected', 'Pending'] as const;
     const whiteboardOutcome = countBy(whiteboardCandidates.map(deriveWhiteboardStatus), whiteboardStatusLabels);
 
     const finalOutcomeLabels = ['Offered', 'Accepted', 'Declined', 'Joined'] as const;

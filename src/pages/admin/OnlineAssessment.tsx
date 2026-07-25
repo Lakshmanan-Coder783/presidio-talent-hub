@@ -19,13 +19,14 @@ import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload, Pencil, Trash2 
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
-import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveLinkedAssessment, getDriveDisplayName } from '../../utils/driveStatus';
 import { getVisibleDrives, canEditDriveConfig } from '../../utils/permissions';
 import { formatDriveDateRange } from '../../utils/dateFormat';
 
 interface TestRow {
   id: string;
   name: string;
+  displayName: string;
   college: string;
   accessMode: 'in-person' | 'remote';
   group: string;
@@ -83,6 +84,7 @@ export const OnlineAssessment: React.FC = () => {
   const [editDrive, setEditDrive] = useState<CampusDrive | null>(null);
   const [draftName, setDraftName] = useState('');
   const [draftCollege, setDraftCollege] = useState('');
+  const [draftRole, setDraftRole] = useState('');
   const [draftDate, setDraftDate] = useState('');
   const [draftDay2Date, setDraftDay2Date] = useState('');
   const [draftLocation, setDraftLocation] = useState('');
@@ -121,6 +123,7 @@ export const OnlineAssessment: React.FC = () => {
     setEditDrive(drive);
     setDraftName(drive.name);
     setDraftCollege(drive.college);
+    setDraftRole(drive.role ?? '');
     setDraftDate(drive.date);
     setDraftDay2Date(drive.day2Date ?? '');
     setDraftLocation(drive.location);
@@ -133,6 +136,7 @@ export const OnlineAssessment: React.FC = () => {
     setEditDrive(null);
     setDraftName('');
     setDraftCollege('');
+    setDraftRole('');
     setDraftDate('');
     setDraftDay2Date('');
     setDraftLocation('');
@@ -150,6 +154,7 @@ export const OnlineAssessment: React.FC = () => {
       createDrive({
         name: draftName,
         college: draftCollege,
+        role: draftRole || undefined,
         date: draftDate,
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
@@ -163,6 +168,7 @@ export const OnlineAssessment: React.FC = () => {
       updateDrive({
         ...editDrive,
         name: draftName,
+        role: draftRole || undefined,
         date: draftDate,
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
@@ -374,6 +380,7 @@ export const OnlineAssessment: React.FC = () => {
       return {
         id:               drive.id,
         name:             drive.name,
+        displayName:      getDriveDisplayName(drive),
         college:          drive.college,
         accessMode:       drive.accessMode ?? 'in-person',
         group:            'Default Group',
@@ -405,7 +412,7 @@ export const OnlineAssessment: React.FC = () => {
             className="text-left group"
             onClick={() => navigate(`/admin/online-assessment/${row.id}`)}
           >
-            <p className="font-semibold text-sm group-hover:text-primary transition-colors leading-snug">{row.name}</p>
+            <p className="font-semibold text-sm group-hover:text-primary transition-colors leading-snug">{row.displayName}</p>
           </button>
           <p className="text-xs text-muted-foreground">{row.college}</p>
         </div>
@@ -554,6 +561,12 @@ export const OnlineAssessment: React.FC = () => {
         searchKey="name"
         initialSort={{ key: 'createdAt', direction: 'desc' }}
         exportFileName="Tests_Export"
+        toolbarAction={
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate('/admin/trash')}>
+            <Trash2 className="h-4 w-4" />
+            Trash
+          </Button>
+        }
       />
 
       {/* ── Delete Drive confirmation ── */}
@@ -622,6 +635,15 @@ export const OnlineAssessment: React.FC = () => {
                 />
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <Label>Role / Position</Label>
+              <Input
+                placeholder="e.g. Associate Engineer"
+                value={draftRole}
+                onChange={e => setDraftRole(e.target.value)}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Day 1 Date</Label>

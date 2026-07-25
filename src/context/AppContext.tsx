@@ -3,7 +3,6 @@ import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
 import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer, User, DriveRole } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
-import { generateAccessPassword } from '../lib/utils';
 import { canEditDriveConfig, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
 
 interface UserSession {
@@ -65,7 +64,7 @@ interface AppContextType {
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
   loginCandidateByTestSlug: (slug: string, candidateId: string, password: string) => { success: boolean; message: string };
   bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => number;
-  sendRemoteInvites: (driveId: string) => number;
+  sendRemoteInvites: (driveId: string) => { id: string; name: string; email: string }[];
   markAttendance: (candidateId: string, present: boolean) => void;
   importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => number;
   deleteCollegeStudents: (college: string) => void;
@@ -523,10 +522,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isRemote = drive?.accessMode === 'remote';
 
     if (isRemote) {
-      // Remote drive: validate against the candidate's individual password
-      if (candidate.assessmentPassword !== password) {
-        return { success: false, message: 'Incorrect password.' };
-      }
+      // Remote drive: passwordless — a registered email for this assessment is enough
       // Remote: only enforce the exam time window when explicitly scheduled
       if (drive?.experienceSettings?.testWindow === 'scheduled') {
         const windowError = checkExamWindow(drive);
@@ -626,35 +622,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCandidates.length;
   };
 
-  // Assigns each un-invited remote candidate their own login credentials
-  // (assessmentId + individual password) and stamps the invite as sent.
-  const sendRemoteInvites = (driveId: string): number => {
+  // Sends (or resends) the invite to every remote candidate who hasn't completed the
+  // assessment yet — passwordless — email login is sufficient for remote drives.
+  const sendRemoteInvites = (driveId: string): { id: string; name: string; email: string }[] => {
     const drive = db.drives.find(d => d.id === driveId);
-    if (!drive || drive.accessMode !== 'remote' || !drive.assessmentId) return 0;
+    if (!drive || drive.accessMode !== 'remote' || !drive.assessmentId) return [];
 
     const now = new Date().toISOString();
-    let count = 0;
+    const invited: { id: string; name: string; email: string }[] = [];
 
     const updatedCandidates = db.candidates.map(c => {
-      if (c.driveId === driveId && c.assessmentStatus === 'Not Invited') {
-        count++;
+      if (c.driveId === driveId && c.assessmentStatus !== 'Completed') {
+        invited.push({ id: c.id, name: c.name, email: c.email });
         return {
           ...c,
-          assessmentStatus: 'Pending' as const,
+          assessmentStatus: c.assessmentStatus === 'Not Invited' ? ('Pending' as const) : c.assessmentStatus,
           assessmentId: drive.assessmentId,
-          assessmentPassword: generateAccessPassword(),
           inviteEmailSentAt: now,
         };
       }
       return c;
     });
 
-    if (count === 0) return 0;
+    if (invited.length === 0) return [];
 
     const updatedDb = { ...db, candidates: updatedCandidates };
     setDb(updatedDb);
     saveDatabase(updatedDb);
-    return count;
+    return invited;
   };
 
   const markAttendance = (candidateId: string, present: boolean) => {

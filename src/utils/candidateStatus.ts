@@ -12,16 +12,16 @@ export const deriveInterviewStatus = (
     : 'Pending';
 
 export const deriveCodingStatus = (
-  c: Pick<Candidate, 'codingShortlisted' | 'codingPanel'>,
+  c: Pick<Candidate, 'codingShortlisted' | 'codingTopic'>,
 ): 'Shortlisted' | 'Rejected' | 'In Progress' | 'Pending' =>
   c.codingShortlisted === true
     ? 'Shortlisted'
     : c.codingShortlisted === false
     ? 'Rejected'
-    : c.codingPanel
+    : c.codingTopic
     ? 'In Progress'
     : 'Pending';
 
 export const deriveWhiteboardStatus = (
   c: Pick<Candidate, 'whiteboardFinalResult'>,
-): 'Selected' | 'Rejected' | 'Waitlisted' | 'Pending' => c.whiteboardFinalResult ?? 'Pending';
+): 'Selected' | 'Not Selected' | 'Pending' => c.whiteboardFinalResult ?? 'Pending';

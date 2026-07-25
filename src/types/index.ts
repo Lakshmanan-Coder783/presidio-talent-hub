@@ -20,6 +20,7 @@ export interface CampusDrive {
   id: string;
   name: string;
   college: string;
+  role?: string; // job role/position this drive is hiring for, e.g. "Associate Engineer"
   date: string;
   day2Date?: string;
   location: string;
@@ -182,12 +183,9 @@ export interface Candidate {
   interviewShortlisted?: boolean;
 
   // Coding Round
-  codingPanel?: string;
-  codingPanelMembers?: string;
-  codingTimeSlot?: string;
+  codingTopic?: string;
   codingExerciseStartTime?: string;
   codingTechStack?: string;
-  codingExerciseGiven?: boolean;
   codingExerciseReview?: string;
   codingCheckpoint1?: string;
   codingCheckpoint2?: string;
@@ -196,9 +194,8 @@ export interface Candidate {
   codingShortlisted?: boolean;
 
   // Whiteboarding Round
-  whiteboardSelectedForCulturalFit?: boolean;
   whiteboardComments?: string;
-  whiteboardFinalResult?: 'Selected' | 'Rejected' | 'Waitlisted';
+  whiteboardFinalResult?: 'Selected' | 'Not Selected';
 }
 
 export interface CollegeStudent {

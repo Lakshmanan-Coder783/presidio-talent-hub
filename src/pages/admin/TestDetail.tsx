@@ -38,17 +38,19 @@ import {
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword, generateSlug } from '../../lib/utils';
+import { sendInviteEmail, isEmailConfigured } from '../../lib/email';
 import {
   getUserRoleForDrive, canEditDriveConfig, canAdvanceCandidate,
   redactCandidateForViewer,
 } from '../../utils/permissions';
-import { computeDriveStatus } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveDisplayName } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { deriveInterviewStatus, deriveCodingStatus, deriveWhiteboardStatus } from '../../utils/candidateStatus';
 import { DEFAULT_EXPERIENCE_SETTINGS as DEFAULT_EXP } from '../../utils/experienceSettings';
 import { useDriveReportData } from '../../hooks/useDriveReportData';
 import { FunnelChart, DonutChart, GaugeChart, HorizontalBarChart } from '../../components/Charts';
 import { EvaluateReport } from './EvaluateReport';
+import { CandidatePipelineReport } from './CandidatePipelineReport';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -128,21 +130,16 @@ interface InterviewDraft {
 }
 
 interface CodingDraft {
-  panel: string;
-  panelMembers: string;
-  timeSlot: string;
+  topic: string;
   exerciseStartTime: string;
   techStack: string;
-  exerciseGiven: string;
   exerciseReview: string;
-  score: string;
   checkpoint1: string;
   checkpoint2: string;
   checkpoint3: string;
 }
 
 interface WhiteboardDraft {
-  culturalFit: string;
   comments: string;
   finalResult: string;
 }
@@ -157,12 +154,12 @@ const BLANK_IV: InterviewDraft = {
 };
 
 const BLANK_CD: CodingDraft = {
-  panel: '', panelMembers: '', timeSlot: '',
-  exerciseStartTime: '', techStack: '', exerciseGiven: '',
-  exerciseReview: '', score: '', checkpoint1: '', checkpoint2: '', checkpoint3: '',
+  topic: '',
+  exerciseStartTime: '', techStack: '',
+  exerciseReview: '', checkpoint1: '', checkpoint2: '', checkpoint3: '',
 };
 
-const BLANK_WB: WhiteboardDraft = { culturalFit: '', comments: '', finalResult: '' };
+const BLANK_WB: WhiteboardDraft = { comments: '', finalResult: '' };
 
 // ── Question picker sheet ─────────────────────────────────────────────────────
 
@@ -372,6 +369,8 @@ export const TestDetail: React.FC = () => {
   // evaluate drawer state
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
   const [evaluateOpen, setEvaluateOpen] = useState(false);
+  const [pipelineReportCandidate, setPipelineReportCandidate] = useState<Candidate | null>(null);
+  const [pipelineReportOpen, setPipelineReportOpen] = useState(false);
   const [credentialsRow, setCredentialsRow] = useState<CandidateRow | null>(null);
 
   // inline name edit
@@ -385,6 +384,7 @@ export const TestDetail: React.FC = () => {
   // edit drive sheet
   const [driveEditOpen, setDriveEditOpen] = useState(false);
   const [draftDriveName, setDraftDriveName] = useState('');
+  const [draftDriveRole, setDraftDriveRole] = useState('');
   const [draftDriveDate, setDraftDriveDate] = useState('');
   const [draftDriveDay2Date, setDraftDriveDay2Date] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
@@ -763,17 +763,34 @@ export const TestDetail: React.FC = () => {
     toast.success(`${updates.length} candidate${updates.length !== 1 ? 's' : ''} marked as finished.`);
   };
 
-  const uninvitedCount = driveCandidates.filter(c => c.assessmentStatus === 'Not Invited').length;
-  const canSendInvites = drive?.accessMode === 'remote' && !!linkedAssessment && uninvitedCount > 0;
+  const eligibleInviteCount = driveCandidates.filter(c => c.assessmentStatus !== 'Completed').length;
+  const canSendInvites = drive?.accessMode === 'remote' && !!linkedAssessment && eligibleInviteCount > 0;
 
-  const handleSendInvites = () => {
+  const handleSendInvites = async () => {
     if (!drive) return;
-    const count = sendRemoteInvites(drive.id);
-    if (count > 0) {
-      toast.success(`Sent ${count} invite${count !== 1 ? 's' : ''} with individual credentials.`);
+    const invited = sendRemoteInvites(drive.id);
+    if (invited.length === 0) return;
+
+    if (!isEmailConfigured()) {
+      toast.error('Email is not configured. Set VITE_EMAILJS_SERVICE_ID / TEMPLATE_ID / PUBLIC_KEY to send real invite emails.');
+      return;
+    }
+
+    const testLink = `${window.location.origin}/take/${linkedAssessment?.slug ?? ''}`;
+    const results = await Promise.allSettled(
+      invited.map(c => sendInviteEmail({ toEmail: c.email, toName: c.name, driveName: drive.name, testLink }))
+    );
+    const sent = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.length - sent;
+
+    if (sent > 0) {
+      toast.success(`Sent ${sent} invite email${sent !== 1 ? 's' : ''}.`);
       if (drive.experienceSettings?.reminderEnabled) {
         toast.info('Reminder emails scheduled for invited candidates.');
       }
+    }
+    if (failed > 0) {
+      toast.error(`${failed} invite email${failed !== 1 ? 's' : ''} failed to send.`);
     }
   };
 
@@ -926,8 +943,28 @@ export const TestDetail: React.FC = () => {
     setInterviewSheetOpen(true);
   };
 
+  const validateInterviewDraft = (): boolean => {
+    if (!ivDraft.primaryPanelistId) return false;
+    if (!ivDraft.timeSlot.trim()) return false;
+    const categories: { scoreKey: keyof InterviewDraft; commKey: keyof InterviewDraft }[] = [
+      { scoreKey: 'aptitudeScore', commKey: 'aptitudeComments' },
+      { scoreKey: 'technicalScore', commKey: 'technicalComments' },
+      { scoreKey: 'problemSolvingScore', commKey: 'problemSolvingComments' },
+      { scoreKey: 'communicationScore', commKey: 'communicationComments' },
+    ];
+    for (const c of categories) {
+      if (!ivDraft[c.scoreKey]) return false;
+      if (!(ivDraft[c.commKey] as string).trim()) return false;
+    }
+    return !!ivDraft.overallFeedback.trim();
+  };
+
   const saveInterviewFeedback = (decision: 'shortlist' | 'reject') => {
     if (!interviewCandidate) return;
+    if (!validateInterviewDraft()) {
+      toast.error('Please complete all mandatory fields', { position: 'top-center' });
+      return;
+    }
     updateCandidate({
       ...interviewCandidate,
       interviewPrimaryPanelistId: ivDraft.primaryPanelistId || undefined,
@@ -956,14 +993,10 @@ export const TestDetail: React.FC = () => {
   const openCodingSheet = (candidate: Candidate) => {
     setCodingCandidate(candidate);
     setCdDraft({
-      panel: candidate.codingPanel ?? '',
-      panelMembers: candidate.codingPanelMembers ?? '',
-      timeSlot: candidate.codingTimeSlot ?? '',
+      topic: candidate.codingTopic ?? '',
       exerciseStartTime: candidate.codingExerciseStartTime ?? '',
       techStack: candidate.codingTechStack ?? '',
-      exerciseGiven: candidate.codingExerciseGiven === true ? 'yes' : candidate.codingExerciseGiven === false ? 'no' : '',
       exerciseReview: candidate.codingExerciseReview ?? '',
-      score: candidate.codingScore != null ? String(candidate.codingScore) : '',
       checkpoint1: candidate.codingCheckpoint1 ?? '',
       checkpoint2: candidate.codingCheckpoint2 ?? '',
       checkpoint3: candidate.codingCheckpoint3 ?? '',
@@ -971,21 +1004,27 @@ export const TestDetail: React.FC = () => {
     setCodingSheetOpen(true);
   };
 
+  const validateCodingDraft = (): boolean =>
+    !!cdDraft.topic.trim()
+    && !!cdDraft.exerciseStartTime.trim()
+    && !!cdDraft.techStack.trim()
+    && !!cdDraft.exerciseReview.trim()
+    && !!cdDraft.checkpoint1.trim()
+    && !!cdDraft.checkpoint2.trim()
+    && !!cdDraft.checkpoint3.trim();
+
   const saveCodingFeedback = (decision: 'shortlist' | 'reject') => {
     if (!codingCandidate) return;
+    if (!validateCodingDraft()) {
+      toast.error('Please complete all mandatory fields', { position: 'top-center' });
+      return;
+    }
     updateCandidate({
       ...codingCandidate,
-      codingPanel: cdDraft.panel,
-      codingPanelMembers: cdDraft.panelMembers,
-      codingTimeSlot: cdDraft.timeSlot,
+      codingTopic: cdDraft.topic,
       codingExerciseStartTime: cdDraft.exerciseStartTime,
       codingTechStack: cdDraft.techStack,
-      codingExerciseGiven: cdDraft.exerciseGiven === 'yes' ? true : cdDraft.exerciseGiven === 'no' ? false : undefined,
       codingExerciseReview: cdDraft.exerciseReview,
-      codingScore: (() => {
-        const parsed = parseFloat(cdDraft.score);
-        return Number.isNaN(parsed) ? undefined : parsed;
-      })(),
       codingCheckpoint1: cdDraft.checkpoint1,
       codingCheckpoint2: cdDraft.checkpoint2,
       codingCheckpoint3: cdDraft.checkpoint3,
@@ -1001,19 +1040,23 @@ export const TestDetail: React.FC = () => {
   const openWbSheet = (candidate: Candidate) => {
     setWbCandidate(candidate);
     setWbDraft({
-      culturalFit: candidate.whiteboardSelectedForCulturalFit === true ? 'yes' : candidate.whiteboardSelectedForCulturalFit === false ? 'no' : '',
       comments: candidate.whiteboardComments ?? '',
       finalResult: candidate.whiteboardFinalResult ?? '',
     });
     setWbSheetOpen(true);
   };
 
+  const validateWhiteboardDraft = (): boolean => !!wbDraft.comments.trim() && !!wbDraft.finalResult;
+
   const saveWbFeedback = () => {
     if (!wbCandidate) return;
+    if (!validateWhiteboardDraft()) {
+      toast.error('Please complete all mandatory fields', { position: 'top-center' });
+      return;
+    }
     const result = wbDraft.finalResult as Candidate['whiteboardFinalResult'] | '';
     updateCandidate({
       ...wbCandidate,
-      whiteboardSelectedForCulturalFit: wbDraft.culturalFit === 'yes' ? true : wbDraft.culturalFit === 'no' ? false : undefined,
       whiteboardComments: wbDraft.comments,
       whiteboardFinalResult: result || undefined,
       funnelStage: result === 'Selected' ? 'Offered' : wbCandidate.funnelStage,
@@ -1035,6 +1078,7 @@ export const TestDetail: React.FC = () => {
   const openDriveEdit = () => {
     if (!drive) return;
     setDraftDriveName(drive.name);
+    setDraftDriveRole(drive.role ?? '');
     setDraftDriveDate(drive.date);
     setDraftDriveDay2Date(drive.day2Date ?? '');
     setDraftDriveLocation(drive.location);
@@ -1050,6 +1094,7 @@ export const TestDetail: React.FC = () => {
     updateDrive({
       ...drive,
       name: draftDriveName,
+      role: draftDriveRole || undefined,
       date: draftDriveDate,
       day2Date: draftDriveDay2Date || undefined,
       location: draftDriveLocation,
@@ -1341,7 +1386,7 @@ export const TestDetail: React.FC = () => {
               className="h-7 text-sm font-medium w-64 px-2"
             />
           ) : (
-            <span className="truncate max-w-[320px]">{drive.name}</span>
+            <span className="truncate max-w-[320px]">{getDriveDisplayName(drive)}</span>
           )}
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
             liveStatus === 'Ongoing'
@@ -1838,6 +1883,20 @@ export const TestDetail: React.FC = () => {
             <p className="text-sm text-muted-foreground">
               {driveCandidates.length} student{driveCandidates.length !== 1 ? 's' : ''} registered for this drive
             </p>
+            {drive?.accessMode === 'remote' && !!linkedAssessment && (
+              <span title={canSendInvites ? undefined : 'All candidates have already completed the test'}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={handleSendInvites}
+                  disabled={!canSendInvites}
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Send Invites ({eligibleInviteCount})
+                </Button>
+              </span>
+            )}
           </div>
           {driveCandidates.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-1.5 border-2 border-dashed rounded-lg text-muted-foreground">
@@ -2262,7 +2321,7 @@ export const TestDetail: React.FC = () => {
                   onClick={handleSendInvites}
                 >
                   <Send className="h-3.5 w-3.5" />
-                  Send Invites ({uninvitedCount})
+                  Send Invites ({eligibleInviteCount})
                 </Button>
               )}
               {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
@@ -2567,7 +2626,7 @@ export const TestDetail: React.FC = () => {
                             onClick={() => openCodingSheet(c)}
                           >
                             <Pencil className="h-3 w-3" />
-                            {c.codingPanel ? 'Update' : 'Fill Details'}
+                            {c.codingTopic ? 'Update' : 'Fill Details'}
                           </Button>
                         </td>
                       </tr>
@@ -2604,25 +2663,22 @@ export const TestDetail: React.FC = () => {
                 <thead className="bg-muted/50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Candidate</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cultural Fit</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Final Result</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {whiteboardCandidates.map(c => {
-                    const fitLabel = c.whiteboardSelectedForCulturalFit === true ? 'Yes' : c.whiteboardSelectedForCulturalFit === false ? 'No' : '—';
-                    const fitCls = c.whiteboardSelectedForCulturalFit === true ? 'text-green-600' : c.whiteboardSelectedForCulturalFit === false ? 'text-red-500' : 'text-muted-foreground';
                     const whiteboardStatus = deriveWhiteboardStatus(c);
-                    const resultCls = whiteboardStatus === 'Selected' ? 'bg-green-100 text-green-700' : whiteboardStatus === 'Rejected' ? 'bg-red-100 text-red-700' : whiteboardStatus === 'Waitlisted' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                    const resultCls = whiteboardStatus === 'Selected' ? 'bg-green-100 text-green-700' : whiteboardStatus === 'Not Selected' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600';
                     return (
                       <tr key={c.id} className="hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3">
                           <p className="font-medium">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">{c.email}</p>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`font-medium text-sm ${fitCls}`}>{fitLabel}</span>
+                          <p className="text-sm text-muted-foreground">{c.email}</p>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${resultCls}`}>
@@ -2630,15 +2686,26 @@ export const TestDetail: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1"
-                            onClick={() => openWbSheet(c)}
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Update
-                          </Button>
+                          <div className="flex items-center gap-3">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => openWbSheet(c)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                              Update
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => { setPipelineReportCandidate(c); setPipelineReportOpen(true); }}
+                            >
+                              <BarChart2 className="h-3 w-3" />
+                              Report
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -2929,6 +2996,15 @@ export const TestDetail: React.FC = () => {
         onClose={() => { setEvaluateOpen(false); setEvaluateCandidate(null); }}
       />
 
+      {/* ── Candidate pipeline report ── */}
+      <CandidatePipelineReport
+        open={pipelineReportOpen}
+        candidate={pipelineReportCandidate}
+        drive={drive}
+        db={db}
+        onClose={() => { setPipelineReportOpen(false); setPipelineReportCandidate(null); }}
+      />
+
 
       {/* ── Edit Drive Sheet ── */}
       <Sheet open={driveEditOpen} onOpenChange={v => { if (!v) setDriveEditOpen(false); }}>
@@ -2940,6 +3016,14 @@ export const TestDetail: React.FC = () => {
             <div className="space-y-1.5">
               <Label>Drive Name</Label>
               <Input value={draftDriveName} onChange={e => setDraftDriveName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Role / Position</Label>
+              <Input
+                placeholder="e.g. Associate Engineer"
+                value={draftDriveRole}
+                onChange={e => setDraftDriveRole(e.target.value)}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -3167,7 +3251,7 @@ export const TestDetail: React.FC = () => {
             {/* Panel info */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-sm">Primary Panelist</Label>
+                <Label className="text-sm">Primary Panelist *</Label>
                 <Select
                   value={ivDraft.primaryPanelistId}
                   onValueChange={v => setIvDraft(d => ({ ...d, primaryPanelistId: v }))}
@@ -3200,8 +3284,8 @@ export const TestDetail: React.FC = () => {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm">Time Slot</Label>
-              <Input value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 10:00 AM – 11:00 AM" />
+              <Label className="text-sm">Start Time *</Label>
+              <Input type="time" value={ivDraft.timeSlot} onChange={e => setIvDraft(d => ({ ...d, timeSlot: e.target.value }))} />
             </div>
 
             <div className="border-t pt-3">
@@ -3214,7 +3298,7 @@ export const TestDetail: React.FC = () => {
                   { label: 'Communication', scoreKey: 'communicationScore', commKey: 'communicationComments' },
                 ] as { label: string; scoreKey: keyof InterviewDraft; commKey: keyof InterviewDraft }[]).map(item => (
                   <div key={item.label} className="space-y-3 rounded-lg border p-4">
-                    <Label className="text-sm font-medium">{item.label}</Label>
+                    <Label className="text-sm font-medium">{item.label} *</Label>
                     <StarRating
                       value={Number(ivDraft[item.scoreKey]) || 0}
                       onChange={val => setIvDraft(d => ({ ...d, [item.scoreKey]: String(val) }))}
@@ -3243,7 +3327,7 @@ export const TestDetail: React.FC = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm">Overall Feedback</Label>
+              <Label className="text-sm">Overall Feedback *</Label>
               <Textarea
                 rows={3}
                 className="text-sm resize-none"
@@ -3281,56 +3365,22 @@ export const TestDetail: React.FC = () => {
             )}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Panel</Label>
-                <Input value={cdDraft.panel} onChange={e => setCdDraft(d => ({ ...d, panel: e.target.value }))} placeholder="Panel name" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Time Slot</Label>
-                <Input value={cdDraft.timeSlot} onChange={e => setCdDraft(d => ({ ...d, timeSlot: e.target.value }))} placeholder="e.g. 2:00 PM – 4:00 PM" />
-              </div>
-            </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Panel Members</Label>
-              <Input value={cdDraft.panelMembers} onChange={e => setCdDraft(d => ({ ...d, panelMembers: e.target.value }))} placeholder="Names" />
+              <Label className="text-xs">Exercise Topic *</Label>
+              <Input value={cdDraft.topic} onChange={e => setCdDraft(d => ({ ...d, topic: e.target.value }))} placeholder="e.g. Train ticket booking system" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Exercise Start Time</Label>
+                <Label className="text-xs">Exercise Start Time *</Label>
                 <Input type="time" value={cdDraft.exerciseStartTime} onChange={e => setCdDraft(d => ({ ...d, exerciseStartTime: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Tech Stack</Label>
+                <Label className="text-xs">Tech Stack *</Label>
                 <Input value={cdDraft.techStack} onChange={e => setCdDraft(d => ({ ...d, techStack: e.target.value }))} placeholder="e.g. Java, React" />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Exercise Given?</Label>
-              <Select value={cdDraft.exerciseGiven} onValueChange={v => setCdDraft(d => ({ ...d, exerciseGiven: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="yes">Yes</SelectItem>
-                  <SelectItem value="no">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Coding Exercise Review</Label>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs text-muted-foreground">Score (1–10)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    className="h-7 w-16 text-sm text-center"
-                    value={cdDraft.score}
-                    onChange={e => setCdDraft(d => ({ ...d, score: e.target.value }))}
-                    placeholder="—"
-                  />
-                </div>
-              </div>
+              <Label className="text-xs">Coding Exercise Review *</Label>
               <Textarea
                 rows={3}
                 className="text-xs resize-none"
@@ -3345,7 +3395,7 @@ export const TestDetail: React.FC = () => {
               <div className="space-y-3">
                 {([1, 2, 3] as const).map(n => (
                   <div key={n} className="space-y-1.5">
-                    <Label className="text-xs">Checkpoint {n}</Label>
+                    <Label className="text-xs">Checkpoint {n} *</Label>
                     <Textarea
                       rows={2}
                       className="text-xs resize-none"
@@ -3387,7 +3437,7 @@ export const TestDetail: React.FC = () => {
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Comments</Label>
+              <Label className="text-xs">Comments *</Label>
               <Textarea
                 rows={4}
                 className="text-sm resize-none"
@@ -3397,7 +3447,7 @@ export const TestDetail: React.FC = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Final Result</Label>
+              <Label className="text-xs">Final Result *</Label>
               <Select
                 value={wbDraft.finalResult}
                 onValueChange={v => setWbDraft(d => ({ ...d, finalResult: v }))}
@@ -3406,8 +3456,7 @@ export const TestDetail: React.FC = () => {
                 <SelectTrigger><SelectValue placeholder="Select result…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Selected">Selected</SelectItem>
-                  <SelectItem value="Waitlisted">Waitlisted</SelectItem>
-                  <SelectItem value="Rejected">Rejected</SelectItem>
+                  <SelectItem value="Not Selected">Not Selected</SelectItem>
                 </SelectContent>
               </Select>
               {wbDraft.finalResult === 'Selected' && (

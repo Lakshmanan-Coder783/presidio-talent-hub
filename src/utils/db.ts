@@ -775,6 +775,7 @@ export function generateMockDatabase(): Database {
       id: `DRV-${year}-${100 + i}`,
       name: `${college} Campus Recruitment Drive ${year}`,
       college,
+      role: 'Associate Engineer',
       date,
       location,
       targetHiring: target,
