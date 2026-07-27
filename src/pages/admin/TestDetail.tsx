@@ -27,6 +27,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Pencil, Share2, Settings, AlignLeft, Shield, Users,
@@ -359,7 +362,7 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, sendRemoteInvites, addDriveMembership, removeDriveMembership } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership } = useApp();
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -388,7 +391,6 @@ export const TestDetail: React.FC = () => {
   const [draftDriveDate, setDraftDriveDate] = useState('');
   const [draftDriveDay2Date, setDraftDriveDay2Date] = useState('');
   const [draftDriveLocation, setDraftDriveLocation] = useState('');
-  const [draftDriveAccessMode, setDraftDriveAccessMode] = useState<CampusDrive['accessMode']>('in-person');
   const [draftDriveExamDate, setDraftDriveExamDate] = useState('');
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
@@ -708,7 +710,7 @@ export const TestDetail: React.FC = () => {
     createAssessmentForDrive(
       drive.id,
       {
-        name: `${drive.name} — Online Assessment`,
+        name: drive.college,
         type: 'Combined',
         duration: Math.max(30, newQuestions.length * 2),
         totalMarks: newQuestions.reduce((s, q) => s + q.marks, 0),
@@ -764,11 +766,11 @@ export const TestDetail: React.FC = () => {
   };
 
   const eligibleInviteCount = driveCandidates.filter(c => c.assessmentStatus !== 'Completed').length;
-  const canSendInvites = drive?.accessMode === 'remote' && !!linkedAssessment && eligibleInviteCount > 0;
+  const canSendInvites = !!linkedAssessment && eligibleInviteCount > 0;
 
   const handleSendInvites = async () => {
     if (!drive) return;
-    const invited = sendRemoteInvites(drive.id);
+    const invited = activateDriveInvites(drive.id, 'remote');
     if (invited.length === 0) return;
 
     if (!isEmailConfigured()) {
@@ -776,9 +778,14 @@ export const TestDetail: React.FC = () => {
       return;
     }
 
-    const testLink = `${window.location.origin}/take/${linkedAssessment?.slug ?? ''}`;
+    const baseLink = `${window.location.origin}/take/${linkedAssessment?.slug ?? ''}`;
     const results = await Promise.allSettled(
-      invited.map(c => sendInviteEmail({ toEmail: c.email, toName: c.name, driveName: drive.name, testLink }))
+      invited.map(c => sendInviteEmail({
+        toEmail: c.email,
+        toName: c.name,
+        driveName: drive.name,
+        testLink: c.inviteToken ? `${baseLink}?token=${c.inviteToken}` : baseLink,
+      }))
     );
     const sent = results.filter(r => r.status === 'fulfilled').length;
     const failed = results.length - sent;
@@ -792,6 +799,44 @@ export const TestDetail: React.FC = () => {
     if (failed > 0) {
       toast.error(`${failed} invite email${failed !== 1 ? 's' : ''} failed to send.`);
     }
+  };
+
+  // Activates candidates without emailing — admin shares the Test Link/Password
+  // (surfaced immediately via the existing publish-success dialog).
+  const handleShareManually = () => {
+    if (!drive) return;
+    const activated = activateDriveInvites(drive.id, 'in-person');
+    if (activated.length === 0) return;
+    toast.success(`Activated ${activated.length} candidate${activated.length !== 1 ? 's' : ''} for the test.`);
+    setPublishSuccessOpen(true);
+  };
+
+  // Admin always picks email (passwordless) vs share-manually (shared URL + password) per send.
+  const renderSendInvitesControl = () => {
+    const tooltip = canSendInvites ? undefined : 'All candidates have already completed the test';
+    return (
+      <span title={tooltip}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={!canSendInvites}>
+            <Button variant="outline" size="sm" className="gap-2 text-xs" disabled={!canSendInvites}>
+              <Send className="h-3.5 w-3.5" />
+              Send Invites ({eligibleInviteCount})
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleSendInvites}>
+              <Mail className="h-3.5 w-3.5 mr-2" />
+              Send via Email
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShareManually}>
+              <KeyRound className="h-3.5 w-3.5 mr-2" />
+              Share URL & Password
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    );
   };
 
   // ── OA shortlisting handlers ─────────────────────────────────────────────────
@@ -1082,7 +1127,6 @@ export const TestDetail: React.FC = () => {
     setDraftDriveDate(drive.date);
     setDraftDriveDay2Date(drive.day2Date ?? '');
     setDraftDriveLocation(drive.location);
-    setDraftDriveAccessMode(drive.accessMode ?? 'in-person');
     setDraftDriveExamDate(drive.examDate ?? '');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
@@ -1098,7 +1142,6 @@ export const TestDetail: React.FC = () => {
       date: draftDriveDate,
       day2Date: draftDriveDay2Date || undefined,
       location: draftDriveLocation,
-      accessMode: draftDriveAccessMode,
       examDate: draftDriveExamDate || undefined,
       examStartTime: draftDriveExamStart || undefined,
       examEndTime: draftDriveExamEnd || undefined,
@@ -1255,7 +1298,6 @@ export const TestDetail: React.FC = () => {
       accessor: 'invitedAt' as const,
       sortable: false,
       render: (row: CandidateRow) => {
-        if (drive?.accessMode !== 'remote') return <span className="text-sm text-muted-foreground">—</span>;
         if (row.rawStatus === 'Not Invited') {
           return <span className="text-xs text-muted-foreground">Not sent</span>;
         }
@@ -1883,20 +1925,7 @@ export const TestDetail: React.FC = () => {
             <p className="text-sm text-muted-foreground">
               {driveCandidates.length} student{driveCandidates.length !== 1 ? 's' : ''} registered for this drive
             </p>
-            {drive?.accessMode === 'remote' && !!linkedAssessment && (
-              <span title={canSendInvites ? undefined : 'All candidates have already completed the test'}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-xs"
-                  onClick={handleSendInvites}
-                  disabled={!canSendInvites}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Send Invites ({eligibleInviteCount})
-                </Button>
-              </span>
-            )}
+            {!!linkedAssessment && renderSendInvitesControl()}
           </div>
           {driveCandidates.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-1.5 border-2 border-dashed rounded-lg text-muted-foreground">
@@ -2313,17 +2342,7 @@ export const TestDetail: React.FC = () => {
           {/* Toolbar */}
           {(driveCandidates.some(c => c.assessmentStatus !== 'Completed') || canSendInvites) && (
             <div className="flex items-center gap-2">
-              {canSendInvites && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-xs"
-                  onClick={handleSendInvites}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Send Invites ({eligibleInviteCount})
-                </Button>
-              )}
+              {canSendInvites && renderSendInvitesControl()}
               {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
                 <Button
                   variant="outline"
@@ -3047,27 +3066,11 @@ export const TestDetail: React.FC = () => {
                 {liveStatus} — determined automatically from candidate progress.
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>Access Mode</Label>
-              <Select value={draftDriveAccessMode} onValueChange={v => setDraftDriveAccessMode(v as CampusDrive['accessMode'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="in-person">In-Person (team visits college)</SelectItem>
-                  <SelectItem value="remote">Remote (online pre-placement)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {draftDriveAccessMode === 'in-person'
-                  ? 'Students log in with the shared test password given in the lab.'
-                  : 'Students receive the test link via email and log in with their individual password.'}
-              </p>
-            </div>
             <div className="space-y-3 rounded-lg border p-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Test Window (optional)</p>
               <p className="text-xs text-muted-foreground">
-                {draftDriveAccessMode === 'in-person'
-                  ? 'If set, the test link will only be accessible on the exam date within this time range.'
-                  : 'If set and the Experience tab\'s "Test window" is Scheduled, candidates can only log in on the exam date within this time range.'}
+                If set, candidates who were shared the URL &amp; password are restricted to this exam-date time range.
+                Email-invited candidates are only restricted if the Experience tab's "Test window" is set to Scheduled.
               </p>
               <div className="space-y-1.5">
                 <Label className="text-xs">Exam Date</Label>
@@ -3100,8 +3103,12 @@ export const TestDetail: React.FC = () => {
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-1.5">
-              <Label>Assessment Name</Label>
-              <Input value={draftAsmName} onChange={e => setDraftAsmName(e.target.value)} />
+              <Label>College Name</Label>
+              <Input
+                placeholder="e.g. Kongu Engineering College"
+                value={draftAsmName}
+                onChange={e => setDraftAsmName(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Type</Label>

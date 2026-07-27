@@ -4,6 +4,7 @@ import type { Database } from '../utils/db';
 import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer, User, DriveRole } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
 import { canEditDriveConfig, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
+import { generateInviteToken } from '../lib/utils';
 
 interface UserSession {
   role: 'admin' | 'candidate';
@@ -62,9 +63,9 @@ interface AppContextType {
   ) => Assessment;
   updateAssessment: (assessment: Assessment) => void;
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
-  loginCandidateByTestSlug: (slug: string, candidateId: string, password: string) => { success: boolean; message: string };
+  loginCandidateByTestSlug: (slug: string, candidateId: string, password: string, token?: string) => { success: boolean; message: string };
   bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => number;
-  sendRemoteInvites: (driveId: string) => { id: string; name: string; email: string }[];
+  activateDriveInvites: (driveId: string, mode: 'remote' | 'in-person') => { id: string; name: string; email: string; inviteToken?: string }[];
   markAttendance: (candidateId: string, present: boolean) => void;
   importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => number;
   deleteCollegeStudents: (college: string) => void;
@@ -505,7 +506,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return null;
   };
 
-  const loginCandidateByTestSlug = (slug: string, email: string, password: string) => {
+  const loginCandidateByTestSlug = (slug: string, email: string, password: string, token?: string) => {
     const asm = db.assessments.find(a => a.slug === slug);
     if (!asm) return { success: false, message: 'Test not found. Check the URL.' };
     if (asm.status !== 'Active') return { success: false, message: 'This test is not currently active.' };
@@ -517,28 +518,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!candidate) return { success: false, message: 'Invalid email or you are not registered for this test.' };
     if (candidate.assessmentStatus === 'Completed') return { success: false, message: 'Assessment already completed.' };
 
-    // Determine drive access mode to decide which password to validate
+    // Passwordless only applies when the exact per-candidate magic-link token is present and
+    // matches — a bare shared URL (no token, or wrong one) always falls back to the shared
+    // test password, even for a candidate who was invited via email.
     const drive = db.drives.find(d => d.assessmentId === asm.id);
-    const isRemote = drive?.accessMode === 'remote';
+    const passwordless = candidate.accessMode === 'remote' && !!token && token === candidate.inviteToken;
 
-    if (isRemote) {
-      // Remote drive: passwordless — a registered email for this assessment is enough
-      // Remote: only enforce the exam time window when explicitly scheduled
+    if (passwordless) {
+      // Only enforce the exam time window when explicitly scheduled
       if (drive?.experienceSettings?.testWindow === 'scheduled') {
         const windowError = checkExamWindow(drive);
         if (windowError) return { success: false, message: windowError };
       }
     } else {
-      // In-person drive: validate against the shared test password
+      // Validate against the shared test password
       if (asm.accessPassword !== password) {
         return { success: false, message: 'Incorrect test password.' };
       }
-      // In-person: check attendance if it has been enabled for this drive
+      // Check attendance if it has been enabled for this drive
       const attendanceUsed = db.candidates.some(c => c.college === candidate.college && c.attendanceMarked !== undefined);
       if (attendanceUsed && !candidate.attendanceMarked) {
         return { success: false, message: 'You are not marked as present for this test. Please contact your coordinator.' };
       }
-      // In-person: check exam time window if drive has one set
+      // Check exam time window if drive has one set
       if (drive) {
         const windowError = checkExamWindow(drive);
         if (windowError) return { success: false, message: windowError };
@@ -622,22 +624,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCandidates.length;
   };
 
-  // Sends (or resends) the invite to every remote candidate who hasn't completed the
-  // assessment yet — passwordless — email login is sufficient for remote drives.
-  const sendRemoteInvites = (driveId: string): { id: string; name: string; email: string }[] => {
+  // Activates (or reactivates) every candidate in the drive who hasn't completed the
+  // assessment yet, assigning them to the linked test so they can log in — used both
+  // for emailing an invite and for the "share the link/password manually" path.
+  const activateDriveInvites = (driveId: string, mode: 'remote' | 'in-person'): { id: string; name: string; email: string; inviteToken?: string }[] => {
     const drive = db.drives.find(d => d.id === driveId);
-    if (!drive || drive.accessMode !== 'remote' || !drive.assessmentId) return [];
+    if (!drive || !drive.assessmentId) return [];
 
     const now = new Date().toISOString();
-    const invited: { id: string; name: string; email: string }[] = [];
+    const invited: { id: string; name: string; email: string; inviteToken?: string }[] = [];
 
     const updatedCandidates = db.candidates.map(c => {
       if (c.driveId === driveId && c.assessmentStatus !== 'Completed') {
-        invited.push({ id: c.id, name: c.name, email: c.email });
+        const inviteToken = mode === 'remote' ? generateInviteToken() : undefined;
+        invited.push({ id: c.id, name: c.name, email: c.email, inviteToken });
         return {
           ...c,
           assessmentStatus: c.assessmentStatus === 'Not Invited' ? ('Pending' as const) : c.assessmentStatus,
           assessmentId: drive.assessmentId,
+          accessMode: mode,
+          inviteToken,
           inviteEmailSentAt: now,
         };
       }
@@ -748,7 +754,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateQuestion,
       loginCandidateByTestSlug,
       bulkImportCandidates,
-      sendRemoteInvites,
+      activateDriveInvites,
       markAttendance,
       bulkUpdateCandidates,
       importCollegeStudents,

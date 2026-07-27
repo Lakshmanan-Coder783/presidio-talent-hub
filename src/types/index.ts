@@ -31,7 +31,6 @@ export interface CampusDrive {
   createdAt: string; // ISO timestamp — when this drive record was created, for newest-first sorting
   deletedAt?: string; // ISO timestamp — set when moved to Trash; drive/candidates stay intact until permanently deleted
   status: 'Draft' | 'Ongoing' | 'Completed';
-  accessMode: 'in-person' | 'remote';
   questionIds?: string[];
   assessmentId?: string;
   examDate?: string;
@@ -94,6 +93,8 @@ export interface Candidate {
   assessmentStatus: 'Not Invited' | 'Pending' | 'InProgress' | 'Completed';
   assessmentPassword?: string;
   assessmentId?: string;
+  accessMode?: 'remote' | 'in-person'; // set when invited — passwordless (remote) vs shared-password (in-person) login
+  inviteToken?: string; // per-candidate magic-link secret, set for email invites — required for passwordless login
   assessmentScore?: number;
   assessmentPercentile?: number;
   assessmentRank?: number;

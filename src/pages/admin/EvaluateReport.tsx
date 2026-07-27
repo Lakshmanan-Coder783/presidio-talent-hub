@@ -467,7 +467,7 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
               <div className="grid md:grid-cols-3 gap-x-8 gap-y-4 text-sm">
                 <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{candidate.name}</p></div>
                 <div><p className="text-xs text-muted-foreground">IP address</p><p className="font-medium">{candidate.mockIpAddress ?? '—'}</p></div>
-                <div><p className="text-xs text-muted-foreground">Test taken through</p><p className="font-medium">{drive.accessMode === 'remote' ? 'Public Link' : 'Shared Test Link'}</p></div>
+                <div><p className="text-xs text-muted-foreground">Test taken through</p><p className="font-medium">{candidate.accessMode === 'remote' ? 'Public Link' : 'Shared Test Link'}</p></div>
                 <div><p className="text-xs text-muted-foreground">Email</p><p className="font-medium break-all">{candidate.email}</p></div>
                 <div><p className="text-xs text-muted-foreground">Browser</p><p className="font-medium">{candidate.deviceBrowser ?? '—'}</p></div>
                 <div><p className="text-xs text-muted-foreground">Test started</p><p className="font-medium">{startDate ? fmtDateTime(startDate) : '—'}</p></div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import {
   ArrowRight, KeyRound, Mail, Loader2, AlertCircle,
@@ -26,6 +26,8 @@ const INSTRUCTIONS = [
 export const TakeTest: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token') ?? undefined;
   const { db, currentUser, loginCandidateByTestSlug } = useApp();
 
   const assessment = useMemo(
@@ -38,9 +40,9 @@ export const TakeTest: React.FC = () => {
     [db.drives, assessment]
   );
 
-  const isRemote = drive?.accessMode === 'remote';
   const exp = useMemo(() => resolveExperienceSettings(drive), [drive]);
 
+  const [step, setStep] = useState<'email' | 'password'>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -106,23 +108,63 @@ export const TakeTest: React.FC = () => {
     );
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Step 1: look up the candidate by email alone — a passwordless (email-invited) candidate
+  // logs straight in here; a candidate invited via shared URL & password advances to step 2.
+  const handleContinue = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || (!isRemote && !password.trim())) {
-      setErrorMsg(
-        isRemote
-          ? 'Please enter your registered email.'
-          : 'Please enter both your email and the test password.'
-      );
+    if (!email.trim()) {
+      setErrorMsg('Please enter your registered email.');
       return;
     }
     setLoading(true);
     setErrorMsg('');
     setTimeout(() => {
-      const res = loginCandidateByTestSlug(slug!, email.trim(), isRemote ? '' : password.trim());
+      const normalizedEmail = email.trim().toLowerCase();
+      const candidate = db.candidates.find(
+        c => c.email.trim().toLowerCase() === normalizedEmail && c.assessmentId === assessment.id
+      );
+      if (!candidate) {
+        setLoading(false);
+        setErrorMsg('Invalid email or you are not registered for this test.');
+        return;
+      }
+      if (candidate.assessmentStatus === 'Completed') {
+        setLoading(false);
+        setErrorMsg('Assessment already completed.');
+        return;
+      }
+      if (candidate.accessMode === 'remote' && token && candidate.inviteToken === token) {
+        const res = loginCandidateByTestSlug(slug!, email.trim(), '', token);
+        setLoading(false);
+        if (!res.success) setErrorMsg(res.message);
+        return;
+      }
+      setLoading(false);
+      setStep('password');
+    }, 900);
+  };
+
+  // Step 2 — used whenever there's no valid personal magic-link token: the shared
+  // test password is the universal fallback, for both shared-URL and email-invited candidates.
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password.trim()) {
+      setErrorMsg('Please enter the test password.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
+    setTimeout(() => {
+      const res = loginCandidateByTestSlug(slug!, email.trim(), password.trim(), token);
       setLoading(false);
       if (!res.success) setErrorMsg(res.message);
     }, 1200);
+  };
+
+  const handleBackToEmail = () => {
+    setStep('email');
+    setPassword('');
+    setErrorMsg('');
   };
 
   return (
@@ -214,9 +256,9 @@ export const TakeTest: React.FC = () => {
           <div className="space-y-1.5">
             <h2 className="text-2xl font-bold tracking-tight">Sign in to begin</h2>
             <p className="text-sm text-muted-foreground">
-              {isRemote
-                ? 'Use the email address you were invited with — no password needed.'
-                : 'Use your email and the shared password provided in the exam hall.'}
+              {step === 'email'
+                ? 'Enter the email address you were registered with.'
+                : 'Enter the test password shared with you.'}
             </p>
           </div>
 
@@ -227,52 +269,70 @@ export const TakeTest: React.FC = () => {
               <p className="text-sm text-muted-foreground font-medium">Validating credentials…</p>
             </div>
           ) : (
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={step === 'email' ? handleContinue : handleLogin} className="space-y-5">
               {errorMsg && (
                 <Alert variant="destructive">
                   <AlertDescription className="text-xs font-semibold">{errorMsg}</AlertDescription>
                 </Alert>
               )}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="candidate-email">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="candidate-email"
-                    type="email"
-                    placeholder="you@college.edu.in"
-                    className="pl-9 h-10"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    autoComplete="email"
-                  />
-                </div>
-              </div>
-
-              {!isRemote && (
+              {step === 'email' ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="test-password">Test Password</Label>
+                  <Label htmlFor="candidate-email">Email</Label>
                   <div className="relative">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      id="test-password"
-                      type="password"
-                      placeholder="Shared test password"
+                      id="candidate-email"
+                      type="email"
+                      placeholder="you@college.edu.in"
                       className="pl-9 h-10"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      autoComplete="current-password"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      autoComplete="email"
+                      autoFocus
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Provided by your exam coordinator in the lab.
-                  </p>
                 </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input readOnly value={email} className="pl-9 h-10 bg-muted text-muted-foreground" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleBackToEmail}
+                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    >
+                      Not you? Change email
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="test-password">Test Password</Label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="test-password"
+                        type="password"
+                        placeholder="Shared test password"
+                        className="pl-9 h-10"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                        autoFocus
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Provided by your exam coordinator in the lab.
+                    </p>
+                  </div>
+                </>
               )}
 
               <Button type="submit" className="w-full h-10 gap-2 font-semibold">
-                Enter Assessment
+                {step === 'email' ? 'Continue' : 'Enter Assessment'}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </form>

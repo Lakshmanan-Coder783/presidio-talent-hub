@@ -657,7 +657,7 @@ export const CandidatePortal: React.FC = () => {
                     </h4>
                     <div className="space-y-2.5 text-sm">
                       {[
-                        { label: 'Exam Title', value: assessment.name },
+                        { label: 'College', value: assessment.name },
                         { label: 'Duration', value: `${assessment.duration} mins` },
                         { label: 'Total Questions', value: `${questions.length} items` },
                         { label: 'Total Marks', value: `${assessment.totalMarks} pts` },

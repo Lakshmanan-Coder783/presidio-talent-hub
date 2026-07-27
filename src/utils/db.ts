@@ -787,7 +787,6 @@ export function generateMockDatabase(): Database {
       // stamps createdAt with the real current time — always sorts above every seeded drive.
       createdAt: new Date(year, 0, 1 + (i % 28)).toISOString(),
       status,
-      accessMode: i % 3 === 0 ? 'remote' : 'in-person',
       questionIds: driveQIds,
     });
   }
@@ -847,16 +846,13 @@ export function generateMockDatabase(): Database {
     drives.map(d => [d.id, questions.filter(q => d.questionIds?.includes(q.id)).reduce((s, q) => s + q.marks, 0)])
   );
 
-  // 3. Generate 100 Assessments
+  // 3. Generate one Assessment per drive, named after that drive's own college —
+  // linked directly via drive.assessmentId (one-to-one, matching how the real app works).
   const assessments: Assessment[] = [];
-  const assessmentNames = [
-    'Software Engineer Elite Hack', 'Technical Graduate Assessment', 'Front End Engineer Test',
-    'Full Stack Assessment (Node + React)', 'Java Developer Assessment', 'Python & Data Structures',
-    'Aptitude & Logical Sprint', 'Database Developer (SQL)', 'General Technical Aptitude', 'Cloud Engg Core Test'
-  ];
+  const assessmentByDriveId = new Map<string, Assessment>();
 
-  for (let i = 1; i <= 100; i++) {
-    const name = `${rnd.pick(assessmentNames)} - V${Math.floor(i / 10) + 1}`;
+  drives.forEach((drive, idx) => {
+    const i = idx + 1;
     const type: Assessment['type'] = i % 4 === 0 ? 'Coding' : (i % 4 === 1 ? 'Aptitude' : (i % 4 === 2 ? 'Technical' : 'Combined'));
     const duration = type === 'Coding' ? 90 : (type === 'Combined' ? 120 : 60);
 
@@ -891,20 +887,28 @@ export function generateMockDatabase(): Database {
     }
     const activeSections = sections.filter(s => s.questionCount > 0);
 
-    assessments.push({
+    // Random per-drive roll (not array index) so status doesn't correlate with
+    // construction order/recency — the Tests list sorts newest-first, and an
+    // index-based cutoff would make every recently-seeded drive land in the same bucket.
+    const statusRoll = rnd.range(0, 100);
+
+    const assessment: Assessment = {
       id: `ASM-${2000 + i}`,
-      name,
+      name: drive.college,
       type,
       duration,
       totalMarks,
       candidatesAssignedCount: 0,
-      status: i <= 80 ? 'Active' : (i <= 90 ? 'Draft' : 'Closed'),
+      status: statusRoll < 80 ? 'Active' : (statusRoll < 90 ? 'Draft' : 'Closed'),
       sections: activeSections,
       questionIds: assignedQIds,
-      slug: generateSlug(`${name}-${2000 + i}`),
+      slug: generateSlug(`${drive.college}-${2000 + i}`),
       accessPassword: `PRES${2000 + i}-${String(Math.floor((i * 7919) % 9000) + 1000)}`,
-    });
-  }
+    };
+    assessments.push(assessment);
+    assessmentByDriveId.set(drive.id, assessment);
+    drive.assessmentId = assessment.id;
+  });
 
   // 4. Generate 1000 Candidates
   const candidates: Candidate[] = [];
@@ -933,7 +937,7 @@ export function generateMockDatabase(): Database {
 
     const roll = rnd.range(0, 100);
 
-    const targetAssessment = assessments[i % assessments.length];
+    const targetAssessment = assessmentByDriveId.get(drive.id)!;
     let assessmentScore: number | undefined = undefined;
     let sectionScores: Candidate['sectionScores'] = undefined;
     let durationUsed: number | undefined = undefined;
@@ -1070,6 +1074,7 @@ export function generateMockDatabase(): Database {
       assessmentStatus,
       assessmentPassword,
       assessmentId: targetAssessment.id,
+      accessMode: rnd.next() > 0.5 ? 'remote' : 'in-person',
       assessmentScore,
       assessmentDurationUsed: durationUsed,
       assessmentSubmissionDate: submissionDate,
@@ -1143,7 +1148,7 @@ export function generateMockDatabase(): Database {
   return { drives, candidates, assessments, questions, interviews, offers, collegeStudents: [], users, driveMemberships };
 }
 
-const DB_VERSION = '23';
+const DB_VERSION = '25';
 
 export function getDatabase(): Database {
   if (localStorage.getItem('presidio_talent_hub_db_version') !== DB_VERSION) {

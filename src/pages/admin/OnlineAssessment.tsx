@@ -28,7 +28,6 @@ interface TestRow {
   name: string;
   displayName: string;
   college: string;
-  accessMode: 'in-person' | 'remote';
   group: string;
   createdOn: string;
   createdAt: string;
@@ -88,7 +87,6 @@ export const OnlineAssessment: React.FC = () => {
   const [draftDate, setDraftDate] = useState('');
   const [draftDay2Date, setDraftDay2Date] = useState('');
   const [draftLocation, setDraftLocation] = useState('');
-  const [draftAccessMode, setDraftAccessMode] = useState<CampusDrive['accessMode']>('in-person');
 
   const [spocUserId, setSpocUserId] = useState('');
 
@@ -127,7 +125,6 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDate(drive.date);
     setDraftDay2Date(drive.day2Date ?? '');
     setDraftLocation(drive.location);
-    setDraftAccessMode(drive.accessMode ?? 'in-person');
     setEditOpen(true);
   };
 
@@ -140,7 +137,6 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDate('');
     setDraftDay2Date('');
     setDraftLocation('');
-    setDraftAccessMode('in-person');
     setSpocUserId('');
     setEditOpen(true);
   };
@@ -160,7 +156,6 @@ export const OnlineAssessment: React.FC = () => {
         location: draftLocation,
         description: '',
         status: 'Draft',
-        accessMode: draftAccessMode,
       }, spocUserId || undefined);
       toast.success('Drive created successfully.');
     } else {
@@ -172,7 +167,6 @@ export const OnlineAssessment: React.FC = () => {
         date: draftDate,
         day2Date: draftDay2Date || undefined,
         location: draftLocation,
-        accessMode: draftAccessMode,
       });
       toast.success('Drive updated successfully.');
     }
@@ -382,7 +376,6 @@ export const OnlineAssessment: React.FC = () => {
         name:             drive.name,
         displayName:      getDriveDisplayName(drive),
         college:          drive.college,
-        accessMode:       drive.accessMode ?? 'in-person',
         group:            'Default Group',
         createdOn,
         createdAt:        drive.createdAt,
@@ -659,21 +652,6 @@ export const OnlineAssessment: React.FC = () => {
             <div className="space-y-1.5">
               <Label>Location</Label>
               <Input value={draftLocation} onChange={e => setDraftLocation(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Access Mode</Label>
-              <Select value={draftAccessMode} onValueChange={v => setDraftAccessMode(v as CampusDrive['accessMode'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="in-person">In-Person (team visits college)</SelectItem>
-                  <SelectItem value="remote">Remote (online pre-placement)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {draftAccessMode === 'in-person'
-                  ? 'Students log in with the shared test password given in the lab.'
-                  : 'Students receive the test link via email and log in with their individual password.'}
-              </p>
             </div>
             {isCreating && (
               <div className="space-y-1.5">
