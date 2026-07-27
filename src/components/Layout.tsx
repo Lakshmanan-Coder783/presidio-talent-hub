@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { isEvaluatorAnywhere } from '../utils/permissions';
 import { formatDistanceToNow } from 'date-fns';
 import {
   LayoutDashboard, Database,
@@ -42,7 +43,16 @@ const DRIVE_MEMBER_MENU = [
   { id: 'online-assessment', label: 'My Drives', icon: Monitor },
 ];
 
-const getMenuItems = (isSuperAdmin: boolean) => isSuperAdmin ? FULL_MENU : DRIVE_MEMBER_MENU;
+const EVALUATOR_MENU = [
+  { id: 'online-assessment', label: 'My Drives', icon: Monitor },
+  { id: 'question-bank', label: 'Question Bank', icon: Database },
+];
+
+const getMenuItems = (isSuperAdmin: boolean, isEvaluator: boolean) => {
+  if (isSuperAdmin) return FULL_MENU;
+  if (isEvaluator) return EVALUATOR_MENU;
+  return DRIVE_MEMBER_MENU;
+};
 
 const activityIcons: Record<ActivityType, LucideIcon> = {
   assessment_submitted: FileCheck2,
@@ -58,7 +68,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const activity = useRecentActivity(db);
   const hasRecentActivity = activity.length > 0;
   const isSuperAdmin = !!currentUser?.user?.isSuperAdmin;
-  const menuItems = getMenuItems(isSuperAdmin);
+  const isEvaluator = isEvaluatorAnywhere(currentUser?.user, db);
+  const menuItems = getMenuItems(isSuperAdmin, isEvaluator);
 
   // Pages reachable but not in the sidebar nav (e.g. Trash, linked from Campus Drive) still need a breadcrumb label.
   const UNLISTED_PAGE_TITLES: Record<string, string> = { trash: 'Trash' };

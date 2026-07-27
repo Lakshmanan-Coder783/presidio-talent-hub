@@ -44,7 +44,7 @@ import { generateAccessPassword, generateSlug } from '../../lib/utils';
 import { sendInviteEmail, isEmailConfigured } from '../../lib/email';
 import {
   getUserRoleForDrive, canEditDriveConfig, canAdvanceCandidate,
-  redactCandidateForViewer,
+  redactCandidateForViewer, canManageMembership,
 } from '../../utils/permissions';
 import { computeDriveStatus, getDriveDisplayName } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
@@ -533,7 +533,7 @@ export const TestDetail: React.FC = () => {
   );
 
   const [addMemberUserId, setAddMemberUserId] = useState('');
-  const [addMemberRole, setAddMemberRole] = useState<'SPOC' | 'Panel'>('Panel');
+  const [addMemberRole, setAddMemberRole] = useState<'SPOC' | 'Panel' | 'Evaluator'>('Panel');
 
   const availableUsersToAdd = useMemo(() => {
     const memberIds = new Set(driveMembers.map(m => m.user.id));
@@ -1520,46 +1520,52 @@ export const TestDetail: React.FC = () => {
               <AlignLeft className="h-4 w-4" />
               Questions
             </TabsTrigger>
-            <TabsTrigger value="experience" className={TAB_TRIGGER}>
-              <Shield className="h-4 w-4" />
-              Experience
-            </TabsTrigger>
+            {myDriveRole !== 'Evaluator' && (
+              <TabsTrigger value="experience" className={TAB_TRIGGER}>
+                <Shield className="h-4 w-4" />
+                Experience
+              </TabsTrigger>
+            )}
             <TabsTrigger value="candidates" className={TAB_TRIGGER}>
               <Users className="h-4 w-4" />
               Candidates
             </TabsTrigger>
-            <TabsTrigger value="interview" className={TAB_TRIGGER}>
-              <Users className="h-4 w-4" />
-              Interview Round
-              {interviewCandidates.length > 0 && (
-                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
-                  {interviewCandidates.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="coding" className={TAB_TRIGGER}>
-              <Code className="h-4 w-4" />
-              Coding Round
-              {codingRoundCandidates.length > 0 && (
-                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
-                  {codingRoundCandidates.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="whiteboard" className={TAB_TRIGGER}>
-              <FileText className="h-4 w-4" />
-              Whiteboarding
-              {whiteboardCandidates.length > 0 && (
-                <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
-                  {whiteboardCandidates.length}
-                </span>
-              )}
-            </TabsTrigger>
+            {myDriveRole !== 'Evaluator' && (
+              <>
+                <TabsTrigger value="interview" className={TAB_TRIGGER}>
+                  <Users className="h-4 w-4" />
+                  Interview Round
+                  {interviewCandidates.length > 0 && (
+                    <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                      {interviewCandidates.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="coding" className={TAB_TRIGGER}>
+                  <Code className="h-4 w-4" />
+                  Coding Round
+                  {codingRoundCandidates.length > 0 && (
+                    <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                      {codingRoundCandidates.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="whiteboard" className={TAB_TRIGGER}>
+                  <FileText className="h-4 w-4" />
+                  Whiteboarding
+                  {whiteboardCandidates.length > 0 && (
+                    <span className="ml-1 text-[10px] font-bold bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
+                      {whiteboardCandidates.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="reports" className={TAB_TRIGGER}>
               <BarChart2 className="h-4 w-4" />
               Reports
             </TabsTrigger>
-            {myDriveRole !== 'Panel' && (
+            {(myDriveRole === 'SuperAdmin' || myDriveRole === 'SPOC') && (
               <TabsTrigger value="access" className={TAB_TRIGGER}>
                 <KeyRound className="h-4 w-4" />
                 Access
@@ -1944,6 +1950,7 @@ export const TestDetail: React.FC = () => {
         </TabsContent>
 
         {/* ── Experience Tab ── */}
+        {myDriveRole !== 'Evaluator' && (
         <TabsContent value="experience" className="m-0 p-6">
           {!canEditThisDrive && (
             <Alert className="mb-4">
@@ -2336,6 +2343,7 @@ export const TestDetail: React.FC = () => {
             </div>
           </div>
         </TabsContent>
+        )}
 
         {/* ── Candidates Tab ── */}
         <TabsContent value="candidates" className="m-0 p-6 space-y-6">
@@ -2491,6 +2499,8 @@ export const TestDetail: React.FC = () => {
           )}
         </TabsContent>
 
+        {myDriveRole !== 'Evaluator' && (
+        <>
         {/* ── Interview Round Tab ── */}
         <TabsContent value="interview" className="m-0 p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -2734,6 +2744,8 @@ export const TestDetail: React.FC = () => {
             </div>
           )}
         </TabsContent>
+        </>
+        )}
 
         {/* ── Reports Tab ── */}
         <TabsContent value="reports" className="m-0 p-6 space-y-6">
@@ -2912,29 +2924,27 @@ export const TestDetail: React.FC = () => {
         </TabsContent>
 
         {/* ── Access Tab (drive membership management) ── */}
-        {myDriveRole !== 'Panel' && (
+        {(myDriveRole === 'SuperAdmin' || myDriveRole === 'SPOC') && (
         <TabsContent value="access" className="m-0 p-6 space-y-6 max-w-2xl">
           <div>
             <h3 className="font-semibold text-sm mb-1">Drive Access</h3>
             <p className="text-xs text-muted-foreground">
-              People assigned SPOC or Panel on this drive. Super Admins always have access and aren't listed here.
+              People assigned SPOC, Panel, or Evaluator on this drive. Super Admins always have access and aren't listed here.
             </p>
           </div>
 
           <div className="border rounded-lg divide-y">
             {driveMembers.length === 0 && (
-              <p className="text-sm text-muted-foreground p-4">No SPOC or Panel members assigned yet.</p>
+              <p className="text-sm text-muted-foreground p-4">No SPOC, Panel, or Evaluator members assigned yet.</p>
             )}
-            {(['SPOC', 'Panel'] as const).map(roleGroup => {
+            {(['SPOC', 'Panel', 'Evaluator'] as const).map(roleGroup => {
               const rows = driveMembers.filter(m => m.membership.role === roleGroup);
               if (rows.length === 0) return null;
               return (
                 <div key={roleGroup} className="p-4 space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{roleGroup}</p>
                   {rows.map(({ membership, user }) => {
-                    const canRemove = membership.role === 'SPOC'
-                      ? !!currentUser?.user?.isSuperAdmin
-                      : (myDriveRole === 'SuperAdmin' || myDriveRole === 'SPOC');
+                    const canRemove = canManageMembership(currentUser?.user, drive.id, membership.role, db);
                     return (
                       <div key={membership.id} className="flex items-center justify-between gap-2">
                         <div>
@@ -2973,21 +2983,18 @@ export const TestDetail: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
-              {currentUser?.user?.isSuperAdmin ? (
-                <Select value={addMemberRole} onValueChange={v => setAddMemberRole(v as 'SPOC' | 'Panel')}>
-                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SPOC">SPOC</SelectItem>
-                    <SelectItem value="Panel">Panel</SelectItem>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <span className="text-xs text-muted-foreground w-32">as Panel</span>
-              )}
+              <Select value={addMemberRole} onValueChange={v => setAddMemberRole(v as 'SPOC' | 'Panel' | 'Evaluator')}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {currentUser?.user?.isSuperAdmin && <SelectItem value="SPOC">SPOC</SelectItem>}
+                  <SelectItem value="Panel">Panel</SelectItem>
+                  <SelectItem value="Evaluator">Evaluator</SelectItem>
+                </SelectContent>
+              </Select>
               <Button onClick={handleAddMember} disabled={!addMemberUserId}>Add</Button>
             </div>
             {!currentUser?.user?.isSuperAdmin && (
-              <p className="text-xs text-muted-foreground">SPOCs can add Panel members but cannot add or remove SPOCs.</p>
+              <p className="text-xs text-muted-foreground">SPOCs can add Panel or Evaluator members but cannot add or remove SPOCs.</p>
             )}
           </div>
         </TabsContent>

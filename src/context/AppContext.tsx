@@ -3,7 +3,7 @@ import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
 import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer, User, DriveRole } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
-import { canEditDriveConfig, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
+import { canEditDriveConfig, canCreateDrive, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
 import { generateInviteToken } from '../lib/utils';
 
 interface UserSession {
@@ -155,7 +155,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>,
     initialSpocUserId?: string,
   ): CampusDrive | undefined => {
-    if (!canEditDriveConfig(currentUser?.user)) return undefined;
+    if (!canCreateDrive(currentUser?.user, db)) return undefined;
     const newDrive: CampusDrive = {
       ...driveData,
       id: `DRV-2026-${100 + db.drives.length + 1}`,
@@ -163,16 +163,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selected: 0,
       createdAt: new Date().toISOString(),
     };
-    const driveMemberships = initialSpocUserId
-      ? [...db.driveMemberships, {
-          id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
-          driveId: newDrive.id,
-          userId: initialSpocUserId,
-          role: 'SPOC' as const,
-          addedAt: new Date().toISOString(),
-          addedByUserId: currentUser?.user?.id ?? '',
-        }]
-      : db.driveMemberships;
+    let newMembership: typeof db.driveMemberships[number] | undefined;
+    if (initialSpocUserId) {
+      newMembership = {
+        id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
+        driveId: newDrive.id,
+        userId: initialSpocUserId,
+        role: 'SPOC' as const,
+        addedAt: new Date().toISOString(),
+        addedByUserId: currentUser?.user?.id ?? '',
+      };
+    } else if (!currentUser?.user?.isSuperAdmin && currentUser?.user?.id) {
+      // Evaluators need their own membership to see the drive they just
+      // created via getVisibleDrives — auto-add them as Evaluator, not SPOC.
+      newMembership = {
+        id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
+        driveId: newDrive.id,
+        userId: currentUser.user.id,
+        role: 'Evaluator' as const,
+        addedAt: new Date().toISOString(),
+        addedByUserId: currentUser.user.id,
+      };
+    }
+    const driveMemberships = newMembership ? [...db.driveMemberships, newMembership] : db.driveMemberships;
     const updatedDb = { ...db, drives: [newDrive, ...db.drives], driveMemberships };
     setDb(updatedDb);
     saveDatabase(updatedDb);

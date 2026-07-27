@@ -837,6 +837,22 @@ export function generateMockDatabase(): Database {
         addedByUserId: superAdminUser.id,
       });
     }
+
+    // Every ~5th drive also gets an Evaluator, to exercise the OA-evaluation role.
+    if (i % 5 === 0) {
+      const evaluatorPool = assignableUsers.filter(u => u.id !== spoc.id);
+      const evaluator = rnd.pick(evaluatorPool);
+      if (!driveMemberships.some(m => m.driveId === drive.id && m.userId === evaluator.id)) {
+        driveMemberships.push({
+          id: `MEM-${driveMemberships.length + 1}`,
+          driveId: drive.id,
+          userId: evaluator.id,
+          role: 'Evaluator',
+          addedAt: drive.date,
+          addedByUserId: superAdminUser.id,
+        });
+      }
+    }
   });
 
   // Per-drive total marks (mirrors TestDetail.tsx's own driveQuestions/totalMarks calc),

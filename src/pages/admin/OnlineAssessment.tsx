@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
 import { computeDriveStatus, getDriveLinkedAssessment, getDriveDisplayName } from '../../utils/driveStatus';
-import { getVisibleDrives, canEditDriveConfig } from '../../utils/permissions';
+import { getVisibleDrives, canEditDriveConfig, canCreateDrive } from '../../utils/permissions';
 import { formatDriveDateRange } from '../../utils/dateFormat';
 
 interface TestRow {
@@ -71,6 +71,7 @@ export const OnlineAssessment: React.FC = () => {
   const { db, currentUser, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
   const navigate = useNavigate();
   const canEditDrives = canEditDriveConfig(currentUser?.user);
+  const canCreateDrives = canCreateDrive(currentUser?.user, db);
   const visibleDrives = useMemo(() => getVisibleDrives(currentUser?.user, db), [currentUser?.user, db]);
 
   // ── Delete drive state ───────────────────────────────────────────────────────
@@ -538,7 +539,7 @@ export const OnlineAssessment: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Tests</h1>
-        {canEditDrives && (
+        {canCreateDrives && (
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
             New Drive
@@ -653,7 +654,7 @@ export const OnlineAssessment: React.FC = () => {
               <Label>Location</Label>
               <Input value={draftLocation} onChange={e => setDraftLocation(e.target.value)} />
             </div>
-            {isCreating && (
+            {isCreating && currentUser?.user?.isSuperAdmin && (
               <div className="space-y-1.5">
                 <Label>SPOC</Label>
                 <Select value={spocUserId} onValueChange={setSpocUserId}>
@@ -670,6 +671,9 @@ export const OnlineAssessment: React.FC = () => {
                   </p>
                 )}
               </div>
+            )}
+            {isCreating && !currentUser?.user?.isSuperAdmin && (
+              <p className="text-xs text-muted-foreground">You'll be added as Evaluator on this drive.</p>
             )}
           </div>
 

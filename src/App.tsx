@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
+import { isEvaluatorAnywhere } from './utils/permissions';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Toaster } from 'sonner';
@@ -56,6 +57,13 @@ const SuperAdminOnlyRoute: React.FC = () => {
   return <Outlet />;
 };
 
+const QuestionBankAccessRoute: React.FC = () => {
+  const { currentUser, db } = useApp();
+  const allowed = !!currentUser?.user?.isSuperAdmin || isEvaluatorAnywhere(currentUser?.user, db);
+  if (!allowed) return <Navigate to="/admin/online-assessment" replace />;
+  return <Outlet />;
+};
+
 const AdminIndexRedirect: React.FC = () => {
   const { currentUser } = useApp();
   return <Navigate to={defaultAdminRoute(currentUser?.user)} replace />;
@@ -90,9 +98,11 @@ const AppRoutes: React.FC = () => {
         <Route element={<Layout><Outlet /></Layout>}>
           <Route path="/admin/online-assessment" element={<OnlineAssessment />} />
           <Route path="/admin/online-assessment/:id" element={<TestDetail />} />
+          <Route element={<QuestionBankAccessRoute />}>
+            <Route path="/admin/question-bank" element={<QuestionBank />} />
+          </Route>
           <Route element={<SuperAdminOnlyRoute />}>
             <Route path="/admin/dashboard"     element={<Dashboard />} />
-            <Route path="/admin/question-bank" element={<QuestionBank />} />
             <Route path="/admin/settings"      element={<Settings />} />
             <Route path="/admin/trash"         element={<Trash />} />
           </Route>

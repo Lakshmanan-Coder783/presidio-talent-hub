@@ -5,7 +5,7 @@ export interface User {
   isSuperAdmin: boolean; // global flag, independent of any DriveMembership
 }
 
-export type DriveRole = 'SPOC' | 'Panel';
+export type DriveRole = 'SPOC' | 'Panel' | 'Evaluator';
 
 export interface DriveMembership {
   id: string;
