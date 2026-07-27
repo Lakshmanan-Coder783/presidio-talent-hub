@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
 import { HelpCircle, Shield, Users, Lock, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,10 +26,19 @@ export const Login: React.FC = () => {
   const [selectedUserId, setSelectedUserId] = useState(defaultUserId);
 
   const handleMicrosoftLogin = () => {
-    if (!selectedUserId) return;
+    if (!selectedUserId) {
+      toast.error('Please select a user to sign in as.');
+      return;
+    }
     setLoading(true);
-    setTimeout(() => {
-      loginAdmin(selectedUserId);
+    setTimeout(async () => {
+      try {
+        await loginAdmin(selectedUserId);
+      } catch {
+        toast.error('Sign-in failed. Please select a user and try again.');
+      } finally {
+        setLoading(false);
+      }
     }, 1200);
   };
 

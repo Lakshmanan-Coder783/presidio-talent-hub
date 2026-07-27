@@ -92,6 +92,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('presidio-db-updated', handleDbUpdate);
   }, []);
 
+  // Hydrate the staff directory from the real backend (frontend ships with no
+  // mock users of its own). Not paired with saveDatabase — this is a
+  // read-through from the source of truth, not a local mutation to persist.
+  // Fails silently if the API isn't reachable so the app still loads.
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((users: User[]) => setDb(prev => ({ ...prev, users })))
+      .catch(err => console.error('Failed to load users from backend:', err));
+  }, []);
+
   const loginAdmin = async (userId: string) => {
     // Simulates an async Microsoft Entra ID authentication delay
     return new Promise<void>((resolve, reject) => {

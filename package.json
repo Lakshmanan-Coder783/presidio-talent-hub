@@ -3,11 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": ["server"],
   "scripts": {
     "dev": "vite",
+    "dev:server": "npm run dev -w server",
+    "dev:all": "concurrently -n web,api -c blue,green \"npm:dev\" \"npm:dev:server\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed": "npm run seed -w server"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
@@ -36,6 +40,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
+    "concurrently": "^10.0.4",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Environment variables
 .env
@@ -19,6 +20,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/tasks.json
 .idea
 .DS_Store
 *.suo
