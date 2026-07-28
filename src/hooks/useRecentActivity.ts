@@ -48,7 +48,11 @@ export function useRecentActivity(db: Database, limit = 12): ActivityEntry[] {
       });
     }
 
-    entries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return entries.slice(0, limit);
+    // A malformed timestamp (e.g. non-ISO time string) would make formatDistanceToNow
+    // throw downstream and crash the whole layout — drop anything unparsable here so
+    // one bad record can't take out the entire activity feed.
+    const valid = entries.filter(e => !isNaN(new Date(e.timestamp).getTime()));
+    valid.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return valid.slice(0, limit);
   }, [db.candidates, db.offers, db.interviews, limit]);
 }

@@ -36,7 +36,7 @@ import {
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Send, BarChart2, FileText,
   Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase, KeyRound, Cog,
+  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase, KeyRound, Cog, Timer,
 } from 'lucide-react';
 import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
@@ -44,7 +44,7 @@ import { generateAccessPassword, generateSlug } from '../../lib/utils';
 import { sendInviteEmail, isEmailConfigured } from '../../lib/email';
 import {
   getUserRoleForDrive, canEditDriveConfig, canAdvanceCandidate,
-  redactCandidateForViewer, canManageMembership,
+  redactCandidateForViewer, canManageMembership, canExtendExamTime,
 } from '../../utils/permissions';
 import { computeDriveStatus, getDriveDisplayName } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
@@ -362,7 +362,7 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime } = useApp();
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -495,6 +495,7 @@ export const TestDetail: React.FC = () => {
   const canEditThisDrive = canEditDriveConfig(currentUser?.user);
   const canDecide = (stage: 'Interview' | 'Coding Exercise' | 'Whiteboard Interview') =>
     drive ? canAdvanceCandidate(currentUser?.user, drive.id, stage, db) : false;
+  const canExtendTime = drive ? canExtendExamTime(currentUser?.user, drive.id, db) : false;
 
   const driveCandidates = useMemo(
     () => (
@@ -768,9 +769,37 @@ export const TestDetail: React.FC = () => {
   const eligibleInviteCount = driveCandidates.filter(c => c.assessmentStatus !== 'Completed').length;
   const canSendInvites = !!linkedAssessment && eligibleInviteCount > 0;
 
+  // Extend exam time — shared dialog for both the bulk (whole drive) and
+  // individual (one candidate) actions; `extendTimeTarget` tracks which.
+  const [extendTimeTarget, setExtendTimeTarget] = useState<
+    { scope: 'drive' } | { scope: 'candidate'; id: string; name: string } | null
+  >(null);
+  const [extendMinutesInput, setExtendMinutesInput] = useState('10');
+
+  const handleConfirmExtendTime = async () => {
+    if (!extendTimeTarget) return;
+    const minutes = parseInt(extendMinutesInput, 10);
+    if (!minutes || minutes <= 0) {
+      toast.error('Enter a number of minutes greater than 0.');
+      return;
+    }
+    if (extendTimeTarget.scope === 'drive') {
+      if (!drive) return;
+      const count = await extendDriveExamTime(drive.id, minutes);
+      toast.success(count > 0
+        ? `Added ${minutes} minutes for ${count} candidate${count !== 1 ? 's' : ''}.`
+        : 'No in-progress candidates to extend.');
+    } else {
+      await extendCandidateExamTime(extendTimeTarget.id, minutes);
+      toast.success(`Added ${minutes} minutes for ${extendTimeTarget.name}.`);
+    }
+    setExtendTimeTarget(null);
+    setExtendMinutesInput('10');
+  };
+
   const handleSendInvites = async () => {
     if (!drive) return;
-    const invited = activateDriveInvites(drive.id, 'remote');
+    const invited = await activateDriveInvites(drive.id, 'remote');
     if (invited.length === 0) return;
 
     if (!isEmailConfigured()) {
@@ -803,9 +832,9 @@ export const TestDetail: React.FC = () => {
 
   // Activates candidates without emailing — admin shares the Test Link/Password
   // (surfaced immediately via the existing publish-success dialog).
-  const handleShareManually = () => {
+  const handleShareManually = async () => {
     if (!drive) return;
-    const activated = activateDriveInvites(drive.id, 'in-person');
+    const activated = await activateDriveInvites(drive.id, 'in-person');
     if (activated.length === 0) return;
     toast.success(`Activated ${activated.length} candidate${activated.length !== 1 ? 's' : ''} for the test.`);
     setPublishSuccessOpen(true);
@@ -1290,7 +1319,27 @@ export const TestDetail: React.FC = () => {
           row.status === 'Finished' ? 'text-green-600 font-medium' :
           row.status === 'In Progress' ? 'text-amber-600 font-medium' :
           'text-muted-foreground';
-        return <span className={`text-sm ${cls}`}>{row.status}</span>;
+        const extraMinutes = driveCandidates.find(c => c.id === row.id)?.extraTimeMinutes;
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className={`text-sm ${cls}`}>{row.status}</span>
+            {!!extraMinutes && (
+              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-200">
+                +{extraMinutes} min
+              </span>
+            )}
+            {canExtendTime && row.rawStatus !== 'Completed' && (
+              <button
+                type="button"
+                title="Extend exam time for this candidate"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setExtendTimeTarget({ scope: 'candidate', id: row.id, name: row.name })}
+              >
+                <Timer className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -2360,6 +2409,17 @@ export const TestDetail: React.FC = () => {
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Mark All Finished
+                </Button>
+              )}
+              {canExtendTime && driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={() => setExtendTimeTarget({ scope: 'drive' })}
+                >
+                  <Timer className="h-3.5 w-3.5" />
+                  Extend Time
                 </Button>
               )}
             </div>
@@ -3699,6 +3759,36 @@ export const TestDetail: React.FC = () => {
           </div>
           <DialogFooter>
             <Button className="w-full" onClick={() => setCredentialsRow(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!extendTimeTarget} onOpenChange={open => !open && setExtendTimeTarget(null)}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Extend Exam Time</DialogTitle>
+            <DialogDescription>
+              {extendTimeTarget?.scope === 'drive'
+                ? 'Add extra minutes to every in-progress or not-yet-completed candidate in this drive — e.g. to compensate for a network outage.'
+                : `Add extra minutes to ${extendTimeTarget?.scope === 'candidate' ? extendTimeTarget.name : ''}'s exam time.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Extra minutes</Label>
+            <Input
+              type="number"
+              min={1}
+              value={extendMinutesInput}
+              onChange={e => setExtendMinutesInput(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtendTimeTarget(null)}>Cancel</Button>
+            <Button onClick={handleConfirmExtendTime} className="gap-2">
+              <Timer className="h-3.5 w-3.5" />
+              Add Time
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

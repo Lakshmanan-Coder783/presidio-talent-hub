@@ -72,6 +72,13 @@ export function canViewUnredactedCandidate(user: User | undefined, driveId: stri
   return role === 'SuperAdmin' || role === 'SPOC' || role === 'Evaluator';
 }
 
+// Extending exam time (network-outage compensation) — SuperAdmin, SPOC, or Evaluator,
+// since any of them may be the one on the ground during a live drive.
+export function canExtendExamTime(user: User | undefined, driveId: string, db: Database): boolean {
+  const role = getUserRoleForDrive(user, driveId, db);
+  return role === 'SuperAdmin' || role === 'SPOC' || role === 'Evaluator';
+}
+
 const REDACTED = '••••••••';
 
 export function redactCandidateForViewer<T extends Pick<Candidate, 'email' | 'phone'>>(

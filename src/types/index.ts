@@ -100,6 +100,7 @@ export interface Candidate {
   assessmentRank?: number;
   assessmentDurationUsed?: number; // in seconds
   assessmentSubmissionDate?: string;
+  extraTimeMinutes?: number; // cumulative extra minutes granted (e.g. to compensate for a network outage)
   sectionScores?: {
     aptitude?: number;
     logical?: number;

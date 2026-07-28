@@ -48,7 +48,7 @@ export const FunnelChart: React.FC<{ data: FunnelStage[] }> = ({ data }) => {
       <ReBarChart
         layout="vertical"
         data={chartData}
-        margin={{ top: 4, right: 48, left: 90, bottom: 4 }}
+        margin={{ top: 4, right: 48, left: 100, bottom: 4 }}
       >
         <CartesianGrid horizontal={false} stroke="var(--border)" strokeDasharray="3 3" />
         <YAxis
@@ -57,7 +57,7 @@ export const FunnelChart: React.FC<{ data: FunnelStage[] }> = ({ data }) => {
           tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
-          width={90}
+          width={100}
         />
         <XAxis
           type="number"

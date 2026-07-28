@@ -77,13 +77,13 @@ export const Dashboard: React.FC = () => {
     const offered = filteredCandidates.filter(c => ['Offered', 'Joined'].includes(c.funnelStage)).length;
     const joined = filteredCandidates.filter(c => c.funnelStage === 'Joined').length;
     return [
-      { stage: '1. Applied', count: total, pct: 100 },
-      { stage: '2. Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / (total || 1)) * 100) },
-      { stage: '3. Interview', count: passedInterview, pct: Math.round((passedInterview / (passedOnlineTest || 1)) * 100) },
-      { stage: '4. Coding', count: passedCoding, pct: Math.round((passedCoding / (passedInterview || 1)) * 100) },
-      { stage: '5. Whiteboard', count: passedWhiteboard, pct: Math.round((passedWhiteboard / (passedCoding || 1)) * 100) },
-      { stage: '6. Offered', count: offered, pct: Math.round((offered / (passedWhiteboard || 1)) * 100) },
-      { stage: '7. Joined', count: joined, pct: Math.round((joined / (offered || 1)) * 100) },
+      { stage: 'Applied', count: total, pct: 100 },
+      { stage: 'Online Test', count: passedOnlineTest, pct: Math.round((passedOnlineTest / (total || 1)) * 100) },
+      { stage: 'Interview', count: passedInterview, pct: Math.round((passedInterview / (passedOnlineTest || 1)) * 100) },
+      { stage: 'Coding', count: passedCoding, pct: Math.round((passedCoding / (passedInterview || 1)) * 100) },
+      { stage: 'Whiteboard', count: passedWhiteboard, pct: Math.round((passedWhiteboard / (passedCoding || 1)) * 100) },
+      { stage: 'Offered', count: offered, pct: Math.round((offered / (passedWhiteboard || 1)) * 100) },
+      { stage: 'Joined', count: joined, pct: Math.round((joined / (offered || 1)) * 100) },
     ];
   }, [filteredCandidates]);
 

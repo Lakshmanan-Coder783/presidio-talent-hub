@@ -7,6 +7,7 @@ import { interviewsRouter } from "./interviews.routes.js";
 import { offersRouter } from "./offers.routes.js";
 import { collegeStudentsRouter } from "./collegeStudents.routes.js";
 import { usersRouter } from "./users.routes.js";
+import { driveMembershipsRouter } from "./driveMemberships.routes.js";
 
 export const apiRouter = Router();
 
@@ -22,6 +23,7 @@ apiRouter.use(interviewsRouter);
 apiRouter.use(offersRouter);
 apiRouter.use(collegeStudentsRouter);
 apiRouter.use(usersRouter);
+apiRouter.use(driveMembershipsRouter);
 
 // Auth and mutating (POST/PATCH/DELETE) routers mount here as later phases
 // of the backend plan land.

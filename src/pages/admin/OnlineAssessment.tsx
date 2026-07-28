@@ -142,13 +142,13 @@ export const OnlineAssessment: React.FC = () => {
     setEditOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isCreating) {
       if (!draftName || !draftCollege || !draftDate || !draftLocation) {
         toast.error('Please fill all required fields.');
         return;
       }
-      createDrive({
+      const drive = await createDrive({
         name: draftName,
         college: draftCollege,
         role: draftRole || undefined,
@@ -158,7 +158,7 @@ export const OnlineAssessment: React.FC = () => {
         description: '',
         status: 'Draft',
       }, spocUserId || undefined);
-      toast.success('Drive created successfully.');
+      if (drive) toast.success('Drive created successfully.');
     } else {
       if (!editDrive) return;
       updateDrive({
@@ -205,9 +205,9 @@ export const OnlineAssessment: React.FC = () => {
     }
   };
 
-  const confirmCollegeImport = () => {
+  const confirmCollegeImport = async () => {
     if (!pendingImportCollege) return;
-    const count = importCollegeStudents(pendingImportCollege, collegeCsvPreview);
+    const count = await importCollegeStudents(pendingImportCollege, collegeCsvPreview);
     setCollegeCsvPreviewOpen(false);
     setCollegeCsvPreview([]);
     setPendingImportCollege(null);
@@ -241,9 +241,9 @@ export const OnlineAssessment: React.FC = () => {
     }
   };
 
-  const confirmDriveCsvImport = () => {
+  const confirmDriveCsvImport = async () => {
     if (!activeImportDriveId) return;
-    const imported = bulkImportCandidates(activeImportDriveId, driveCsvParsedData);
+    const imported = await bulkImportCandidates(activeImportDriveId, driveCsvParsedData);
     setDriveCsvPreviewOpen(false);
     setDriveCsvParsedData([]);
     setActiveImportDriveId(null);

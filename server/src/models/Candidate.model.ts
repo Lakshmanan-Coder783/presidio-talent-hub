@@ -49,6 +49,7 @@ export interface CandidateDoc {
   assessmentRank?: number;
   assessmentDurationUsed?: number;
   assessmentSubmissionDate?: string;
+  extraTimeMinutes?: number;
   sectionScores?: SectionScores;
 
   interviewStatus: "Not Scheduled" | "Scheduled" | "Ongoing" | "Passed" | "Failed";
@@ -184,6 +185,7 @@ const candidateSchema = new Schema<CandidateDoc>(
     assessmentRank: Number,
     assessmentDurationUsed: Number,
     assessmentSubmissionDate: String,
+    extraTimeMinutes: Number,
     sectionScores: sectionScoresSchema,
 
     interviewStatus: {

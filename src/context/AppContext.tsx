@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { getDatabase, saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
-import type { Assessment, CampusDrive, Candidate, CollegeStudent, Question, Interview, Offer, User, DriveRole } from '../types';
+import type { Assessment, CampusDrive, Candidate, Question, Interview, User, DriveRole, DriveMembership } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
 import { canEditDriveConfig, canCreateDrive, canManageMembership, canReleaseOffer, canAdvanceCandidate } from '../utils/permissions';
-import { generateInviteToken } from '../lib/utils';
 
 interface UserSession {
   role: 'admin' | 'candidate';
@@ -37,7 +37,7 @@ interface AppContextType {
   loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
   logout: () => void;
-  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>, initialSpocUserId?: string) => CampusDrive | undefined;
+  createDrive: (driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>, initialSpocUserId?: string) => Promise<CampusDrive | undefined>;
   updateDrive: (drive: CampusDrive) => void;
   deleteDrive: (driveId: string) => void;
   restoreDrive: (driveId: string) => void;
@@ -55,19 +55,21 @@ interface AppContextType {
     proctoring?: { windowViolationCount?: number; imageViolationCount?: number; proctoringTerminated?: boolean }
   ) => void;
   bulkInvite: (assessmentId: string, date: string, driveId: string) => void;
-  createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Assessment;
+  createAssessment: (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>) => Promise<Assessment | undefined>;
   createAssessmentForDrive: (
     driveId: string,
     data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
     driveQuestionIds: string[]
-  ) => Assessment;
+  ) => Promise<Assessment | undefined>;
   updateAssessment: (assessment: Assessment) => void;
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
   loginCandidateByTestSlug: (slug: string, candidateId: string, password: string, token?: string) => { success: boolean; message: string };
-  bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => number;
-  activateDriveInvites: (driveId: string, mode: 'remote' | 'in-person') => { id: string; name: string; email: string; inviteToken?: string }[];
+  bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => Promise<number>;
+  activateDriveInvites: (driveId: string, mode: 'remote' | 'in-person') => Promise<{ id: string; name: string; email: string; inviteToken?: string }[]>;
   markAttendance: (candidateId: string, present: boolean) => void;
-  importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => number;
+  extendCandidateExamTime: (candidateId: string, extraMinutes: number) => void;
+  extendDriveExamTime: (driveId: string, extraMinutes: number) => Promise<number>;
+  importCollegeStudents: (college: string, rows: ParsedStudentRow[]) => Promise<number>;
   deleteCollegeStudents: (college: string) => void;
   addDriveMembership: (driveId: string, userId: string, role: DriveRole) => void;
   removeDriveMembership: (membershipId: string) => void;
@@ -101,6 +103,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((users: User[]) => setDb(prev => ({ ...prev, users })))
       .catch(err => console.error('Failed to load users from backend:', err));
+  }, []);
+
+  // Same read-through hydration as above, for every other entity now backed
+  // by a real MongoDB collection. Each fetch is independent and merges only
+  // its own field via the functional setDb form, so they can resolve in any
+  // order without clobbering each other.
+  useEffect(() => {
+    const endpoints: Array<[string, keyof Database]> = [
+      ['/api/drives', 'drives'],
+      ['/api/candidates', 'candidates'],
+      ['/api/assessments', 'assessments'],
+      ['/api/questions', 'questions'],
+      ['/api/interviews', 'interviews'],
+      ['/api/offers', 'offers'],
+      ['/api/college-students', 'collegeStudents'],
+      ['/api/drive-memberships', 'driveMemberships'],
+    ];
+    endpoints.forEach(([url, field]) => {
+      fetch(url)
+        .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+        .then(data => setDb(prev => ({ ...prev, [field]: data })))
+        .catch(err => console.error(`Failed to load ${field} from backend:`, err));
+    });
   }, []);
 
   const loginAdmin = async (userId: string) => {
@@ -162,355 +187,295 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // drive creation itself — doing this as two separate mutator calls would
   // have the second call's setDb/saveDatabase overwrite the first (each
   // reads the same pre-update `db` closure), silently losing the new drive.
-  const createDrive = (
+  const createDrive = async (
     driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>,
     initialSpocUserId?: string,
-  ): CampusDrive | undefined => {
+  ): Promise<CampusDrive | undefined> => {
     if (!canCreateDrive(currentUser?.user, db)) return undefined;
-    const newDrive: CampusDrive = {
-      ...driveData,
-      id: `DRV-2026-${100 + db.drives.length + 1}`,
-      registered: 0,
-      selected: 0,
-      createdAt: new Date().toISOString(),
-    };
-    let newMembership: typeof db.driveMemberships[number] | undefined;
-    if (initialSpocUserId) {
-      newMembership = {
-        id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
-        driveId: newDrive.id,
-        userId: initialSpocUserId,
-        role: 'SPOC' as const,
-        addedAt: new Date().toISOString(),
-        addedByUserId: currentUser?.user?.id ?? '',
-      };
-    } else if (!currentUser?.user?.isSuperAdmin && currentUser?.user?.id) {
-      // Evaluators need their own membership to see the drive they just
-      // created via getVisibleDrives — auto-add them as Evaluator, not SPOC.
-      newMembership = {
-        id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
-        driveId: newDrive.id,
-        userId: currentUser.user.id,
-        role: 'Evaluator' as const,
-        addedAt: new Date().toISOString(),
-        addedByUserId: currentUser.user.id,
-      };
+    try {
+      const res = await fetch('/api/drives', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...driveData,
+          initialSpocUserId,
+          createdByUserId: currentUser?.user?.id ?? '',
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const { drive, membership } = await res.json();
+      setDb(prev => ({
+        ...prev,
+        drives: [drive, ...prev.drives],
+        driveMemberships: membership ? [...prev.driveMemberships, membership] : prev.driveMemberships,
+      }));
+      return drive;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create drive.');
+      return undefined;
     }
-    const driveMemberships = newMembership ? [...db.driveMemberships, newMembership] : db.driveMemberships;
-    const updatedDb = { ...db, drives: [newDrive, ...db.drives], driveMemberships };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return newDrive;
   };
 
-  const updateDrive = (updatedDrive: CampusDrive) => {
+  const updateDrive = async (updatedDrive: CampusDrive) => {
     if (!canEditDriveConfig(currentUser?.user)) return;
-    const updatedDrives = db.drives.map(d => d.id === updatedDrive.id ? updatedDrive : d);
-    const updatedDb = { ...db, drives: updatedDrives };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/drives/${updatedDrive.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedDrive),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: CampusDrive = await res.json();
+      setDb(prev => ({ ...prev, drives: prev.drives.map(d => d.id === saved.id ? saved : d) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update drive.');
+    }
   };
 
   // Soft-delete: moves the drive to Trash without touching it or its candidates, so
   // restoreDrive can bring it back exactly as it was. Permanent removal is a separate,
   // explicit action (permanentlyDeleteDrive) taken from within the Trash view.
-  const deleteDrive = (driveId: string) => {
+  const deleteDrive = async (driveId: string) => {
     if (!canEditDriveConfig(currentUser?.user)) return;
-    const updatedDb = {
-      ...db,
-      drives: db.drives.map(d => d.id === driveId ? { ...d, deletedAt: new Date().toISOString() } : d),
-    };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/drives/${driveId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: CampusDrive = await res.json();
+      setDb(prev => ({ ...prev, drives: prev.drives.map(d => d.id === driveId ? saved : d) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to move drive to trash.');
+    }
   };
 
-  const restoreDrive = (driveId: string) => {
+  const restoreDrive = async (driveId: string) => {
     if (!canEditDriveConfig(currentUser?.user)) return;
-    const updatedDb = {
-      ...db,
-      drives: db.drives.map(d => d.id === driveId ? { ...d, deletedAt: undefined } : d),
-    };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/drives/${driveId}/restore`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: CampusDrive = await res.json();
+      setDb(prev => ({ ...prev, drives: prev.drives.map(d => d.id === driveId ? saved : d) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restore drive.');
+    }
   };
 
-  const permanentlyDeleteDrive = (driveId: string) => {
+  const permanentlyDeleteDrive = async (driveId: string) => {
     if (!canEditDriveConfig(currentUser?.user)) return;
-    const updatedDb = {
-      ...db,
-      drives: db.drives.filter(d => d.id !== driveId),
-      candidates: db.candidates.filter(c => c.driveId !== driveId),
-    };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/drives/${driveId}/permanent`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      setDb(prev => ({
+        ...prev,
+        drives: prev.drives.filter(d => d.id !== driveId),
+        candidates: prev.candidates.filter(c => c.driveId !== driveId),
+      }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to permanently delete drive.');
+    }
   };
 
-  const updateCandidate = (updatedCandidate: Candidate) => {
-    const updatedCandidates = db.candidates.map(c => c.id === updatedCandidate.id ? updatedCandidate : c);
-    const updatedDb = { ...db, candidates: updatedCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const updateCandidate = async (updatedCandidate: Candidate) => {
+    try {
+      const res = await fetch(`/api/candidates/${updatedCandidate.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedCandidate),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Candidate = await res.json();
+      setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => c.id === saved.id ? saved : c) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update candidate.');
+    }
   };
 
-  const bulkUpdateCandidates = (updates: Candidate[]) => {
-    const map = new Map(updates.map(c => [c.id, c]));
-    const updatedCandidates = db.candidates.map(c => map.get(c.id) ?? c);
-    const updatedDb = { ...db, candidates: updatedCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const bulkUpdateCandidates = async (updates: Candidate[]) => {
+    try {
+      const res = await fetch('/api/candidates/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Candidate[] = await res.json();
+      const map = new Map(saved.map(c => [c.id, c]));
+      setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => map.get(c.id) ?? c) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update candidates.');
+    }
   };
 
-  const createQuestion = (qData: Omit<Question, 'id'>) => {
-    const newQ: Question = {
-      ...qData,
-      id: `Q-${1000 + db.questions.length + 1}`
-    };
-    const updatedDb = { ...db, questions: [...db.questions, newQ] };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const createQuestion = async (qData: Omit<Question, 'id'>) => {
+    try {
+      const res = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(qData),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const newQ: Question = await res.json();
+      setDb(prev => ({ ...prev, questions: [...prev.questions, newQ] }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create question.');
+    }
   };
 
-  const createInterview = (intData: Omit<Interview, 'id'>) => {
+  const createInterview = async (intData: Omit<Interview, 'id'>) => {
     if (intData.stage === 'Whiteboard Interview') {
       const targetCandidate = db.candidates.find(c => c.id === intData.candidateId);
       if (!targetCandidate || !canAdvanceCandidate(currentUser?.user, targetCandidate.driveId, 'Whiteboard Interview', db)) return;
     }
-    const newInt: Interview = {
-      ...intData,
-      id: `INT-2026-${1000 + db.interviews.length + 1}`
-    };
-    const updatedCandidates = db.candidates.map(c => {
-      if (c.id === intData.candidateId) {
-        let nextStage = c.funnelStage;
-        if (intData.stage === 'Interview') nextStage = 'Interview';
-        else if (intData.stage === 'Coding Exercise') nextStage = 'Coding Exercise';
-        else if (intData.stage === 'Whiteboard Interview') nextStage = 'Whiteboard Interview';
-
-        return {
-          ...c,
-          interviewStatus: 'Scheduled' as const,
-          funnelStage: nextStage
-        };
-      }
-      return c;
-    });
-
-    const updatedDb = { ...db, interviews: [newInt, ...db.interviews], candidates: updatedCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch('/api/interviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(intData),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { interview, candidate } = await res.json();
+      setDb(prev => ({
+        ...prev,
+        interviews: [interview, ...prev.interviews],
+        candidates: prev.candidates.map(c => c.id === candidate.id ? candidate : c),
+      }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to schedule interview.');
+    }
   };
 
-  const updateOfferStatus = (candidateId: string, status: Candidate['offerStatus']) => {
+  const updateOfferStatus = async (candidateId: string, status: Candidate['offerStatus']) => {
     const targetCandidate = db.candidates.find(c => c.id === candidateId);
     if (!targetCandidate || !canReleaseOffer(currentUser?.user, targetCandidate.driveId, db)) return;
-    const updatedCandidates = db.candidates.map(c => {
-      if (c.id === candidateId) {
-        let stage: Candidate['funnelStage'] = c.funnelStage;
-        if (status === 'Offered') stage = 'Offered';
-        if (status === 'Joined') stage = 'Joined';
-        return {
-          ...c,
-          offerStatus: status,
-          funnelStage: stage
-        };
-      }
-      return c;
-    });
-
-    // Handle Offers list
-    let updatedOffers = [...db.offers];
-    const existingOffer = db.offers.find(o => o.candidateId === candidateId);
-    const candidate = db.candidates.find(c => c.id === candidateId);
-
-    if (candidate) {
-      if (status !== 'None') {
-        if (existingOffer) {
-          updatedOffers = db.offers.map(o => o.candidateId === candidateId ? { ...o, status: status as Offer['status'] } : o);
-        } else {
-          updatedOffers.unshift({
-            id: `OFF-2026-${200 + db.offers.length + 1}`,
-            candidateId,
-            candidateName: candidate.name,
-            college: candidate.college,
-            ctc: 8.5, // Default LPA
-            status: status as Offer['status'],
-            dateReleased: new Date().toISOString().split('T')[0]
-          });
-        }
-      } else {
-        updatedOffers = db.offers.filter(o => o.candidateId !== candidateId);
-      }
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}/offer-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { candidate, offer } = await res.json();
+      setDb(prev => ({
+        ...prev,
+        candidates: prev.candidates.map(c => c.id === candidateId ? candidate : c),
+        offers: offer
+          ? (prev.offers.some(o => o.candidateId === candidateId)
+              ? prev.offers.map(o => o.candidateId === candidateId ? offer : o)
+              : [offer, ...prev.offers])
+          : prev.offers.filter(o => o.candidateId !== candidateId),
+      }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update offer status.');
     }
-
-    const updatedDb = { ...db, candidates: updatedCandidates, offers: updatedOffers };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
   };
 
-  const submitCandidateAssessment = (
+  const submitCandidateAssessment = async (
     candidateId: string,
     assessmentId: string,
     answers: { [qId: string]: string | number[] | number },
     durationUsed: number,
     proctoring?: { windowViolationCount?: number; imageViolationCount?: number; proctoringTerminated?: boolean }
   ) => {
-    const candidate = db.candidates.find(c => c.id === candidateId);
-    const assessment = db.assessments.find(a => a.id === assessmentId);
-    if (!candidate || !assessment) return;
+    try {
+      const { browser, os } = parseUserAgent();
+      const res = await fetch(`/api/candidates/${candidateId}/submit-assessment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assessmentId, answers, durationUsed, proctoring,
+          deviceBrowser: browser, deviceOS: os,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const finalCandidate: Candidate = await res.json();
+      setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => c.id === candidateId ? finalCandidate : c) }));
 
-    // The drive's questionIds (managed in the Questions tab) are the source of
-    // truth for what's actually attached to the test; assessment.questionIds
-    // is set once at creation and isn't kept in sync with later edits.
-    const drive = db.drives.find(d => d.id === candidate.driveId);
-    const questionIds = drive?.questionIds ?? assessment.questionIds;
-
-    let score = 0;
-    const scoresBreakdown = { aptitude: 0, logical: 0, technical: 0, coding: 0, verbal: 0, quants: 0, cpp: 0, oops: 0, sql: 0, htmlcssjs: 0, subjective: 0, sqlQuery: 0 };
-
-    questionIds.forEach(qId => {
-      const question = db.questions.find(q => q.id === qId);
-      if (!question) return;
-
-      const ans = answers[qId];
-      let isCorrect = false;
-
-      if (question.type === 'MCQ') {
-        // MCQ answer is index (number)
-        isCorrect = ans !== undefined && question.correctOptions !== undefined && question.correctOptions[0] === Number(ans);
-      } else if (question.type === 'Multiple Select') {
-        // Multiple choice answers is list of indices
-        const userAnswers = Array.isArray(ans) ? ans : [];
-        const correctAnswers = question.correctOptions || [];
-        isCorrect = userAnswers.length === correctAnswers.length && 
-                    userAnswers.every(v => correctAnswers.includes(v));
-      } else if (question.type === 'Coding') {
-        // Coding questions evaluate as correct on submit
-        isCorrect = ans !== undefined && String(ans).trim().length > 10; // Basic check
-      } else if (question.type === 'SQL') {
-        isCorrect = ans !== undefined && String(ans).toLowerCase().includes('select');
-      }
-
-      if (isCorrect) {
-        score += question.marks;
-        const topic = question.topic;
-        if (topic === 'Aptitude') scoresBreakdown.aptitude += question.marks;
-        else if (topic === 'Logical Reasoning' || topic === 'Logical') scoresBreakdown.logical += question.marks;
-        else if (topic === 'Technical') scoresBreakdown.technical += question.marks;
-        else if (topic === 'Coding') scoresBreakdown.coding += question.marks;
-        else if (topic === 'Verbal') scoresBreakdown.verbal += question.marks;
-        else if (topic === 'Quants') scoresBreakdown.quants += question.marks;
-        else if (topic === 'C/C++') scoresBreakdown.cpp += question.marks;
-        else if (topic === 'OOPs') scoresBreakdown.oops += question.marks;
-        else if (topic === 'SQL') scoresBreakdown.sql += question.marks;
-        else if (topic === 'HTML/CSS/JS') scoresBreakdown.htmlcssjs += question.marks;
-        else if (topic === 'Subjective') scoresBreakdown.subjective += question.marks;
-        else if (topic === 'SQL Query') scoresBreakdown.sqlQuery += question.marks;
-      }
-    });
-
-    const { browser, os } = parseUserAgent();
-    const updatedCandidates = db.candidates.map(c => {
-      if (c.id === candidateId) {
-        return {
-          ...c,
-          assessmentStatus: 'Completed' as const,
-          assessmentScore: score,
-          assessmentDurationUsed: durationUsed,
-          assessmentSubmissionDate: new Date().toISOString(),
-          sectionScores: scoresBreakdown,
-          funnelStage: 'Online Test' as const, // Ensure funnel updates
-          deviceBrowser: browser,
-          deviceOS: os,
-          windowViolationCount: proctoring?.windowViolationCount,
-          imageViolationCount: proctoring?.imageViolationCount,
-          proctoringTerminated: proctoring?.proctoringTerminated,
-        };
-      }
-      return c;
-    });
-
-    // Re-evaluate ranks & percentiles for this assessment
-    const assessmentCandidates = updatedCandidates.filter(c => c.assessmentId === assessmentId && c.assessmentStatus === 'Completed');
-    assessmentCandidates.sort((a, b) => (b.assessmentScore || 0) - (a.assessmentScore || 0));
-    
-    assessmentCandidates.forEach((c, idx) => {
-      c.assessmentRank = idx + 1;
-      const count = assessmentCandidates.length;
-      c.assessmentPercentile = count > 1 
-        ? parseFloat((((count - (idx + 1)) / (count - 1)) * 100).toFixed(1))
-        : 100.0;
-    });
-
-    // Merge recalculated candidates back to list
-    const finalCandidates = updatedCandidates.map(c => {
-      const ranked = assessmentCandidates.find(rc => rc.id === c.id);
-      return ranked ? ranked : c;
-    });
-
-    const updatedDb = { ...db, candidates: finalCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-
-    // If candidate logged in, update current session
-    if (currentUser && currentUser.id === candidateId) {
-      const selfUpdated = finalCandidates.find(c => c.id === candidateId);
-      if (selfUpdated) {
-        const updatedSession = { ...currentUser, candidate: selfUpdated };
+      // If candidate logged in, update current session
+      if (currentUser && currentUser.id === candidateId) {
+        const updatedSession = { ...currentUser, candidate: finalCandidate };
         setCurrentUser(updatedSession);
         localStorage.setItem('presidio_session', JSON.stringify(updatedSession));
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit assessment.');
     }
   };
 
-  const updateAssessment = (updated: Assessment) => {
-    const updatedAssessments = db.assessments.map(a => a.id === updated.id ? updated : a);
-    const updatedDb = { ...db, assessments: updatedAssessments };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const updateAssessment = async (updated: Assessment) => {
+    try {
+      const res = await fetch(`/api/assessments/${updated.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Assessment = await res.json();
+      setDb(prev => ({ ...prev, assessments: prev.assessments.map(a => a.id === saved.id ? saved : a) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update assessment.');
+    }
   };
 
-  const updateQuestion = (id: string, updates: Partial<Omit<Question, 'id'>>) => {
-    const updatedDb = {
-      ...db,
-      questions: db.questions.map(q => q.id === id ? { ...q, ...updates } : q),
-    };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const updateQuestion = async (id: string, updates: Partial<Omit<Question, 'id'>>) => {
+    try {
+      const res = await fetch(`/api/questions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Question = await res.json();
+      setDb(prev => ({ ...prev, questions: prev.questions.map(q => q.id === id ? saved : q) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update question.');
+    }
   };
 
-  const createAssessment = (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>): Assessment => {
-    const newAsm: Assessment = {
-      ...data,
-      id: `ASM-${2000 + db.assessments.length + 1}`,
-      candidatesAssignedCount: 0,
-    };
-    const updatedDb = { ...db, assessments: [newAsm, ...db.assessments] };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return newAsm;
+  const createAssessment = async (data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>): Promise<Assessment | undefined> => {
+    try {
+      const res = await fetch('/api/assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const newAsm: Assessment = await res.json();
+      setDb(prev => ({ ...prev, assessments: [newAsm, ...prev.assessments] }));
+      return newAsm;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create assessment.');
+      return undefined;
+    }
   };
 
   // Atomically creates a new assessment AND links it (+ its question list) to
-  // the drive in a single db update, since two separate update calls in the
-  // same tick would each overwrite the other's change (both read the same
-  // pre-update `db` closure).
-  const createAssessmentForDrive = (
+  // the drive server-side in a single request, so the two writes can't leave
+  // the drive pointing at a half-created assessment.
+  const createAssessmentForDrive = async (
     driveId: string,
     data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
     driveQuestionIds: string[]
-  ): Assessment => {
-    const newAsm: Assessment = {
-      ...data,
-      id: `ASM-${2000 + db.assessments.length + 1}`,
-      candidatesAssignedCount: 0,
-    };
-    const updatedDrives = db.drives.map(d =>
-      d.id === driveId ? { ...d, assessmentId: newAsm.id, questionIds: driveQuestionIds } : d
-    );
-    const updatedDb = { ...db, assessments: [newAsm, ...db.assessments], drives: updatedDrives };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return newAsm;
+  ): Promise<Assessment | undefined> => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/assessments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, driveQuestionIds }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { assessment, drive } = await res.json();
+      setDb(prev => ({
+        ...prev,
+        assessments: [assessment, ...prev.assessments],
+        drives: prev.drives.map(d => d.id === driveId ? drive : d),
+      }));
+      return assessment;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create assessment.');
+      return undefined;
+    }
   };
 
   // Returns an error message if `now` falls outside the drive's configured exam date/time
@@ -547,10 +512,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // test password, even for a candidate who was invited via email.
     const drive = db.drives.find(d => d.assessmentId === asm.id);
     const passwordless = candidate.accessMode === 'remote' && !!token && token === candidate.inviteToken;
+    // A candidate already mid-test (e.g. reconnecting after a network drop) is
+    // resuming an already-authorized session, not requesting fresh admission — the
+    // exam window gate is only meant to control new entries, so it shouldn't lock
+    // someone out of their own in-progress attempt just because the nominal window
+    // closed while they were disconnected. testSession.ts already restores their
+    // exact answers/position once login succeeds.
+    const isResuming = candidate.assessmentStatus === 'InProgress';
 
     if (passwordless) {
       // Only enforce the exam time window when explicitly scheduled
-      if (drive?.experienceSettings?.testWindow === 'scheduled') {
+      if (!isResuming && drive?.experienceSettings?.testWindow === 'scheduled') {
         const windowError = checkExamWindow(drive);
         if (windowError) return { success: false, message: windowError };
       }
@@ -565,7 +537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'You are not marked as present for this test. Please contact your coordinator.' };
       }
       // Check exam time window if drive has one set
-      if (drive) {
+      if (!isResuming && drive) {
         const windowError = checkExamWindow(drive);
         if (windowError) return { success: false, message: windowError };
       }
@@ -585,173 +557,193 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Login successful.' };
   };
 
-  const bulkInvite = (assessmentId: string, date: string, driveId: string) => {
-    const updatedCandidates = db.candidates.map(c => {
-      if (c.driveId === driveId && c.assessmentStatus === 'Not Invited') {
+  const bulkInvite = async (assessmentId: string, date: string, driveId: string) => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/bulk-invite`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessmentId, date }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { assessment, drive, candidates } = await res.json();
+      setDb(prev => {
+        const candidateMap = new Map<string, Candidate>(candidates.map((c: Candidate) => [c.id, c]));
         return {
-          ...c,
-          assessmentStatus: 'Pending' as const,
-          assessmentId,
-          assessmentPassword: `PRES${Math.floor(1000 + Math.random() * 9000)}`
+          ...prev,
+          candidates: prev.candidates.map(c => candidateMap.get(c.id) ?? c),
+          assessments: prev.assessments.map(a => a.id === assessment.id ? assessment : a),
+          drives: prev.drives.map(d => d.id === driveId ? drive : d),
         };
-      }
-      return c;
-    });
-
-    const updatedAssessments = db.assessments.map(asm => {
-      if (asm.id === assessmentId) {
-        const count = updatedCandidates.filter(c => c.assessmentId === assessmentId).length;
-        return { ...asm, candidatesAssignedCount: count };
-      }
-      return asm;
-    });
-
-    const updatedDrives = db.drives.map(d =>
-      d.id === driveId ? { ...d, assessmentId, examDate: date } : d
-    );
-    const updatedDb = { ...db, candidates: updatedCandidates, assessments: updatedAssessments, drives: updatedDrives };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send bulk invite.');
+    }
   };
 
-  const bulkImportCandidates = (
+  const bulkImportCandidates = async (
     driveId: string,
     rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage' | 'driveId'>[]
-  ): number => {
-    const drive = db.drives.find(d => d.id === driveId);
-    if (!drive) return 0;
-
-    const existing = new Set(
-      db.candidates.filter(c => c.driveId === driveId).map(c => c.email.toLowerCase())
-    );
-    const newCandidates: Candidate[] = [];
-
-    rows.forEach((row, idx) => {
-      if (existing.has(row.email.toLowerCase())) return; // skip duplicates within this drive
-      newCandidates.push({
-        ...row,
-        id: `PRES2026-${20000 + db.candidates.length + idx + 1}`,
-        driveId: drive.id,
-        college: drive.college,
-        assessmentStatus: 'Not Invited',
-        interviewStatus: 'Not Scheduled',
-        offerStatus: 'None',
-        funnelStage: 'Applied',
+  ): Promise<number> => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/candidates/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rows),
       });
-    });
-
-    if (newCandidates.length === 0) return 0;
-
-    const updatedDb = { ...db, candidates: [...db.candidates, ...newCandidates] };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return newCandidates.length;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { imported, candidates } = await res.json();
+      if (candidates?.length) {
+        setDb(prev => ({ ...prev, candidates: [...prev.candidates, ...candidates] }));
+      }
+      return imported;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to import candidates.');
+      return 0;
+    }
   };
 
   // Activates (or reactivates) every candidate in the drive who hasn't completed the
   // assessment yet, assigning them to the linked test so they can log in — used both
   // for emailing an invite and for the "share the link/password manually" path.
-  const activateDriveInvites = (driveId: string, mode: 'remote' | 'in-person'): { id: string; name: string; email: string; inviteToken?: string }[] => {
-    const drive = db.drives.find(d => d.id === driveId);
-    if (!drive || !drive.assessmentId) return [];
-
-    const now = new Date().toISOString();
-    const invited: { id: string; name: string; email: string; inviteToken?: string }[] = [];
-
-    const updatedCandidates = db.candidates.map(c => {
-      if (c.driveId === driveId && c.assessmentStatus !== 'Completed') {
-        const inviteToken = mode === 'remote' ? generateInviteToken() : undefined;
-        invited.push({ id: c.id, name: c.name, email: c.email, inviteToken });
-        return {
-          ...c,
-          assessmentStatus: c.assessmentStatus === 'Not Invited' ? ('Pending' as const) : c.assessmentStatus,
-          assessmentId: drive.assessmentId,
-          accessMode: mode,
-          inviteToken,
-          inviteEmailSentAt: now,
-        };
-      }
-      return c;
-    });
-
-    if (invited.length === 0) return [];
-
-    const updatedDb = { ...db, candidates: updatedCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return invited;
-  };
-
-  const markAttendance = (candidateId: string, present: boolean) => {
-    const updatedCandidates = db.candidates.map(c =>
-      c.id === candidateId ? { ...c, attendanceMarked: present } : c
-    );
-    const updatedDb = { ...db, candidates: updatedCandidates };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-  };
-
-  const importCollegeStudents = (college: string, rows: ParsedStudentRow[]): number => {
-    const existing = new Set(
-      (db.collegeStudents ?? [])
-        .filter(s => s.college === college)
-        .map(s => s.email.toLowerCase())
-    );
-    const now = new Date().toISOString();
-    const newStudents: CollegeStudent[] = [];
-
-    rows.forEach((row, idx) => {
-      if (!row.email || existing.has(row.email.toLowerCase())) return;
-      const prefix = college.replace(/\s+/g, '').slice(0, 6).toUpperCase();
-      newStudents.push({
-        ...row,
-        id: `CS-${prefix}-${Date.now()}-${idx}`,
-        college,
-        importedAt: now,
+  const activateDriveInvites = async (
+    driveId: string, mode: 'remote' | 'in-person'
+  ): Promise<{ id: string; name: string; email: string; inviteToken?: string }[]> => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/invites/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
       });
-    });
-
-    if (newStudents.length === 0) return 0;
-    const updatedDb = { ...db, collegeStudents: [...(db.collegeStudents ?? []), ...newStudents] };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
-    return newStudents.length;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { invited, candidates } = await res.json();
+      if (candidates?.length) {
+        const candidateMap = new Map<string, Candidate>(candidates.map((c: Candidate) => [c.id, c]));
+        setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => candidateMap.get(c.id) ?? c) }));
+      }
+      return invited;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to activate invites.');
+      return [];
+    }
   };
 
-  const deleteCollegeStudents = (college: string) => {
-    const updatedDb = {
-      ...db,
-      collegeStudents: (db.collegeStudents ?? []).filter(s => s.college !== college),
-    };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+  const markAttendance = async (candidateId: string, present: boolean) => {
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}/attendance`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ present }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Candidate = await res.json();
+      setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => c.id === candidateId ? saved : c) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to mark attendance.');
+    }
   };
 
-  const addDriveMembership = (driveId: string, userId: string, role: DriveRole) => {
+  const extendCandidateExamTime = async (candidateId: string, extraMinutes: number) => {
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}/extend-time`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extraMinutes }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved: Candidate = await res.json();
+      setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => c.id === candidateId ? saved : c) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to extend exam time.');
+    }
+  };
+
+  const extendDriveExamTime = async (driveId: string, extraMinutes: number): Promise<number> => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/extend-time`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extraMinutes }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { count } = await res.json();
+      if (count > 0) {
+        setDb(prev => ({
+          ...prev,
+          candidates: prev.candidates.map(c =>
+            c.driveId === driveId && c.assessmentStatus !== 'Completed'
+              ? { ...c, extraTimeMinutes: (c.extraTimeMinutes ?? 0) + extraMinutes }
+              : c
+          ),
+        }));
+      }
+      return count;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to extend exam time.');
+      return 0;
+    }
+  };
+  const importCollegeStudents = async (college: string, rows: ParsedStudentRow[]): Promise<number> => {
+    try {
+      const res = await fetch(`/api/college-students/import?college=${encodeURIComponent(college)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rows),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { imported, students } = await res.json();
+      if (students?.length) {
+        setDb(prev => ({ ...prev, collegeStudents: [...(prev.collegeStudents ?? []), ...students] }));
+      }
+      return imported;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to import students.');
+      return 0;
+    }
+  };
+
+  const deleteCollegeStudents = async (college: string) => {
+    try {
+      const res = await fetch(`/api/college-students?college=${encodeURIComponent(college)}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      setDb(prev => ({ ...prev, collegeStudents: (prev.collegeStudents ?? []).filter(s => s.college !== college) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete students.');
+    }
+  };
+
+  const addDriveMembership = async (driveId: string, userId: string, role: DriveRole) => {
     if (!canManageMembership(currentUser?.user, driveId, role, db)) return;
     const alreadyMember = db.driveMemberships.some(m => m.driveId === driveId && m.userId === userId && m.role === role);
     if (alreadyMember) return;
-    const newMembership = {
-      id: `MEM-${db.driveMemberships.length + 1}-${Date.now()}`,
-      driveId,
-      userId,
-      role,
-      addedAt: new Date().toISOString(),
-      addedByUserId: currentUser?.user?.id ?? '',
-    };
-    const updatedDb = { ...db, driveMemberships: [...db.driveMemberships, newMembership] };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/drives/${driveId}/memberships`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, role, addedByUserId: currentUser?.user?.id ?? '' }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const newMembership: DriveMembership = await res.json();
+      setDb(prev => ({ ...prev, driveMemberships: [...prev.driveMemberships, newMembership] }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add membership.');
+    }
   };
 
-  const removeDriveMembership = (membershipId: string) => {
+  const removeDriveMembership = async (membershipId: string) => {
     const membership = db.driveMemberships.find(m => m.id === membershipId);
     if (!membership || !canManageMembership(currentUser?.user, membership.driveId, membership.role, db)) return;
-    // Removal only revokes future access — it never touches the candidate records
-    // this person already scored/decided on, so historical attribution is preserved.
-    const updatedDb = { ...db, driveMemberships: db.driveMemberships.filter(m => m.id !== membershipId) };
-    setDb(updatedDb);
-    saveDatabase(updatedDb);
+    try {
+      const res = await fetch(`/api/memberships/${membershipId}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      // Removal only revokes future access — it never touches the candidate records
+      // this person already scored/decided on, so historical attribution is preserved.
+      setDb(prev => ({ ...prev, driveMemberships: prev.driveMemberships.filter(m => m.id !== membershipId) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove membership.');
+    }
   };
 
   return (
@@ -780,6 +772,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bulkImportCandidates,
       activateDriveInvites,
       markAttendance,
+      extendCandidateExamTime,
+      extendDriveExamTime,
       bulkUpdateCandidates,
       importCollegeStudents,
       deleteCollegeStudents,

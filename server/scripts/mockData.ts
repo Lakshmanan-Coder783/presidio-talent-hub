@@ -1008,7 +1008,10 @@ export function generateMockDatabase(): Database {
         candidateName: name,
         panelName: `Panel ${rnd.pick(['Alpha', 'Beta', 'Gamma', 'Delta'])}`,
         date: new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
-        time: `${hr}:${min}`,
+        // Zero-padded so `${date}T${time}` is valid ISO 8601 — an unpadded single-digit
+        // hour (e.g. "9:00") makes `new Date(...)` return Invalid Date, which throws
+        // when something downstream (e.g. date-fns formatDistanceToNow) uses it.
+        time: `${String(hr).padStart(2, '0')}:${min}`,
         stage: funnelStage === 'Interview' ? 'Interview' : (funnelStage === 'Coding Exercise' ? 'Coding Exercise' : 'Whiteboard Interview'),
         status: interviewStatus === 'Scheduled' ? 'Scheduled' : 'Completed',
         feedback: interviewStatus === 'Ongoing' ? rnd.pick(INTERVIEW_FEEDBACK) : undefined,

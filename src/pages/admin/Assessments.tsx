@@ -98,7 +98,7 @@ export const Assessments: React.FC = () => {
     setAccessPassword('');
   };
 
-  const handleSaveAssessment = (status: Assessment['status']) => {
+  const handleSaveAssessment = async (status: Assessment['status']) => {
     if (!name || !duration || activeSections.length === 0) {
       alert('Fill all fields and add at least one section.');
       return;
@@ -113,11 +113,12 @@ export const Assessments: React.FC = () => {
       return;
     }
     const totalMarks = activeSections.reduce((s, sec) => s + sec.marks, 0);
-    const newAsm = createAssessment({
+    const newAsm = await createAssessment({
       name, type, duration: parseInt(duration), totalMarks,
       status, sections: activeSections, questionIds: [],
       slug, accessPassword,
     });
+    if (!newAsm) return;
     setBuilderOpen(false);
     resetBuilderForm();
 

@@ -310,13 +310,31 @@ export const CandidatePortal: React.FC = () => {
   }, [candidate?.id, assessment?.id]);
 
   // Compute remaining time from an absolute session-start timestamp, so a page
-  // refresh can't silently grant a fresh full-duration timer.
+  // refresh can't silently grant a fresh full-duration timer. Includes any extra
+  // time an admin has already granted (e.g. to compensate for a network outage)
+  // before this load/resume.
   useEffect(() => {
     if (!assessment || !sessionStartedAt) return;
     const elapsedSec = Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 1000);
-    setTimeLeft(Math.max(0, assessment.duration * 60 - elapsedSec));
+    const extraSec = (candidate?.extraTimeMinutes ?? 0) * 60;
+    setTimeLeft(Math.max(0, assessment.duration * 60 + extraSec - elapsedSec));
     setDurationUsed(Math.max(0, elapsedSec));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assessment, sessionStartedAt]);
+
+  // Live-apply an extension an admin grants while the candidate is already mid-test:
+  // only the newly-added delta is applied directly to the running countdown, since
+  // the effect above only recomputes from scratch on load/resume, not on every tick.
+  const prevExtraTimeRef = useRef(candidate?.extraTimeMinutes ?? 0);
+  useEffect(() => {
+    const currentExtra = candidate?.extraTimeMinutes ?? 0;
+    const delta = currentExtra - prevExtraTimeRef.current;
+    if (delta !== 0 && portalStep === 'assessment') {
+      setTimeLeft(prev => Math.max(0, prev + delta * 60));
+      if (delta > 0) toast.success(`+${delta} minute${delta === 1 ? '' : 's'} added to your test time.`);
+    }
+    prevExtraTimeRef.current = currentExtra;
+  }, [candidate?.extraTimeMinutes, portalStep]);
 
   // Persist in-progress answers/position so a reload can resume instead of resetting.
   useEffect(() => {
@@ -328,7 +346,11 @@ export const CandidatePortal: React.FC = () => {
     if (portalStep !== 'assessment') return;
     const interval = setInterval(() => {
       if (sessionStartedAt && exp.sessionTimeoutHours) {
-        const deadline = new Date(sessionStartedAt).getTime() + exp.sessionTimeoutHours * 3600 * 1000;
+        // Reads the ref (not `candidate` directly) since this interval's closure
+        // isn't recreated when candidate data changes — the ref is kept current by
+        // the extension-tracking effect above.
+        const extraMs = prevExtraTimeRef.current * 60 * 1000;
+        const deadline = new Date(sessionStartedAt).getTime() + exp.sessionTimeoutHours * 3600 * 1000 + extraMs;
         if (Date.now() >= deadline) {
           clearInterval(interval);
           handleAutoSubmit();
