@@ -49,7 +49,8 @@ export const CandidatePipelineReport: React.FC<CandidatePipelineReportProps> = (
   if (!candidate) return null;
 
   const oaCompleted = candidate.assessmentStatus === 'Completed';
-  const pct = totalMarks > 0 ? Math.round(((candidate.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+  const effectiveTotal = candidate.assessmentTotalMarks ?? totalMarks;
+  const pct = effectiveTotal > 0 ? Math.min(100, Math.round(((candidate.assessmentScore ?? 0) / effectiveTotal) * 100)) : 0;
   const band = scoreBand(pct, { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs });
 
   const interviewStatus = deriveInterviewStatus(candidate);
@@ -85,7 +86,7 @@ export const CandidatePipelineReport: React.FC<CandidatePipelineReportProps> = (
             </div>
             {oaCompleted ? (
               <div className="grid grid-cols-3 gap-6">
-                <Field label="Score" value={`${candidate.assessmentScore ?? 0}/${totalMarks}`} />
+                <Field label="Score" value={`${candidate.assessmentScore ?? 0}/${effectiveTotal}`} />
                 <Field label="Percentage" value={`${pct}%`} />
                 <Field label="Percentile" value={candidate.assessmentPercentile != null ? `${Math.round(candidate.assessmentPercentile)}%` : undefined} />
               </div>

@@ -6,7 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   LayoutDashboard, Database,
   Settings as SettingsIcon,
-  LogOut, Bell, Search, User, Monitor,
+  LogOut, Bell, User, Monitor, School,
   FileCheck2, Award, CalendarClock, type LucideIcon,
 } from 'lucide-react';
 import {
@@ -36,6 +36,7 @@ const FULL_MENU = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'online-assessment', label: 'Campus Drive', icon: Monitor },
   { id: 'question-bank', label: 'Question Bank', icon: Database },
+  { id: 'college-report', label: 'College Report', icon: School },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -61,10 +62,24 @@ const activityIcons: Record<ActivityType, LucideIcon> = {
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { logout, db, currentUser } = useApp();
+  const { logout, db, currentUser, ensureLoaded } = useApp();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+
+  // driveMemberships is the only thing every admin page truly can't defer —
+  // it decides which sidebar menu items to show (Evaluator/SPOC/SuperAdmin)
+  // before any click happens. The notification bell and Cmd/Ctrl+K search
+  // (below) fetch their own data lazily, only once actually opened.
+  useEffect(() => {
+    ensureLoaded(['driveMemberships']);
+  }, [ensureLoaded]);
+
+  useEffect(() => {
+    if (bellOpen) ensureLoaded(['candidates', 'offers', 'interviews']);
+  }, [bellOpen, ensureLoaded]);
+
   const activity = useRecentActivity(db);
   const hasRecentActivity = activity.length > 0;
   const isSuperAdmin = !!currentUser?.user?.isSuperAdmin;
@@ -179,10 +194,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="icon" aria-label="Search" className="h-9 w-9" onClick={() => setPaletteOpen(true)}>
-              <Search className="h-4 w-4" />
-            </Button>
-            <DropdownMenu>
+            <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Notifications" className="relative h-9 w-9">
                   <Bell className="h-4 w-4" />

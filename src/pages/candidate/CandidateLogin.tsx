@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { ArrowRight, KeyRound, UserCheck, Loader2 } from 'lucide-react';
@@ -9,11 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const CandidateLogin: React.FC = () => {
-  const { loginCandidate } = useApp();
+  const { loginCandidate, ensureLoaded } = useApp();
   const [candidateId, setCandidateId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => { ensureLoaded(['candidates', 'assessments']); }, [ensureLoaded]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();

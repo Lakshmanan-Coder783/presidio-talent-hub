@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { computeDriveStatus, getDriveLinkedAssessment } from '../../utils/driveStatus';
 
 export const Dashboard: React.FC = () => {
-  const { db } = useApp();
+  const { db, loadDashboardPage } = useApp();
+
+  useEffect(() => { loadDashboardPage(); }, [loadDashboardPage]);
 
   const activeDrives = useMemo(() => db.drives.filter(d => !d.deletedAt), [db.drives]);
 

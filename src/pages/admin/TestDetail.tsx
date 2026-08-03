@@ -35,10 +35,10 @@ import {
   ArrowLeft, Pencil, Share2, Settings, AlignLeft, Shield, Users,
   CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronRight, Plus, X, Search,
   Tag, Code, HelpCircle, Copy, Send, BarChart2, FileText,
-  Download, RefreshCw, Save, ArrowUp, ArrowDown, Trash2,
-  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase, KeyRound, Cog, Timer,
+  Download, RefreshCw, Save, Trash2,
+  Mail, ExternalLink, Database, SlidersHorizontal, Filter, Briefcase, KeyRound, Timer,
 } from 'lucide-react';
-import type { Question, Candidate, Assessment, AssessmentSection, CampusDrive } from '../../types';
+import type { Question, Candidate, AssessmentSection, CampusDrive } from '../../types';
 import { CodingQuestionPanel } from '../../components/CodingQuestionPanel';
 import { generateAccessPassword, generateSlug } from '../../lib/utils';
 import { sendInviteEmail, isEmailConfigured } from '../../lib/email';
@@ -362,12 +362,45 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime, ensureLoaded } = useApp();
+
+  // `drives`/`candidates`/`assessments`/`users` are needed regardless of which tab is
+  // open (tab badge counts like Students Database/Interview/Coding/Whiteboarding/Access
+  // read from them), and in case someone deep-links straight to a drive URL without
+  // passing through the Tests list first. Loaded once per page visit.
+  useEffect(() => { ensureLoaded(['drives', 'candidates', 'assessments', 'users']); }, [ensureLoaded]);
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('questions');
+
+  // Force a fresh fetch of whichever field(s) the active tab actually reads, every time
+  // the tab changes (including switching back to a tab already visited this session) —
+  // so the Network tab shows a live request per click instead of reusing stale cached data.
+  useEffect(() => {
+    switch (activeTab) {
+      case 'questions':
+        ensureLoaded(['questions'], { force: true });
+        break;
+      case 'students-database':
+      case 'candidates':
+      case 'interview':
+      case 'coding':
+      case 'whiteboard':
+        ensureLoaded(['candidates'], { force: true });
+        break;
+      case 'experience':
+        ensureLoaded(['drives', 'assessments'], { force: true });
+        break;
+      case 'reports':
+        ensureLoaded(['candidates', 'questions'], { force: true });
+        break;
+      case 'access':
+        ensureLoaded(['users', 'driveMemberships'], { force: true });
+        break;
+    }
+  }, [activeTab, ensureLoaded]);
 
   // evaluate drawer state
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
@@ -396,13 +429,9 @@ export const TestDetail: React.FC = () => {
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
 
 
-  // edit assessment sheet
-  const [asmEditOpen, setAsmEditOpen] = useState(false);
+  // edit assessment fields (now edited from the Settings sheet)
   const [draftAsmName, setDraftAsmName] = useState('');
-  const [draftAsmType, setDraftAsmType] = useState<Assessment['type']>('Combined');
   const [draftAsmDuration, setDraftAsmDuration] = useState('');
-  const [draftAsmStatus, setDraftAsmStatus] = useState<Assessment['status']>('Draft');
-  const [draftSections, setDraftSections] = useState<AssessmentSection[]>([]);
 
   // slug edit
   const [editingSlug, setEditingSlug] = useState(false);
@@ -489,7 +518,6 @@ export const TestDetail: React.FC = () => {
   );
 
   const totalMarks = driveQuestions.reduce((s, q) => s + q.marks, 0);
-  const estimatedMinutes = driveQuestions.length;
 
   const myDriveRole = drive ? getUserRoleForDrive(currentUser?.user, drive.id, db) : null;
   const canEditThisDrive = canEditDriveConfig(currentUser?.user);
@@ -513,6 +541,12 @@ export const TestDetail: React.FC = () => {
     const c = driveCandidates.find(c => c.assessmentId);
     return c ? db.assessments.find(a => a.id === c.assessmentId) ?? null : null;
   }, [db.assessments, drive, driveCandidates]);
+
+  // Once an assessment exists, its real configured Duration (set in Settings) is
+  // the source of truth for the test length — the per-question guess is only a
+  // stand-in for brand-new drives that have no assessment yet.
+  const estimatedMinutes = linkedAssessment ? linkedAssessment.duration : driveQuestions.length;
+  const isEstimatedMinutes = !linkedAssessment;
 
   const liveStatus = useMemo(
     () => computeDriveStatus(driveCandidates, linkedAssessment?.status === 'Active'),
@@ -604,8 +638,9 @@ export const TestDetail: React.FC = () => {
   const candidateRows = useMemo<CandidateRow[]>(() => {
     return driveCandidates
       .map(c => {
-        const pct = c.assessmentScore != null && totalMarks > 0
-          ? Math.round((c.assessmentScore / totalMarks) * 100)
+        const effectiveTotal = c.assessmentTotalMarks ?? totalMarks;
+        const pct = c.assessmentScore != null && effectiveTotal > 0
+          ? Math.min(100, Math.round((c.assessmentScore / effectiveTotal) * 100))
           : 0;
         const band = scoreBand(pct, bandCutoffs);
         const statusLabel =
@@ -733,7 +768,8 @@ export const TestDetail: React.FC = () => {
     if (!drive) return;
     const headers = ['ID', 'Name', 'Email', 'Score', 'Percentage', 'Band', 'Aptitude', 'Logical', 'Technical', 'Coding'];
     const csvRows = driveCandidates.filter(c => c.assessmentStatus === 'Completed').map(c => {
-      const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+      const effectiveTotal = c.assessmentTotalMarks ?? totalMarks;
+      const pct = effectiveTotal > 0 ? Math.min(100, Math.round(((c.assessmentScore ?? 0) / effectiveTotal) * 100)) : 0;
       return [
         c.id, c.name, c.email, c.assessmentScore ?? 0, pct, scoreBand(pct, bandCutoffs),
         c.sectionScores?.aptitude ?? '', c.sectionScores?.logical ?? '',
@@ -745,25 +781,6 @@ export const TestDetail: React.FC = () => {
     a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
     a.download = `${drive.name}_Scores.csv`;
     a.click();
-  };
-
-  const markAllFinished = () => {
-    const now = new Date().toISOString();
-    const updates = driveCandidates
-      .filter(c => c.assessmentStatus !== 'Completed')
-      .map(c => {
-        const score = Math.round(totalMarks * (0.3 + Math.random() * 0.65));
-        return {
-          ...c,
-          assessmentStatus: 'Completed' as const,
-          assessmentScore: score,
-          assessmentSubmissionDate: c.assessmentSubmissionDate ?? now,
-          funnelStage: c.funnelStage === 'Applied' ? 'Online Test' as const : c.funnelStage,
-        };
-      });
-    if (updates.length === 0) return;
-    bulkUpdateCandidates(updates);
-    toast.success(`${updates.length} candidate${updates.length !== 1 ? 's' : ''} marked as finished.`);
   };
 
   const eligibleInviteCount = driveCandidates.filter(c => c.assessmentStatus !== 'Completed').length;
@@ -1159,6 +1176,10 @@ export const TestDetail: React.FC = () => {
     setDraftDriveExamDate(drive.examDate ?? '');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
+    if (linkedAssessment) {
+      setDraftAsmName(linkedAssessment.name);
+      setDraftAsmDuration(String(linkedAssessment.duration));
+    }
     setDriveEditOpen(true);
   };
 
@@ -1175,55 +1196,15 @@ export const TestDetail: React.FC = () => {
       examStartTime: draftDriveExamStart || undefined,
       examEndTime: draftDriveExamEnd || undefined,
     });
+    if (linkedAssessment) {
+      updateAssessment({
+        ...linkedAssessment,
+        name: draftAsmName,
+        duration: parseInt(draftAsmDuration) || linkedAssessment.duration,
+      });
+    }
     setDriveEditOpen(false);
     toast.success('Drive details updated.');
-  };
-
-  // open assessment edit sheet
-  const openAsmEdit = () => {
-    if (!linkedAssessment) return;
-    setDraftAsmName(linkedAssessment.name);
-    setDraftAsmType(linkedAssessment.type);
-    setDraftAsmDuration(String(linkedAssessment.duration));
-    setDraftAsmStatus(linkedAssessment.status);
-    setDraftSections([...linkedAssessment.sections]);
-    setAsmEditOpen(true);
-  };
-
-  const saveAsmEdit = () => {
-    if (!linkedAssessment) return;
-    const totalMarksCalc = draftSections.reduce((s, sec) => s + sec.marks, 0);
-    updateAssessment({
-      ...linkedAssessment,
-      name: draftAsmName,
-      type: draftAsmType,
-      duration: parseInt(draftAsmDuration) || linkedAssessment.duration,
-      status: draftAsmStatus,
-      sections: draftSections,
-      totalMarks: totalMarksCalc,
-    });
-    setAsmEditOpen(false);
-    toast.success('Assessment updated.');
-  };
-
-  // section helpers for assessment edit
-  const addSection = (secName: AssessmentSection['name']) => {
-    if (draftSections.some(s => s.name === secName)) return;
-    setDraftSections([...draftSections, { name: secName, questionCount: 10, marks: 20 }]);
-  };
-  const removeSection = (idx: number) => setDraftSections(draftSections.filter((_, i) => i !== idx));
-  const changeSectionField = (idx: number, field: 'questionCount' | 'marks', value: number) => {
-    const next = [...draftSections];
-    next[idx] = { ...next[idx], [field]: value };
-    setDraftSections(next);
-  };
-  const moveSection = (idx: number, dir: 'up' | 'down') => {
-    if (dir === 'up' && idx === 0) return;
-    if (dir === 'down' && idx === draftSections.length - 1) return;
-    const next = [...draftSections];
-    const swap = dir === 'up' ? idx - 1 : idx + 1;
-    [next[idx], next[swap]] = [next[swap], next[idx]];
-    setDraftSections(next);
   };
 
   // slug save
@@ -1449,12 +1430,6 @@ export const TestDetail: React.FC = () => {
     );
   }
 
-  const AVAILABLE_SECTIONS: AssessmentSection['name'][] = [
-    'Quants', 'Logical', 'C/C++', 'OOPs', 'SQL', 'HTML/CSS/JS',
-    'Subjective', 'SQL Query', 'Coding',
-    'Aptitude', 'Logical Reasoning', 'Technical', 'Verbal',
-  ];
-
   const TAB_TRIGGER = 'flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent';
 
   return (
@@ -1515,15 +1490,6 @@ export const TestDetail: React.FC = () => {
             }}
           >
             <Share2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            title={linkedAssessment ? 'Edit assessment (name, type, duration, sections, status)' : 'No assessment linked yet'}
-            disabled={!linkedAssessment}
-            onClick={openAsmEdit}
-          >
-            <Cog className="h-4 w-4" />
           </Button>
           {canEditThisDrive && (
             <Button variant="outline" size="icon" title="Edit drive details" onClick={openDriveEdit}>
@@ -1635,7 +1601,7 @@ export const TestDetail: React.FC = () => {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">
-                  {driveQuestions.length} questions &middot; {totalMarks} marks &middot; ~{estimatedMinutes} min
+                  {driveQuestions.length} questions &middot; {totalMarks} marks &middot; {isEstimatedMinutes ? '~' : ''}{estimatedMinutes} min
                 </p>
                 <div className="flex items-center gap-2">
                   {driveQuestions.length > 0 && (
@@ -2396,21 +2362,9 @@ export const TestDetail: React.FC = () => {
 
         {/* ── Candidates Tab ── */}
         <TabsContent value="candidates" className="m-0 p-6 space-y-6">
-          {/* Toolbar */}
-          {(driveCandidates.some(c => c.assessmentStatus !== 'Completed') || canSendInvites) && (
-            <div className="flex items-center gap-2">
-              {canSendInvites && renderSendInvitesControl()}
-              {driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-xs"
-                  onClick={markAllFinished}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Mark All Finished
-                </Button>
-              )}
+          <div className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-sm">Overview</h3>
               {canExtendTime && driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
                 <Button
                   variant="outline"
@@ -2423,10 +2377,6 @@ export const TestDetail: React.FC = () => {
                 </Button>
               )}
             </div>
-          )}
-
-          <div className="border rounded-lg p-4">
-            <h3 className="font-semibold text-sm mb-4">Overview</h3>
             <div className="grid grid-cols-3 gap-6">
               <div>
                 <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Test progress</p>
@@ -2594,7 +2544,8 @@ export const TestDetail: React.FC = () => {
                 </thead>
                 <tbody className="divide-y">
                   {interviewCandidates.map(c => {
-                    const pct = totalMarks > 0 ? Math.round(((c.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+                    const effectiveTotal = c.assessmentTotalMarks ?? totalMarks;
+                    const pct = effectiveTotal > 0 ? Math.min(100, Math.round(((c.assessmentScore ?? 0) / effectiveTotal) * 100)) : 0;
                     const statusLabel = deriveInterviewStatus(c);
                     const statusCls = statusLabel === 'Shortlisted' ? 'bg-green-100 text-green-700' : statusLabel === 'Rejected' ? 'bg-red-100 text-red-700' : statusLabel === 'In Progress' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
                     const avgScore = [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter((v): v is number => v != null);
@@ -3103,6 +3054,22 @@ export const TestDetail: React.FC = () => {
               <Label>Drive Name</Label>
               <Input value={draftDriveName} onChange={e => setDraftDriveName(e.target.value)} />
             </div>
+            {linkedAssessment && (
+              <div className="space-y-1.5">
+                <Label>College Name</Label>
+                <Input
+                  placeholder="e.g. Kongu Engineering College"
+                  value={draftAsmName}
+                  onChange={e => setDraftAsmName(e.target.value)}
+                />
+              </div>
+            )}
+            {linkedAssessment && (
+              <div className="space-y-1.5">
+                <Label>Duration (minutes)</Label>
+                <Input type="number" value={draftAsmDuration} onChange={e => setDraftAsmDuration(e.target.value)} />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Role / Position</Label>
               <Input
@@ -3158,123 +3125,6 @@ export const TestDetail: React.FC = () => {
           <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setDriveEditOpen(false)}>Cancel</Button>
             <Button className="flex-1" onClick={saveDriveEdit}>Save Changes</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* ── Edit Assessment Sheet ── */}
-      <Sheet open={asmEditOpen} onOpenChange={v => { if (v) openAsmEdit(); else setAsmEditOpen(false); }}>
-        <SheetContent side="center" className="sm:max-w-lg flex flex-col p-0">
-          <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle>Edit Assessment</SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            <div className="space-y-1.5">
-              <Label>College Name</Label>
-              <Input
-                placeholder="e.g. Kongu Engineering College"
-                value={draftAsmName}
-                onChange={e => setDraftAsmName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={draftAsmType} onValueChange={v => setDraftAsmType(v as Assessment['type'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Combined">Combined Test</SelectItem>
-                  <SelectItem value="Coding">Coding Assessment</SelectItem>
-                  <SelectItem value="Aptitude">Aptitude Test</SelectItem>
-                  <SelectItem value="Technical">Technical MCQ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Duration (minutes)</Label>
-              <Input type="number" value={draftAsmDuration} onChange={e => setDraftAsmDuration(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={draftAsmStatus} onValueChange={v => setDraftAsmStatus(v as Assessment['status'])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Sections editor */}
-            <div className="space-y-2">
-              <Label>Sections</Label>
-              <div className="flex flex-wrap gap-2">
-                {AVAILABLE_SECTIONS.map(secName => {
-                  const isAdded = draftSections.some(s => s.name === secName);
-                  return (
-                    <Button
-                      key={secName}
-                      size="sm"
-                      variant={isAdded ? 'secondary' : 'outline'}
-                      disabled={isAdded}
-                      className="h-7 text-xs"
-                      onClick={() => addSection(secName)}
-                    >
-                      + {secName}
-                    </Button>
-                  );
-                })}
-              </div>
-              {draftSections.length > 0 && (
-                <div className="space-y-2 mt-2">
-                  {draftSections.map((sec, idx) => (
-                    <div key={sec.name} className="flex items-center gap-2 rounded-lg border bg-card p-3">
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">{idx + 1}. {sec.name}</p>
-                        <div className="flex gap-3 mt-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">Qs:</span>
-                            <Input
-                              type="number"
-                              className="h-6 w-14 text-xs px-1"
-                              value={sec.questionCount}
-                              onChange={e => changeSectionField(idx, 'questionCount', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">Marks:</span>
-                            <Input
-                              type="number"
-                              className="h-6 w-14 text-xs px-1"
-                              value={sec.marks}
-                              onChange={e => changeSectionField(idx, 'marks', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === 0} onClick={() => moveSection(idx, 'up')}>
-                          <ArrowUp className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === draftSections.length - 1} onClick={() => moveSection(idx, 'down')}>
-                          <ArrowDown className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeSection(idx)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                  <p className="text-xs text-muted-foreground">
-                    Total marks: {draftSections.reduce((s, sec) => s + sec.marks, 0)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setAsmEditOpen(false)}>Cancel</Button>
-            <Button className="flex-1" onClick={saveAsmEdit}>Save Changes</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

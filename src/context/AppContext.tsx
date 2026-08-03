@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
-import { getDatabase, saveDatabase } from '../utils/db';
+import { saveDatabase } from '../utils/db';
 import type { Database } from '../utils/db';
 import type { Assessment, CampusDrive, Candidate, Question, Interview, User, DriveRole, DriveMembership } from '../types';
 import type { ParsedStudentRow } from '../utils/parseStudentFile';
@@ -33,6 +33,10 @@ const parseUserAgent = (): { browser: string; os: string } => {
 
 interface AppContextType {
   db: Database;
+  ensureLoaded: (fields: (keyof Database)[], opts?: { force?: boolean }) => void;
+  loadCampusDrivePage: () => void;
+  loadDashboardPage: () => void;
+  loadCollegeReportPage: () => void;
   currentUser: UserSession | null;
   loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
@@ -45,6 +49,7 @@ interface AppContextType {
   updateCandidate: (candidate: Candidate) => void;
   bulkUpdateCandidates: (updates: Candidate[]) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
+  bulkImportQuestions: (rows: Omit<Question, 'id'>[]) => Promise<number>;
   createInterview: (interview: Omit<Interview, 'id'>) => void;
   updateOfferStatus: (candidateId: string, status: Candidate['offerStatus']) => void;
   submitCandidateAssessment: (
@@ -78,7 +83,13 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [db, setDb] = useState<Database>(getDatabase());
+  // No localStorage seed here on purpose — the app starts empty and is populated
+  // exclusively by the fetch effects below, so what's on screen is always a direct
+  // read from MongoDB rather than a locally cached snapshot from a prior session.
+  const [db, setDb] = useState<Database>({
+    drives: [], trashedDrives: [], candidates: [], assessments: [], questions: [], interviews: [],
+    offers: [], collegeStudents: [], users: [], driveMemberships: [],
+  });
   const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
     const session = localStorage.getItem('presidio_session');
     return session ? JSON.parse(session) : null;
@@ -94,38 +105,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('presidio-db-updated', handleDbUpdate);
   }, []);
 
-  // Hydrate the staff directory from the real backend (frontend ships with no
-  // mock users of its own). Not paired with saveDatabase — this is a
-  // read-through from the source of truth, not a local mutation to persist.
-  // Fails silently if the API isn't reachable so the app still loads.
-  useEffect(() => {
-    fetch('/api/users')
-      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((users: User[]) => setDb(prev => ({ ...prev, users })))
-      .catch(err => console.error('Failed to load users from backend:', err));
+  // Read-through hydration from the real backend, on demand per module — each
+  // page/component declares exactly which fields it needs (via `ensureLoaded`)
+  // instead of one global effect fetching every collection at app mount,
+  // before login. `loadedFieldsRef` guards against duplicate fetches when
+  // multiple modules ask for the same field. `pendingFieldsRef` guards against
+  // a field being fetched twice in the same instant — notably React
+  // StrictMode's dev-mode double-invoke of effects, which would otherwise
+  // double-fire any `force: true` call (force intentionally bypasses
+  // `loadedFieldsRef`, so without this second guard StrictMode's synchronous
+  // mount→remount would fire two real requests for the same field). Not
+  // paired with saveDatabase — this is a read-through from the source of
+  // truth, not a local mutation to persist. Fails silently (and allows retry)
+  // if the API isn't reachable.
+  const loadedFieldsRef = useRef(new Set<keyof Database>());
+  const pendingFieldsRef = useRef(new Set<keyof Database>());
+
+  const ensureLoaded = useCallback((fields: (keyof Database)[], opts?: { force?: boolean }) => {
+    const endpointByField: Record<keyof Database, string> = {
+      users: '/api/users',
+      drives: '/api/drives',
+      trashedDrives: '/api/drives/trash',
+      candidates: '/api/candidates',
+      assessments: '/api/assessments',
+      questions: '/api/questions',
+      interviews: '/api/interviews',
+      offers: '/api/offers',
+      collegeStudents: '/api/college-students',
+      driveMemberships: '/api/drive-memberships',
+    };
+    fields.forEach(field => {
+      if (!opts?.force && loadedFieldsRef.current.has(field)) return;
+      if (pendingFieldsRef.current.has(field)) return;
+      pendingFieldsRef.current.add(field);
+      loadedFieldsRef.current.add(field);
+      fetch(endpointByField[field])
+        .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+        .then(data => {
+          pendingFieldsRef.current.delete(field);
+          setDb(prev => ({ ...prev, [field]: data }));
+        })
+        .catch(err => {
+          pendingFieldsRef.current.delete(field);
+          loadedFieldsRef.current.delete(field);
+          console.error(`Failed to load ${field} from backend:`, err);
+        });
+    });
   }, []);
 
-  // Same read-through hydration as above, for every other entity now backed
-  // by a real MongoDB collection. Each fetch is independent and merges only
-  // its own field via the functional setDb form, so they can resolve in any
-  // order without clobbering each other.
-  useEffect(() => {
-    const endpoints: Array<[string, keyof Database]> = [
-      ['/api/drives', 'drives'],
-      ['/api/candidates', 'candidates'],
-      ['/api/assessments', 'assessments'],
-      ['/api/questions', 'questions'],
-      ['/api/interviews', 'interviews'],
-      ['/api/offers', 'offers'],
-      ['/api/college-students', 'collegeStudents'],
-      ['/api/drive-memberships', 'driveMemberships'],
-    ];
-    endpoints.forEach(([url, field]) => {
-      fetch(url)
-        .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-        .then(data => setDb(prev => ({ ...prev, [field]: data })))
-        .catch(err => console.error(`Failed to load ${field} from backend:`, err));
-    });
+  // Single-round-trip bundle for the Campus Drive list page, which needs all
+  // 5 of these fields to render (drive rows, per-drive registered/progress
+  // counts, SPOC picker, uploaded-student counts) — replaces what would
+  // otherwise be 5 separate `ensureLoaded` fetches with one backend call.
+  // `campusDrivePagePendingRef` prevents React StrictMode's dev-mode
+  // double-invoke from turning that into two real requests.
+  const campusDrivePagePendingRef = useRef(false);
+  const loadCampusDrivePage = useCallback(() => {
+    if (campusDrivePagePendingRef.current) return;
+    campusDrivePagePendingRef.current = true;
+    fetch('/api/campus-drive-bundle')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments' | 'users' | 'collegeStudents'>) => {
+        setDb(prev => ({ ...prev, ...data }));
+      })
+      .catch(err => console.error('Failed to load campus drive page bundle from backend:', err))
+      .finally(() => { campusDrivePagePendingRef.current = false; });
+  }, []);
+
+  // Single-round-trip bundle for the Executive Dashboard, which computes its
+  // KPI cards and charts from these 3 fields — replaces what would otherwise
+  // be 3 separate `ensureLoaded` fetches with one backend call. Same
+  // pending-ref guard as `loadCampusDrivePage` against StrictMode's
+  // dev-mode double-invoke.
+  const dashboardPagePendingRef = useRef(false);
+  const loadDashboardPage = useCallback(() => {
+    if (dashboardPagePendingRef.current) return;
+    dashboardPagePendingRef.current = true;
+    fetch('/api/dashboard-bundle')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments'>) => {
+        setDb(prev => ({ ...prev, ...data }));
+      })
+      .catch(err => console.error('Failed to load dashboard bundle from backend:', err))
+      .finally(() => { dashboardPagePendingRef.current = false; });
+  }, []);
+
+  // Single-round-trip bundle for the College Report page, which computes
+  // selected-candidate counts per college/year from these 2 fields. Same
+  // pending-ref guard as `loadCampusDrivePage` against StrictMode's
+  // dev-mode double-invoke.
+  const collegeReportPagePendingRef = useRef(false);
+  const loadCollegeReportPage = useCallback(() => {
+    if (collegeReportPagePendingRef.current) return;
+    collegeReportPagePendingRef.current = true;
+    fetch('/api/college-report-bundle')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: Pick<Database, 'drives' | 'candidates'>) => {
+        setDb(prev => ({ ...prev, ...data }));
+      })
+      .catch(err => console.error('Failed to load college report bundle from backend:', err))
+      .finally(() => { collegeReportPagePendingRef.current = false; });
   }, []);
 
   const loginAdmin = async (userId: string) => {
@@ -244,7 +323,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/drives/${driveId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const saved: CampusDrive = await res.json();
-      setDb(prev => ({ ...prev, drives: prev.drives.map(d => d.id === driveId ? saved : d) }));
+      setDb(prev => ({
+        ...prev,
+        drives: prev.drives.filter(d => d.id !== driveId),
+        trashedDrives: [saved, ...prev.trashedDrives.filter(d => d.id !== driveId)],
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to move drive to trash.');
     }
@@ -256,7 +339,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/drives/${driveId}/restore`, { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const saved: CampusDrive = await res.json();
-      setDb(prev => ({ ...prev, drives: prev.drives.map(d => d.id === driveId ? saved : d) }));
+      setDb(prev => ({
+        ...prev,
+        trashedDrives: prev.trashedDrives.filter(d => d.id !== driveId),
+        drives: [saved, ...prev.drives.filter(d => d.id !== driveId)],
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to restore drive.');
     }
@@ -269,7 +356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
       setDb(prev => ({
         ...prev,
-        drives: prev.drives.filter(d => d.id !== driveId),
+        trashedDrives: prev.trashedDrives.filter(d => d.id !== driveId),
         candidates: prev.candidates.filter(c => c.driveId !== driveId),
       }));
     } catch (err) {
@@ -602,6 +689,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const bulkImportQuestions = async (rows: Omit<Question, 'id'>[]): Promise<number> => {
+    try {
+      const res = await fetch('/api/questions/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rows),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { imported, questions } = await res.json();
+      if (questions?.length) {
+        setDb(prev => ({ ...prev, questions: [...prev.questions, ...questions] }));
+      }
+      return imported;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to import questions.');
+      return 0;
+    }
+  };
+
   // Activates (or reactivates) every candidate in the drive who hasn't completed the
   // assessment yet, assigning them to the linked test so they can log in — used both
   // for emailing an invite and for the "share the link/password manually" path.
@@ -749,6 +855,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       db,
+      ensureLoaded,
+      loadCampusDrivePage,
+      loadDashboardPage,
+      loadCollegeReportPage,
       currentUser,
       loginAdmin,
       loginCandidate,
@@ -760,6 +870,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       permanentlyDeleteDrive,
       updateCandidate,
       createQuestion,
+      bulkImportQuestions,
       createInterview,
       updateOfferStatus,
       submitCandidateAssessment,

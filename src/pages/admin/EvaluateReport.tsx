@@ -160,8 +160,8 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
   const avgPercentage = useMemo(() => {
     if (assessmentPool.length === 0) return 0;
     const pcts = assessmentPool.map(c => {
-      const total = driveTotalMarksById.get(c.driveId) ?? 0;
-      return total > 0 ? ((c.assessmentScore ?? 0) / total) * 100 : 0;
+      const total = c.assessmentTotalMarks ?? driveTotalMarksById.get(c.driveId) ?? 0;
+      return total > 0 ? Math.min(100, ((c.assessmentScore ?? 0) / total) * 100) : 0;
     });
     return pcts.reduce((a, b) => a + b, 0) / pcts.length;
   }, [assessmentPool, driveTotalMarksById]);
@@ -203,9 +203,10 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
 
   if (!candidate) return null;
 
-  const pct = totalMarks > 0 ? Math.round(((candidate.assessmentScore ?? 0) / totalMarks) * 100) : 0;
+  const effectiveTotalMarks = candidate.assessmentTotalMarks ?? totalMarks;
+  const pct = effectiveTotalMarks > 0 ? Math.min(100, Math.round(((candidate.assessmentScore ?? 0) / effectiveTotalMarks) * 100)) : 0;
   const band = scoreBand(pct, { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs });
-  const avgScoreEquivalent = Math.round((avgPercentage / 100) * totalMarks);
+  const avgScoreEquivalent = Math.round((avgPercentage / 100) * effectiveTotalMarks);
   const totalAttended = assessmentPool.length;
   const hasPracticalRound = candidate.sectionScores?.coding != null
     || candidate.sectionScores?.subjective != null
@@ -274,11 +275,11 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
                 <div className="flex gap-10">
                   <div>
                     <p className="text-xs text-muted-foreground">Total score</p>
-                    <p className="text-xl font-bold">{candidate.assessmentScore ?? 0}/{totalMarks}</p>
+                    <p className="text-xl font-bold">{candidate.assessmentScore ?? 0}/{effectiveTotalMarks}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Average test score</p>
-                    <p className="text-xl font-bold">{avgScoreEquivalent}/{totalMarks}</p>
+                    <p className="text-xl font-bold">{avgScoreEquivalent}/{effectiveTotalMarks}</p>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
@@ -11,8 +11,12 @@ interface CommandPaletteProps {
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChange }) => {
-  const { db } = useApp();
+  const { db, ensureLoaded } = useApp();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (open) ensureLoaded(['drives', 'candidates']);
+  }, [open, ensureLoaded]);
 
   const goTo = (driveId: string) => {
     onOpenChange(false);

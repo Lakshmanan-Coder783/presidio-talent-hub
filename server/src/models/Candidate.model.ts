@@ -45,6 +45,7 @@ export interface CandidateDoc {
   accessMode?: "remote" | "in-person";
   inviteToken?: string;
   assessmentScore?: number;
+  assessmentTotalMarks?: number;
   assessmentPercentile?: number;
   assessmentRank?: number;
   assessmentDurationUsed?: number;
@@ -181,6 +182,7 @@ const candidateSchema = new Schema<CandidateDoc>(
     accessMode: { type: String, enum: ["remote", "in-person"] },
     inviteToken: { type: String, index: true, sparse: true },
     assessmentScore: Number,
+    assessmentTotalMarks: Number,
     assessmentPercentile: Number,
     assessmentRank: Number,
     assessmentDurationUsed: Number,

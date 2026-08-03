@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
@@ -68,7 +68,9 @@ const computePipelineProgress = (candidates: Candidate[]): number => {
 };
 
 export const OnlineAssessment: React.FC = () => {
-  const { db, currentUser, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates } = useApp();
+  const { db, currentUser, updateDrive, createDrive, deleteDrive, markAttendance, importCollegeStudents, bulkImportCandidates, loadCampusDrivePage } = useApp();
+
+  useEffect(() => { loadCampusDrivePage(); }, [loadCampusDrivePage]);
   const navigate = useNavigate();
   const canEditDrives = canEditDriveConfig(currentUser?.user);
   const canCreateDrives = canCreateDrive(currentUser?.user, db);

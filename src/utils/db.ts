@@ -2,6 +2,7 @@ import type { CampusDrive, Candidate, Assessment, Question, Interview, Offer, Co
 
 export interface Database {
   drives: CampusDrive[];
+  trashedDrives: CampusDrive[];
   candidates: Candidate[];
   assessments: Assessment[];
   questions: Question[];
@@ -15,6 +16,7 @@ export interface Database {
 function emptyDatabase(): Database {
   return {
     drives: [],
+    trashedDrives: [],
     candidates: [],
     assessments: [],
     questions: [],
@@ -40,6 +42,7 @@ export function getDatabase(): Database {
       if (!parsed.collegeStudents) parsed.collegeStudents = [];
       if (!parsed.users) parsed.users = [];
       if (!parsed.driveMemberships) parsed.driveMemberships = [];
+      if (!parsed.trashedDrives) parsed.trashedDrives = [];
       return parsed;
     } catch (e) {
       console.error('Failed to parse database from localStorage, re-seeding.', e);

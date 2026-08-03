@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Modal } from '../../components/Modal';
 import type { Question } from '../../types';
@@ -16,6 +16,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { parseQuestionFile } from '../../utils/parseQuestionFile';
 
 // Stable mock stats computed from question id
 const mockStats = (id: string) => {
@@ -62,7 +64,9 @@ const FilterGroup: React.FC<{
 const PAGE_SIZE = 15;
 
 export const QuestionBank: React.FC = () => {
-  const { db, createQuestion, updateQuestion } = useApp();
+  const { db, createQuestion, updateQuestion, bulkImportQuestions, ensureLoaded } = useApp();
+
+  useEffect(() => { ensureLoaded(['questions'], { force: true }); }, [ensureLoaded]);
 
   // Filter state
   const [skillSearch, setSkillSearch] = useState('');
@@ -96,14 +100,26 @@ export const QuestionBank: React.FC = () => {
     if (file) setUploadedFile(file);
   };
 
-  const handleUploadSubmit = () => {
+  const handleUploadSubmit = async () => {
     if (!uploadedFile) return;
-    setUploadSuccess(true);
-    setTimeout(() => {
-      setUploadSuccess(false);
-      setUploadedFile(null);
-      setUploadOpen(false);
-    }, 1800);
+    try {
+      const rows = await parseQuestionFile(uploadedFile);
+      if (rows.length === 0) {
+        toast.error('No valid questions found in the file.');
+        return;
+      }
+      const imported = await bulkImportQuestions(rows);
+      if (imported === 0) return; // bulkImportQuestions already toasted the error
+      toast.success(`${imported} question${imported === 1 ? '' : 's'} imported.`);
+      setUploadSuccess(true);
+      setTimeout(() => {
+        setUploadSuccess(false);
+        setUploadedFile(null);
+        setUploadOpen(false);
+      }, 1800);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to read the uploaded file.');
+    }
   };
 
   const downloadTemplate = () => {

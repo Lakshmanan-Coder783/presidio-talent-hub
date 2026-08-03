@@ -159,6 +159,7 @@ export const LineChart: React.FC<{ data: LineChartData[] }> = ({ data }) => {
           axisLine={false}
           tickLine={false}
           width={32}
+          allowDecimals={false}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
         <Line

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Table } from '../../components/Table';
 import { Button } from '@/components/ui/button';
@@ -21,13 +21,14 @@ interface TrashRow {
 }
 
 export const Trash: React.FC = () => {
-  const { db, restoreDrive, permanentlyDeleteDrive } = useApp();
+  const { db, restoreDrive, permanentlyDeleteDrive, ensureLoaded } = useApp();
+
+  useEffect(() => { ensureLoaded(['trashedDrives', 'candidates'], { force: true }); }, [ensureLoaded]);
   const [purgeDriveId, setPurgeDriveId] = useState<string | null>(null);
   const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
 
   const rows = useMemo<TrashRow[]>(() => {
-    return db.drives
-      .filter(d => d.deletedAt)
+    return db.trashedDrives
       .map(d => ({
         id: d.id,
         name: d.name,
@@ -39,7 +40,7 @@ export const Trash: React.FC = () => {
         }),
         candidateCount: db.candidates.filter(c => c.driveId === d.id).length,
       }));
-  }, [db.drives, db.candidates]);
+  }, [db.trashedDrives, db.candidates]);
 
   const handleRestore = (row: TrashRow) => {
     restoreDrive(row.id);

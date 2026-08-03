@@ -140,7 +140,10 @@ function SimpleCalculator() {
 }
 
 export const CandidatePortal: React.FC = () => {
-  const { currentUser, db, submitCandidateAssessment, logout, updateCandidate } = useApp();
+  const { currentUser, db, submitCandidateAssessment, logout, updateCandidate, ensureLoaded } = useApp();
+
+  useEffect(() => { ensureLoaded(['candidates', 'assessments', 'drives', 'questions']); }, [ensureLoaded]);
+
   // currentUser.candidate is a snapshot taken at login time (before the status
   // flip to InProgress) and is never refreshed — always prefer the live record.
   const candidate = useMemo(() => {

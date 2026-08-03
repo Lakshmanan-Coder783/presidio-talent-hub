@@ -170,9 +170,12 @@ export async function submitCandidateAssessment(req: Request, res: Response) {
     }
   }
 
+  const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
+
   await Candidate.findByIdAndUpdate(candidateId, {
     assessmentStatus: "Completed",
     assessmentScore: score,
+    assessmentTotalMarks: totalMarks,
     assessmentDurationUsed: durationUsed,
     assessmentSubmissionDate: new Date().toISOString(),
     sectionScores: scoresBreakdown,

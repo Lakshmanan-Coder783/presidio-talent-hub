@@ -59,11 +59,14 @@ export function useDriveReportData(driveCandidates: Candidate[], totalMarks: num
       { stage: 'Offered / Joined', count: offeredOrJoined.length, pct: pct(offeredOrJoined.length) },
     ];
 
-    const oaPct = totalMarks > 0
-      ? avg(
-          oaCompleted.map(c => ((c.assessmentScore ?? 0) / totalMarks) * 100),
-        )
-      : null;
+    const oaPct = avg(
+      oaCompleted
+        .map(c => {
+          const effectiveTotal = c.assessmentTotalMarks ?? totalMarks;
+          return effectiveTotal > 0 ? Math.min(100, ((c.assessmentScore ?? 0) / effectiveTotal) * 100) : null;
+        })
+        .filter((v): v is number => v != null),
+    );
 
     const interviewScoresFlat = driveCandidates.flatMap(c =>
       [c.interviewAptitudeScore, c.interviewTechnicalScore, c.interviewProblemSolvingScore, c.interviewCommunicationScore].filter(

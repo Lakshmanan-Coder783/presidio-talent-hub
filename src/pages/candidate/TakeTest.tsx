@@ -28,7 +28,9 @@ export const TakeTest: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') ?? undefined;
-  const { db, currentUser, loginCandidateByTestSlug } = useApp();
+  const { db, currentUser, loginCandidateByTestSlug, ensureLoaded } = useApp();
+
+  useEffect(() => { ensureLoaded(['candidates', 'assessments', 'drives']); }, [ensureLoaded]);
 
   const assessment = useMemo(
     () => db.assessments.find(a => a.slug === slug),

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
 import { HelpCircle, Shield, Users, Lock, ChevronDown } from 'lucide-react';
@@ -20,10 +20,12 @@ const MicrosoftLogo = () => (
 
 
 export const Login: React.FC = () => {
-  const { loginAdmin, db } = useApp();
+  const { loginAdmin, db, ensureLoaded } = useApp();
   const [loading, setLoading] = useState(false);
   const defaultUserId = db.users.find(u => u.isSuperAdmin)?.id ?? db.users[0]?.id;
   const [selectedUserId, setSelectedUserId] = useState(defaultUserId);
+
+  useEffect(() => { ensureLoaded(['users']); }, [ensureLoaded]);
 
   const handleMicrosoftLogin = () => {
     if (!selectedUserId) {

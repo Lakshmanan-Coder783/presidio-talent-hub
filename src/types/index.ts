@@ -96,6 +96,7 @@ export interface Candidate {
   accessMode?: 'remote' | 'in-person'; // set when invited — passwordless (remote) vs shared-password (in-person) login
   inviteToken?: string; // per-candidate magic-link secret, set for email invites — required for passwordless login
   assessmentScore?: number;
+  assessmentTotalMarks?: number; // total marks of the question set the candidate was actually scored against, frozen at submission time
   assessmentPercentile?: number;
   assessmentRank?: number;
   assessmentDurationUsed?: number; // in seconds
