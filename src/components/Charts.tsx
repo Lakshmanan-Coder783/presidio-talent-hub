@@ -137,7 +137,7 @@ interface LineChartData {
   value: number;
 }
 
-export const LineChart: React.FC<{ data: LineChartData[] }> = ({ data }) => {
+export const LineChart: React.FC<{ data: LineChartData[]; height?: number }> = ({ data, height = 220 }) => {
   const chartData = data.map(d => ({ name: d.label, value: d.value }));
 
   const chartConfig = {
@@ -145,14 +145,15 @@ export const LineChart: React.FC<{ data: LineChartData[] }> = ({ data }) => {
   } satisfies ChartConfig;
 
   return (
-    <ChartContainer config={chartConfig} className="h-[220px] w-full">
-      <ReLineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
+    <ChartContainer config={chartConfig} className="w-full" style={{ height }}>
+      <ReLineChart data={chartData} margin={{ top: 4, right: 12, left: 12, bottom: 4 }}>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
         <XAxis
           dataKey="name"
           tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
+          interval={0}
         />
         <YAxis
           tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}

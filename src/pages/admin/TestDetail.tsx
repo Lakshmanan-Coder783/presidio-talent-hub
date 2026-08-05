@@ -114,6 +114,9 @@ interface CandidateRow {
   rawStatus: Candidate['assessmentStatus'];
   invitedAt?: string;
   password?: string;
+  answers?: Candidate['answers'];
+  rawScore?: number;
+  effectiveTotalMarks?: number;
 }
 
 interface InterviewDraft {
@@ -362,13 +365,15 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime, ensureLoaded } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime, ensureLoaded, loadTestDetailPage } = useApp();
 
-  // `drives`/`candidates`/`assessments`/`users` are needed regardless of which tab is
-  // open (tab badge counts like Students Database/Interview/Coding/Whiteboarding/Access
-  // read from them), and in case someone deep-links straight to a drive URL without
-  // passing through the Tests list first. Loaded once per page visit.
-  useEffect(() => { ensureLoaded(['drives', 'candidates', 'assessments', 'users']); }, [ensureLoaded]);
+  // `drives`/`candidates`/`assessments` are needed regardless of which tab is open —
+  // the always-visible header (title, status pill, duration) derives from them, and
+  // someone may deep-link straight to a drive URL without passing through the Tests
+  // list first. Fetched as one bundle round trip instead of 3 separate requests.
+  // `users` is intentionally excluded: it's only read by specific tabs (Access,
+  // Interview Round), which declare it themselves below.
+  useEffect(() => { loadTestDetailPage(); }, [loadTestDetailPage]);
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -385,10 +390,13 @@ export const TestDetail: React.FC = () => {
         break;
       case 'students-database':
       case 'candidates':
-      case 'interview':
       case 'coding':
       case 'whiteboard':
         ensureLoaded(['candidates'], { force: true });
+        break;
+      case 'interview':
+        // Also needs `users` to resolve the assigned panelist's name.
+        ensureLoaded(['candidates', 'users'], { force: true });
         break;
       case 'experience':
         ensureLoaded(['drives', 'assessments'], { force: true });
@@ -654,6 +662,7 @@ export const TestDetail: React.FC = () => {
         return {
           id: c.id, name: c.name, email: c.email, status: statusLabel, startTime, percentage: pct, band,
           rawStatus: c.assessmentStatus, invitedAt: c.inviteEmailSentAt, password: c.assessmentPassword,
+          answers: c.answers, rawScore: c.assessmentScore, effectiveTotalMarks: effectiveTotal,
         };
       });
   }, [driveCandidates, totalMarks, bandCutoffs]);
@@ -1401,6 +1410,57 @@ export const TestDetail: React.FC = () => {
       },
     },
   ];
+
+  // Export-only columns, one (or two) per question — kept out of the on-screen table
+  // since a drive can have dozens of questions, but included in the CSV export per the
+  // request for full question/answer/correctness detail. Only candidates who submitted
+  // after `answers` started being persisted will have anything to show here; older
+  // completed candidates' individual answers were never saved and can't be recovered.
+  const candidateCsvOnlyColumns = useMemo(() => {
+    const cols: { header: string; csvValue: (row: CandidateRow) => string }[] = [
+      {
+        header: 'SCORE',
+        csvValue: (row: CandidateRow) =>
+          row.rawScore != null ? `${row.rawScore}/${row.effectiveTotalMarks ?? 0}` : '',
+      },
+    ];
+    driveQuestions.forEach((q, idx) => {
+      const qLabel = `Q${idx + 1}: ${(q.title || q.text || '').replace(/\s+/g, ' ').slice(0, 60)}`;
+      cols.push({
+        header: `${qLabel} — Answer`,
+        csvValue: (row: CandidateRow) => {
+          const ans = row.answers?.[q.id];
+          if (ans === undefined) return '';
+          if (q.type === 'MCQ') {
+            const i = Number(ans);
+            return q.options?.[i] ?? String(ans);
+          }
+          if (q.type === 'Multiple Select') {
+            const arr = Array.isArray(ans) ? ans : [];
+            return arr.map(i => q.options?.[i] ?? String(i)).join('; ');
+          }
+          return String(ans);
+        },
+      });
+      if (q.type === 'MCQ' || q.type === 'Multiple Select') {
+        cols.push({
+          header: `${qLabel} — Correct?`,
+          csvValue: (row: CandidateRow) => {
+            const ans = row.answers?.[q.id];
+            if (ans === undefined) return '';
+            if (q.type === 'MCQ') {
+              return q.correctOptions?.[0] === Number(ans) ? 'Yes' : 'No';
+            }
+            const arr = Array.isArray(ans) ? ans : [];
+            const correct = q.correctOptions || [];
+            const isCorrect = arr.length === correct.length && arr.every(v => correct.includes(v));
+            return isCorrect ? 'Yes' : 'No';
+          },
+        });
+      }
+    });
+    return cols;
+  }, [driveQuestions]);
 
   const candidateFilters = [
     {
@@ -2505,6 +2565,7 @@ export const TestDetail: React.FC = () => {
               searchPlaceholder="Search candidates"
               searchKey="name"
               exportFileName={`${drive.name}_Candidates`}
+              csvOnlyColumns={candidateCsvOnlyColumns}
             />
           )}
         </TabsContent>

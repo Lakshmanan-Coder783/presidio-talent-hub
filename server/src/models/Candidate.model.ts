@@ -50,6 +50,7 @@ export interface CandidateDoc {
   assessmentRank?: number;
   assessmentDurationUsed?: number;
   assessmentSubmissionDate?: string;
+  answers?: Record<string, string | number[] | number>;
   extraTimeMinutes?: number;
   sectionScores?: SectionScores;
 
@@ -187,6 +188,7 @@ const candidateSchema = new Schema<CandidateDoc>(
     assessmentRank: Number,
     assessmentDurationUsed: Number,
     assessmentSubmissionDate: String,
+    answers: { type: Schema.Types.Mixed },
     extraTimeMinutes: Number,
     sectionScores: sectionScoresSchema,
 

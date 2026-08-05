@@ -178,6 +178,7 @@ export async function submitCandidateAssessment(req: Request, res: Response) {
     assessmentTotalMarks: totalMarks,
     assessmentDurationUsed: durationUsed,
     assessmentSubmissionDate: new Date().toISOString(),
+    answers,
     sectionScores: scoresBreakdown,
     funnelStage: "Online Test",
     deviceBrowser,

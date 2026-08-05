@@ -101,6 +101,7 @@ export interface Candidate {
   assessmentRank?: number;
   assessmentDurationUsed?: number; // in seconds
   assessmentSubmissionDate?: string;
+  answers?: Record<string, string | number[] | number>; // per-question answers, keyed by question id, frozen at submission time
   extraTimeMinutes?: number; // cumulative extra minutes granted (e.g. to compensate for a network outage)
   sectionScores?: {
     aptitude?: number;

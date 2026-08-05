@@ -37,6 +37,7 @@ interface AppContextType {
   loadCampusDrivePage: () => void;
   loadDashboardPage: () => void;
   loadCollegeReportPage: () => void;
+  loadTestDetailPage: () => void;
   currentUser: UserSession | null;
   loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
@@ -205,6 +206,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
       .catch(err => console.error('Failed to load college report bundle from backend:', err))
       .finally(() => { collegeReportPagePendingRef.current = false; });
+  }, []);
+
+  // Single-round-trip bundle for the Test Detail page's always-visible
+  // header (title, status pill, duration), which needs these 3 fields
+  // regardless of which tab is active. Same pending-ref guard as
+  // `loadCampusDrivePage` against StrictMode's dev-mode double-invoke.
+  const testDetailPagePendingRef = useRef(false);
+  const loadTestDetailPage = useCallback(() => {
+    if (testDetailPagePendingRef.current) return;
+    testDetailPagePendingRef.current = true;
+    fetch('/api/test-detail-bundle')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments'>) => {
+        setDb(prev => ({ ...prev, ...data }));
+      })
+      .catch(err => console.error('Failed to load test detail bundle from backend:', err))
+      .finally(() => { testDetailPagePendingRef.current = false; });
   }, []);
 
   const loginAdmin = async (userId: string) => {
@@ -859,6 +877,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadCampusDrivePage,
       loadDashboardPage,
       loadCollegeReportPage,
+      loadTestDetailPage,
       currentUser,
       loginAdmin,
       loginCandidate,

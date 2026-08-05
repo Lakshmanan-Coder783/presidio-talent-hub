@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Cpu, Network, CheckCircle } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { ShieldAlert, Cpu, Network, CheckCircle, Sun, Moon, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +13,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export const Settings: React.FC = () => {
+  const { theme, setTheme } = useTheme();
   const [successSaved, setSuccessSaved] = useState(false);
   const [platformName, setPlatformName] = useState('Presidio Talent Hub');
   const [proctoring, setProctoring] = useState(true);
@@ -56,6 +58,31 @@ export const Settings: React.FC = () => {
               <CardTitle>General Configuration</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
+              <div className="space-y-1.5">
+                <Label>Theme Mode</Label>
+                <div className="flex items-center gap-2">
+                  {([
+                    { value: 'light', label: 'Light', icon: Sun },
+                    { value: 'dark', label: 'Dark', icon: Moon },
+                    { value: 'system', label: 'System', icon: Monitor },
+                  ] as const).map(({ value, label, icon: Icon }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={theme === value ? 'default' : 'outline'}
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setTheme(value)}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  "System" follows your device's light/dark setting automatically.
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <Label>Enterprise Platform Name</Label>
                 <Input value={platformName} onChange={e => setPlatformName(e.target.value)} />

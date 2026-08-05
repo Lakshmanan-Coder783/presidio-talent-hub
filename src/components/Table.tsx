@@ -23,6 +23,9 @@ interface Column<T> {
   accessor?: keyof T | string;
   render?: (row: T) => React.ReactNode;
   sortable?: boolean;
+  /** Plain-text value for CSV export, for columns whose on-screen `render` can't be
+   *  expressed as text (e.g. formatted/computed values). Falls back to `accessor`. */
+  csvValue?: (row: T) => string;
 }
 
 interface FilterOption {
@@ -46,6 +49,10 @@ interface TableProps<T> {
   exportFileName?: string;
   /** Replaces the default Export CSV button in the toolbar when provided. */
   toolbarAction?: React.ReactNode;
+  /** Extra columns included only in the CSV export, not rendered on screen — for detail
+   *  that would make the visible table unusably wide (e.g. one pair of columns per
+   *  question in an assessment). */
+  csvOnlyColumns?: Column<T>[];
 }
 
 export function Table<T>({
@@ -57,6 +64,7 @@ export function Table<T>({
   initialSort,
   exportFileName = 'export',
   toolbarAction,
+  csvOnlyColumns = [],
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<{ [key: string]: string }>({});
@@ -141,12 +149,15 @@ export function Table<T>({
 
   const handleExport = () => {
     if (processedData.length === 0) return;
-    const headers = columns.map(col => `"${col.header.replace(/"/g, '""')}"`).join(',');
+    const allColumns = [...columns, ...csvOnlyColumns];
+    const headers = allColumns.map(col => `"${col.header.replace(/"/g, '""')}"`).join(',');
     const rows = processedData.map(row => {
-      return columns
+      return allColumns
         .map(col => {
           let value = '';
-          if (col.accessor) {
+          if (col.csvValue) {
+            value = col.csvValue(row);
+          } else if (col.accessor) {
             const rawVal = col.accessor.toString().includes('.')
               ? col.accessor
                   .toString()
@@ -159,13 +170,19 @@ export function Table<T>({
         })
         .join(',');
     });
-    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers, ...rows].join('\n');
+    // A UTF-8 BOM + data: URI + encodeURI() was silently mangling non-ASCII characters
+    // (e.g. "—" became "â" once opened in Excel/Numbers) — a Blob with an explicit
+    // charset is the standard, mojibake-safe way to produce an Excel-readable UTF-8 CSV.
+    const csvContent = '﻿' + [headers, ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('href', url);
     link.setAttribute('download', `${exportFileName}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const getCellValue = (row: T, col: Column<T>) => {

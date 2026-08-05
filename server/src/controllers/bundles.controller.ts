@@ -42,3 +42,16 @@ export async function getCollegeReportBundle(_req: Request, res: Response) {
   ]);
   res.json({ drives, candidates });
 }
+
+// Single-round-trip bundle for the Test Detail page's always-visible header
+// (title, status pill, duration), which needs these 3 collections regardless
+// of which tab is active. Mirrors exactly what listDrives/listCandidates/
+// listAssessments already return individually.
+export async function getTestDetailBundle(_req: Request, res: Response) {
+  const [drives, candidates, assessments] = await Promise.all([
+    CampusDrive.find({ deletedAt: null }).sort({ createdAt: -1 }),
+    Candidate.find(),
+    Assessment.find(),
+  ]);
+  res.json({ drives, candidates, assessments });
+}
