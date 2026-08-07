@@ -57,8 +57,13 @@ export interface CampusDriveDoc {
   selected: number;
   description: string;
   createdAt: Date;
+  createdByUserId?: string;
   deletedAt?: Date | null;
   status: "Draft" | "Ongoing" | "Completed";
+  // Whether this drive runs one online-assessment session or two (e.g. a morning
+  // and afternoon batch when the college lacks enough systems to test everyone at
+  // once). Defaults to "single" — the pre-two-batch experience.
+  oaBatchMode: "single" | "two";
   questionIds?: string[];
   assessmentId?: string;
   examDate?: string;
@@ -67,6 +72,14 @@ export interface CampusDriveDoc {
   cutoffPercentage?: number;
   scoreBandCutoffs?: ScoreBandCutoffs;
   experienceSettings?: ExperienceSettings;
+  // Optional second batch (e.g. an afternoon session) — own test link/password/question
+  // set, published independently. Absent means the drive runs a single batch.
+  assessmentIdBatch2?: string;
+  questionIdsBatch2?: string[];
+  examStartTimeBatch2?: string;
+  examEndTimeBatch2?: string;
+  cutoffPercentageBatch2?: number;
+  scoreBandCutoffsBatch2?: ScoreBandCutoffs;
 }
 
 const scoreBandCutoffsSchema = new Schema<ScoreBandCutoffs>(
@@ -128,8 +141,10 @@ const campusDriveSchema = new Schema<CampusDriveDoc>(
     selected: { type: Number, default: 0 },
     description: { type: String, default: "" },
     createdAt: { type: Date, default: Date.now, index: true },
+    createdByUserId: { type: String, ref: "User" },
     deletedAt: { type: Date, default: null, index: true },
     status: { type: String, enum: ["Draft", "Ongoing", "Completed"], default: "Draft" },
+    oaBatchMode: { type: String, enum: ["single", "two"], default: "single" },
     questionIds: [{ type: String, ref: "Question" }],
     assessmentId: { type: String, ref: "Assessment", index: true },
     examDate: String,
@@ -138,6 +153,12 @@ const campusDriveSchema = new Schema<CampusDriveDoc>(
     cutoffPercentage: Number,
     scoreBandCutoffs: scoreBandCutoffsSchema,
     experienceSettings: experienceSettingsSchema,
+    assessmentIdBatch2: { type: String, ref: "Assessment", index: true },
+    questionIdsBatch2: [{ type: String, ref: "Question" }],
+    examStartTimeBatch2: String,
+    examEndTimeBatch2: String,
+    cutoffPercentageBatch2: Number,
+    scoreBandCutoffsBatch2: scoreBandCutoffsSchema,
   },
   { _id: false },
 );

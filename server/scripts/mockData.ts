@@ -188,8 +188,8 @@ const DEGREE_SPECIALIZATIONS: Record<string, string> = {
 };
 
 
-const CTC_STEPS = [7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0];
-const JOINED_CTC_STEPS = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0];
+const CTC_STEPS = [6.0, 7.0, 8.0, 9.0, 10.0, 10.0, 11.0, 12.0, 13.0, 14.0];
+const JOINED_CTC_STEPS = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0];
 
 const BROWSERS = ['Chrome 128.0.0.0', 'Edge 138.0.0.0', 'Firefox 130.0', 'Safari 17.5'];
 const OPERATING_SYSTEMS = ['Windows 10', 'Windows 11', 'macOS 14', 'Ubuntu 22.04'];
@@ -796,7 +796,12 @@ export function generateMockDatabase(): Database {
   // of the legacy spocName/spocEmail free-text fields generated above.
   const users: User[] = MOCK_USERS.map((u, idx) => ({ ...u, id: `USR-${String(idx + 1).padStart(3, '0')}` }));
   const assignableUsers = users.filter(u => !u.isSuperAdmin); // Super Admins already have implicit global access
-  const superAdminUser = users.find(u => u.isSuperAdmin)!;
+  const superAdminUsers = users.filter(u => u.isSuperAdmin);
+  const superAdminUser = superAdminUsers[0]!;
+
+  // Drive creation is Super-Admin-only, so backfill each seeded drive's Owner
+  // with one of the seeded Super Admins for a realistic-looking Owner column.
+  drives.forEach(drive => { drive.createdByUserId = rnd.pick(superAdminUsers).id; });
 
   const driveMemberships: DriveMembership[] = [];
   drives.forEach((drive, i) => {
@@ -926,6 +931,35 @@ export function generateMockDatabase(): Database {
     drive.assessmentId = assessment.id;
   });
 
+  // Per-drive Evaluator (falling back to a Panel member) used to backfill
+  // codingEvaluatorUserId/whiteboardEvaluatorUserId below, so the seeded
+  // Team Activity dashboard widget has real-looking per-Evaluator workload.
+  const driveEvaluatorId = new Map<string, string>();
+  drives.forEach(d => {
+    const evaluatorMembership = driveMemberships.find(m => m.driveId === d.id && m.role === 'Evaluator');
+    const panelMembership = driveMemberships.find(m => m.driveId === d.id && m.role === 'Panel');
+    const chosen = evaluatorMembership ?? panelMembership;
+    if (chosen) driveEvaluatorId.set(d.id, chosen.userId);
+  });
+
+  const FUNNEL_STAGE_ORDER: Candidate['funnelStage'][] = [
+    'Applied', 'Online Test', 'Interview', 'Coding Exercise', 'Whiteboard Interview', 'Offered', 'Joined',
+  ];
+
+  // Builds a plausible stage-history trail up to (and including) `finalStage`,
+  // using whichever real dates are available for the stages actually reached —
+  // stages with no known date (e.g. an in-progress OA with no submission yet)
+  // are simply omitted rather than guessed.
+  function buildFunnelStageHistory(
+    finalStage: Candidate['funnelStage'],
+    dates: Partial<Record<Candidate['funnelStage'], string>>,
+  ): Candidate['funnelStageHistory'] {
+    const cutoff = FUNNEL_STAGE_ORDER.indexOf(finalStage);
+    return FUNNEL_STAGE_ORDER.slice(0, cutoff + 1)
+      .filter(stage => dates[stage])
+      .map(stage => ({ stage, enteredAt: dates[stage]! }));
+  }
+
   // 4. Generate 1000 Candidates
   const candidates: Candidate[] = [];
   const interviews: Interview[] = [];
@@ -950,6 +984,11 @@ export function generateMockDatabase(): Database {
     let interviewShortlisted: boolean | undefined = undefined;
     let codingShortlisted: boolean | undefined = undefined;
     let whiteboardFinalResult: Candidate['whiteboardFinalResult'] = undefined;
+    let codingEvaluatorUserId: string | undefined = undefined;
+    let whiteboardEvaluatorUserId: string | undefined = undefined;
+
+    const appliedAt = new Date(new Date(drive.date).getTime() - Math.floor(rnd.range(7, 21)) * 86_400_000).toISOString();
+    const stageDates: Partial<Record<Candidate['funnelStage'], string>> = { Applied: appliedAt };
 
     const roll = rnd.range(0, 100);
 
@@ -973,6 +1012,7 @@ export function generateMockDatabase(): Database {
         assessmentScore = Math.floor(driveTotal * rnd.range(0.3, 0.95));
         durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
         submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
+        stageDates['Online Test'] = submissionDate;
         const isCombined = targetAssessment.type === 'Combined';
         sectionScores = {
           aptitude: Math.floor(driveTotal * 0.2 * rnd.range(0.3, 0.9)),
@@ -990,6 +1030,7 @@ export function generateMockDatabase(): Database {
       assessmentScore = Math.floor(driveTotal * rnd.range(0.65, 0.98));
       durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
       submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
+      stageDates['Online Test'] = submissionDate;
       const isCombined = targetAssessment.type === 'Combined';
       sectionScores = {
         aptitude: Math.floor(driveTotal * 0.25 * rnd.range(0.7, 0.95)),
@@ -1002,21 +1043,41 @@ export function generateMockDatabase(): Database {
 
       const hr = Math.floor(rnd.range(9, 17));
       const min = rnd.next() > 0.5 ? '30' : '00';
+      const roundDateStr = new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
+      // Zero-padded so `${date}T${time}` is valid ISO 8601 — an unpadded single-digit
+      // hour (e.g. "9:00") makes `new Date(...)` return Invalid Date, which throws
+      // when something downstream (e.g. date-fns formatDistanceToNow) uses it.
+      const roundTimeStr = `${String(hr).padStart(2, '0')}:${min}`;
       interviews.push({
         id: `INT-2026-${1000 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
         candidateName: name,
         panelName: `Panel ${rnd.pick(['Alpha', 'Beta', 'Gamma', 'Delta'])}`,
-        date: new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
-        // Zero-padded so `${date}T${time}` is valid ISO 8601 — an unpadded single-digit
-        // hour (e.g. "9:00") makes `new Date(...)` return Invalid Date, which throws
-        // when something downstream (e.g. date-fns formatDistanceToNow) uses it.
-        time: `${String(hr).padStart(2, '0')}:${min}`,
+        date: roundDateStr,
+        time: roundTimeStr,
         stage: funnelStage === 'Interview' ? 'Interview' : (funnelStage === 'Coding Exercise' ? 'Coding Exercise' : 'Whiteboard Interview'),
         status: interviewStatus === 'Scheduled' ? 'Scheduled' : 'Completed',
         feedback: interviewStatus === 'Ongoing' ? rnd.pick(INTERVIEW_FEEDBACK) : undefined,
         rating: interviewStatus === 'Ongoing' ? Math.floor(rnd.range(3, 5)) : undefined
       });
+
+      // Approximate stage-entry timestamps for whichever rounds this candidate has
+      // actually reached (buildFunnelStageHistory trims anything past `funnelStage`).
+      // Anchored to appliedAt (itself derived from the drive's own date) rather than
+      // the interview record's display date, so time-to-hire stays sane for drives
+      // seeded across many different historical years.
+      const appliedMs = new Date(appliedAt).getTime();
+      stageDates['Interview'] = new Date(appliedMs + 21 * 86_400_000).toISOString();
+      stageDates['Coding Exercise'] = new Date(appliedMs + 24 * 86_400_000).toISOString();
+      stageDates['Whiteboard Interview'] = new Date(appliedMs + 27 * 86_400_000).toISOString();
+      const evaluatorForDrive = driveEvaluatorId.get(drive.id);
+      if (evaluatorForDrive && funnelStage !== 'Interview') codingEvaluatorUserId = evaluatorForDrive;
+      if (evaluatorForDrive && funnelStage === 'Whiteboard Interview') whiteboardEvaluatorUserId = evaluatorForDrive;
+
+      // Reaching a later round implies passing every round before it.
+      oaShortlisted = true;
+      if (funnelStage !== 'Interview') interviewShortlisted = true;
+      if (funnelStage === 'Whiteboard Interview') codingShortlisted = true;
 
     } else if (roll < 97) {
       funnelStage = 'Offered';
@@ -1024,6 +1085,7 @@ export function generateMockDatabase(): Database {
       assessmentScore = Math.floor(driveTotal * rnd.range(0.75, 0.98));
       durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
       submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
+      stageDates['Online Test'] = submissionDate;
       interviewStatus = 'Passed';
 
       const offerRoll = rnd.range(0, 3);
@@ -1031,6 +1093,7 @@ export function generateMockDatabase(): Database {
       else if (offerRoll < 2) offerStatus = 'Accepted';
       else offerStatus = 'Declined';
 
+      const dateReleased = new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
       offers.push({
         id: `OFF-2026-${200 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
@@ -1038,8 +1101,26 @@ export function generateMockDatabase(): Database {
         college: drive.college,
         ctc: rnd.pick(CTC_STEPS),
         status: offerStatus as Offer['status'],
-        dateReleased: new Date(2026, 5, Math.floor(rnd.range(1, 28))).toISOString().split('T')[0]
+        dateReleased
       });
+
+      // Backfill the rounds that must have happened before an offer could be
+      // released. Anchored to appliedAt (drive-relative) rather than the offer's
+      // own display date, which is deliberately clustered in 2026 regardless of
+      // the drive's actual year — using it here would make time-to-hire nonsense
+      // for candidates on older historical drives.
+      const appliedMs = new Date(appliedAt).getTime();
+      stageDates['Interview'] = new Date(appliedMs + 21 * 86_400_000).toISOString();
+      stageDates['Coding Exercise'] = new Date(appliedMs + 24 * 86_400_000).toISOString();
+      stageDates['Whiteboard Interview'] = new Date(appliedMs + 27 * 86_400_000).toISOString();
+      stageDates['Offered'] = new Date(appliedMs + 30 * 86_400_000).toISOString();
+      const evaluatorForDrive = driveEvaluatorId.get(drive.id);
+      codingEvaluatorUserId = evaluatorForDrive;
+      whiteboardEvaluatorUserId = evaluatorForDrive;
+      oaShortlisted = true;
+      interviewShortlisted = true;
+      codingShortlisted = true;
+      whiteboardFinalResult = 'Selected';
 
     } else {
       funnelStage = 'Joined';
@@ -1047,9 +1128,12 @@ export function generateMockDatabase(): Database {
       assessmentScore = Math.floor(driveTotal * rnd.range(0.8, 0.99));
       durationUsed = Math.floor(targetAssessment.duration * 60 * rnd.range(0.5, 0.95));
       submissionDate = randomExamStartTime(Math.floor(rnd.range(1, 28)));
+      stageDates['Online Test'] = submissionDate;
       interviewStatus = 'Passed';
       offerStatus = 'Joined';
 
+      const dateReleased = new Date(2026, Math.floor(rnd.range(3, 5)), Math.floor(rnd.range(1, 28))).toISOString().split('T')[0];
+      const joiningDate = new Date(2026, 6, 15).toISOString().split('T')[0];
       offers.push({
         id: `OFF-2026-${200 + i}`,
         candidateId: `PRES2026-${10000 + i}`,
@@ -1057,13 +1141,54 @@ export function generateMockDatabase(): Database {
         college: drive.college,
         ctc: rnd.pick(JOINED_CTC_STEPS),
         status: 'Joined',
-        dateReleased: new Date(2026, Math.floor(rnd.range(3, 5)), Math.floor(rnd.range(1, 28))).toISOString().split('T')[0],
-        joiningDate: new Date(2026, 6, 15).toISOString().split('T')[0]
+        dateReleased,
+        joiningDate
       });
+
+      // See the Offered branch above for why this is anchored to appliedAt
+      // rather than the (deliberately 2026-clustered) offer display dates.
+      const appliedMs = new Date(appliedAt).getTime();
+      stageDates['Interview'] = new Date(appliedMs + 21 * 86_400_000).toISOString();
+      stageDates['Coding Exercise'] = new Date(appliedMs + 24 * 86_400_000).toISOString();
+      stageDates['Whiteboard Interview'] = new Date(appliedMs + 27 * 86_400_000).toISOString();
+      stageDates['Offered'] = new Date(appliedMs + 30 * 86_400_000).toISOString();
+      stageDates['Joined'] = new Date(appliedMs + 75 * 86_400_000).toISOString();
+      const evaluatorForDrive = driveEvaluatorId.get(drive.id);
+      codingEvaluatorUserId = evaluatorForDrive;
+      whiteboardEvaluatorUserId = evaluatorForDrive;
+      oaShortlisted = true;
+      interviewShortlisted = true;
+      codingShortlisted = true;
+      whiteboardFinalResult = 'Selected';
     }
 
     const githubHandle = name.toLowerCase().replace(/\s+/g, '-');
     const deviceInfo = (assessmentStatus === 'InProgress' || assessmentStatus === 'Completed') ? randomDeviceInfo() : null;
+
+    // Proctoring telemetry — most completed assessments are clean; a minority
+    // trip a few tab-switch/flagged-frame violations, and a rare handful get
+    // auto-terminated for exceeding the threshold, so Assessment Integrity has
+    // something real to show instead of a flat 0%.
+    let windowViolationCount: number | undefined;
+    let imageViolationCount: number | undefined;
+    let proctoringTerminated: boolean | undefined;
+    if (assessmentStatus === 'Completed') {
+      const proctoringRoll = rnd.range(0, 100);
+      if (proctoringRoll < 3) {
+        windowViolationCount = Math.floor(rnd.range(4, 8));
+        imageViolationCount = Math.floor(rnd.range(3, 6));
+        proctoringTerminated = true;
+      } else if (proctoringRoll < 18) {
+        windowViolationCount = Math.floor(rnd.range(1, 4));
+        imageViolationCount = Math.floor(rnd.range(0, 3));
+        proctoringTerminated = false;
+      } else {
+        windowViolationCount = 0;
+        imageViolationCount = 0;
+        proctoringTerminated = false;
+      }
+    }
+
     const isPostgrad = !degree.startsWith('B.');
     const backlogHistory = rnd.next() > 0.7 ? Math.floor(rnd.range(1, 4)) : 0;
     const currentBacklogs = backlogHistory > 0 && rnd.next() > 0.6 ? Math.floor(rnd.range(1, backlogHistory + 1)) : 0;
@@ -1101,13 +1226,19 @@ export function generateMockDatabase(): Database {
       interviewStatus,
       offerStatus,
       funnelStage,
+      funnelStageHistory: buildFunnelStageHistory(funnelStage, stageDates),
       oaShortlisted,
       interviewShortlisted,
       codingShortlisted,
+      codingEvaluatorUserId,
       whiteboardFinalResult,
+      whiteboardEvaluatorUserId,
       deviceBrowser: deviceInfo?.browser,
       deviceOS: deviceInfo?.os,
       mockIpAddress: deviceInfo?.ip,
+      windowViolationCount,
+      imageViolationCount,
+      proctoringTerminated,
     });
 
     targetAssessment.candidatesAssignedCount++;
@@ -1142,7 +1273,10 @@ export function generateMockDatabase(): Database {
       technical: Math.floor(total * 0.5 * rnd.range(0.4, 0.95)),
       coding: rnd.next() > 0.4 ? Math.floor(total * 0.3 * rnd.range(0.2, 0.9)) : 0,
     };
-    if (c.funnelStage === 'Applied') c.funnelStage = 'Online Test';
+    if (c.funnelStage === 'Applied') {
+      c.funnelStage = 'Online Test';
+      c.funnelStageHistory = [...(c.funnelStageHistory ?? []), { stage: 'Online Test', enteredAt: c.assessmentSubmissionDate! }];
+    }
   });
 
   // Calculate ranks and percentiles for completed assessments

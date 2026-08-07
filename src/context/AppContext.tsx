@@ -13,6 +13,16 @@ interface UserSession {
   user?: User; // populated when role === 'admin'
 }
 
+// Merges a scoped (partial) fetch result into an existing full/partial list by
+// id — updates matching entries in place, appends new ones. Used by loaders
+// that fetch only a slice of a collection (e.g. one drive's candidates)
+// instead of the whole thing, so they don't wipe out whatever other pages
+// already cached for other drives/records.
+function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] {
+  const incomingIds = new Set(incoming.map(item => item.id));
+  return [...existing.filter(item => !incomingIds.has(item.id)), ...incoming];
+}
+
 const parseUserAgent = (): { browser: string; os: string } => {
   const ua = navigator.userAgent;
   let browser = 'Unknown Browser';
@@ -37,7 +47,8 @@ interface AppContextType {
   loadCampusDrivePage: () => void;
   loadDashboardPage: () => void;
   loadCollegeReportPage: () => void;
-  loadTestDetailPage: () => void;
+  loadTestDetailPage: (driveId: string) => void;
+  loadDriveCandidates: (driveId: string, opts?: { batch?: 'Batch 1' | 'Batch 2'; force?: boolean }) => void;
   currentUser: UserSession | null;
   loginAdmin: (userId: string) => Promise<void>;
   loginCandidate: (id: string, pass: string) => { success: boolean; message: string };
@@ -48,6 +59,8 @@ interface AppContextType {
   restoreDrive: (driveId: string) => void;
   permanentlyDeleteDrive: (driveId: string) => void;
   updateCandidate: (candidate: Candidate) => void;
+  deleteCandidate: (candidateId: string) => Promise<void>;
+  deleteAllCandidatesForDrive: (driveId: string) => Promise<number>;
   bulkUpdateCandidates: (updates: Candidate[]) => void;
   createQuestion: (question: Omit<Question, 'id'>) => void;
   bulkImportQuestions: (rows: Omit<Question, 'id'>[]) => Promise<number>;
@@ -65,12 +78,13 @@ interface AppContextType {
   createAssessmentForDrive: (
     driveId: string,
     data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
-    driveQuestionIds: string[]
+    driveQuestionIds: string[],
+    batchSlot?: 'batch1' | 'batch2'
   ) => Promise<Assessment | undefined>;
   updateAssessment: (assessment: Assessment) => void;
   updateQuestion: (id: string, updates: Partial<Omit<Question, 'id'>>) => void;
   loginCandidateByTestSlug: (slug: string, candidateId: string, password: string, token?: string) => { success: boolean; message: string };
-  bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => Promise<number>;
+  bulkImportCandidates: (driveId: string, rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage'>[]) => Promise<{ imported: number; updated: number }>;
   activateDriveInvites: (driveId: string, mode: 'remote' | 'in-person') => Promise<{ id: string; name: string; email: string; inviteToken?: string }[]>;
   markAttendance: (candidateId: string, present: boolean) => void;
   extendCandidateExamTime: (candidateId: string, extraMinutes: number) => void;
@@ -174,8 +188,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Single-round-trip bundle for the Executive Dashboard, which computes its
-  // KPI cards and charts from these 3 fields — replaces what would otherwise
-  // be 3 separate `ensureLoaded` fetches with one backend call. Same
+  // KPI cards and charts from these 6 fields — replaces what would otherwise
+  // be 6 separate `ensureLoaded` fetches with one backend call. Same
   // pending-ref guard as `loadCampusDrivePage` against StrictMode's
   // dev-mode double-invoke.
   const dashboardPagePendingRef = useRef(false);
@@ -184,7 +198,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dashboardPagePendingRef.current = true;
     fetch('/api/dashboard-bundle')
       .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments'>) => {
+      .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments' | 'offers' | 'driveMemberships' | 'users'>) => {
         setDb(prev => ({ ...prev, ...data }));
       })
       .catch(err => console.error('Failed to load dashboard bundle from backend:', err))
@@ -208,21 +222,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .finally(() => { collegeReportPagePendingRef.current = false; });
   }, []);
 
-  // Single-round-trip bundle for the Test Detail page's always-visible
-  // header (title, status pill, duration), which needs these 3 fields
-  // regardless of which tab is active. Same pending-ref guard as
-  // `loadCampusDrivePage` against StrictMode's dev-mode double-invoke.
-  const testDetailPagePendingRef = useRef(false);
-  const loadTestDetailPage = useCallback(() => {
-    if (testDetailPagePendingRef.current) return;
-    testDetailPagePendingRef.current = true;
-    fetch('/api/test-detail-bundle')
+  // Single-round-trip bundle for one drive's Test Detail page — scoped to just
+  // that drive's own drive/candidates/assessments (not the whole system), so
+  // opening one drive never pulls in every other drive's candidates. Merged by
+  // id (not replaced) so other pages' already-cached drives/candidates for
+  // *other* drives survive. Pending set (not a single bool) keyed by driveId,
+  // same StrictMode double-invoke guard as `loadCampusDrivePage` but allows a
+  // different drive's fetch to proceed even while one is already in flight.
+  const testDetailPagePendingRef = useRef(new Set<string>());
+  const loadTestDetailPage = useCallback((driveId: string) => {
+    if (testDetailPagePendingRef.current.has(driveId)) return;
+    testDetailPagePendingRef.current.add(driveId);
+    fetch(`/api/test-detail-bundle/${driveId}`)
       .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data: Pick<Database, 'drives' | 'candidates' | 'assessments'>) => {
-        setDb(prev => ({ ...prev, ...data }));
+        setDb(prev => ({
+          ...prev,
+          drives: mergeById(prev.drives, data.drives),
+          candidates: mergeById(prev.candidates, data.candidates),
+          assessments: mergeById(prev.assessments, data.assessments),
+        }));
       })
       .catch(err => console.error('Failed to load test detail bundle from backend:', err))
-      .finally(() => { testDetailPagePendingRef.current = false; });
+      .finally(() => { testDetailPagePendingRef.current.delete(driveId); });
+  }, []);
+
+  // Drive- (and optionally batch-) scoped candidate refresh for the Test
+  // Detail page's per-tab force-reload — e.g. clicking "Batch 1 Result" only
+  // fetches that batch's candidates for this drive, not the whole drive or
+  // (as it was before this existed) every candidate in the system. Merged by
+  // id so a batch-narrowed fetch never drops the other batch's candidates
+  // already cached from the page's initial full-drive load. Dedup keyed by
+  // driveId+batch, same shape as `ensureLoaded`'s loadedFieldsRef/pendingFieldsRef.
+  const driveCandidatesLoadedRef = useRef(new Set<string>());
+  const driveCandidatesPendingRef = useRef(new Set<string>());
+  const loadDriveCandidates = useCallback((
+    driveId: string, opts?: { batch?: 'Batch 1' | 'Batch 2'; force?: boolean },
+  ) => {
+    const key = `${driveId}:${opts?.batch ?? 'all'}`;
+    if (!opts?.force && driveCandidatesLoadedRef.current.has(key)) return;
+    if (driveCandidatesPendingRef.current.has(key)) return;
+    driveCandidatesPendingRef.current.add(key);
+    driveCandidatesLoadedRef.current.add(key);
+    const url = opts?.batch
+      ? `/api/drives/${driveId}/candidates?batch=${encodeURIComponent(opts.batch)}`
+      : `/api/drives/${driveId}/candidates`;
+    fetch(url)
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: Candidate[]) => {
+        driveCandidatesPendingRef.current.delete(key);
+        setDb(prev => ({ ...prev, candidates: mergeById(prev.candidates, data) }));
+      })
+      .catch(err => {
+        driveCandidatesPendingRef.current.delete(key);
+        driveCandidatesLoadedRef.current.delete(key);
+        console.error('Failed to load drive candidates from backend:', err);
+      });
   }, []);
 
   const loginAdmin = async (userId: string) => {
@@ -288,7 +343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     driveData: Omit<CampusDrive, 'id' | 'registered' | 'selected' | 'createdAt'>,
     initialSpocUserId?: string,
   ): Promise<CampusDrive | undefined> => {
-    if (!canCreateDrive(currentUser?.user, db)) return undefined;
+    if (!canCreateDrive(currentUser?.user)) return undefined;
     try {
       const res = await fetch('/api/drives', {
         method: 'POST',
@@ -394,6 +449,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => c.id === saved.id ? saved : c) }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update candidate.');
+    }
+  };
+
+  const deleteCandidate = async (candidateId: string) => {
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      setDb(prev => ({ ...prev, candidates: prev.candidates.filter(c => c.id !== candidateId) }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete candidate.');
+    }
+  };
+
+  // Bulk recovery path for a bad Students Database upload — clears every
+  // candidate registered for the drive in one call.
+  const deleteAllCandidatesForDrive = async (driveId: string): Promise<number> => {
+    try {
+      const res = await fetch(`/api/drives/${driveId}/candidates`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { deleted } = await res.json();
+      setDb(prev => ({ ...prev, candidates: prev.candidates.filter(c => c.driveId !== driveId) }));
+      return deleted;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete students.');
+      return 0;
     }
   };
 
@@ -561,13 +641,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createAssessmentForDrive = async (
     driveId: string,
     data: Omit<Assessment, 'id' | 'candidatesAssignedCount'>,
-    driveQuestionIds: string[]
+    driveQuestionIds: string[],
+    batchSlot?: 'batch1' | 'batch2'
   ): Promise<Assessment | undefined> => {
     try {
       const res = await fetch(`/api/drives/${driveId}/assessments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, driveQuestionIds }),
+        body: JSON.stringify({ ...data, driveQuestionIds, batchSlot }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { assessment, drive } = await res.json();
@@ -615,7 +696,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Passwordless only applies when the exact per-candidate magic-link token is present and
     // matches — a bare shared URL (no token, or wrong one) always falls back to the shared
     // test password, even for a candidate who was invited via email.
-    const drive = db.drives.find(d => d.assessmentId === asm.id);
+    const driveRaw = db.drives.find(d => d.assessmentId === asm.id || d.assessmentIdBatch2 === asm.id);
+    const isBatch2Assessment = !!driveRaw && driveRaw.assessmentIdBatch2 === asm.id;
+    // Batch 2 has its own exam time window — substitute it in before window checks below,
+    // so a Batch 2 candidate is gated by Batch 2's schedule, not Batch 1's.
+    const drive = driveRaw && isBatch2Assessment
+      ? { ...driveRaw, examStartTime: driveRaw.examStartTimeBatch2, examEndTime: driveRaw.examEndTimeBatch2 }
+      : driveRaw;
     const passwordless = candidate.accessMode === 'remote' && !!token && token === candidate.inviteToken;
     // A candidate already mid-test (e.g. reconnecting after a network drop) is
     // resuming an already-authorized session, not requesting fresh admission — the
@@ -688,7 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const bulkImportCandidates = async (
     driveId: string,
     rows: Omit<Candidate, 'id' | 'assessmentStatus' | 'interviewStatus' | 'offerStatus' | 'funnelStage' | 'driveId'>[]
-  ): Promise<number> => {
+  ): Promise<{ imported: number; updated: number }> => {
     try {
       const res = await fetch(`/api/drives/${driveId}/candidates/import`, {
         method: 'POST',
@@ -696,14 +783,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(rows),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { imported, candidates } = await res.json();
+      const { imported, updated, candidates } = await res.json();
       if (candidates?.length) {
-        setDb(prev => ({ ...prev, candidates: [...prev.candidates, ...candidates] }));
+        // Rows that matched an existing candidate come back as updates — replace
+        // that candidate in place rather than appending, so re-importing never
+        // creates a duplicate row in local state.
+        const candidateMap = new Map<string, Candidate>(candidates.map((c: Candidate) => [c.id, c]));
+        setDb(prev => {
+          const existingIds = new Set(prev.candidates.map(c => c.id));
+          const merged = prev.candidates.map(c => candidateMap.get(c.id) ?? c);
+          const newOnes = (candidates as Candidate[]).filter(c => !existingIds.has(c.id));
+          return { ...prev, candidates: [...merged, ...newOnes] };
+        });
       }
-      return imported;
+      return { imported, updated };
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to import candidates.');
-      return 0;
+      return { imported: 0, updated: 0 };
     }
   };
 
@@ -739,10 +835,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify({ mode }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { invited, candidates } = await res.json();
+      const { invited, candidates, skipped } = await res.json();
       if (candidates?.length) {
         const candidateMap = new Map<string, Candidate>(candidates.map((c: Candidate) => [c.id, c]));
         setDb(prev => ({ ...prev, candidates: prev.candidates.map(c => candidateMap.get(c.id) ?? c) }));
+      }
+      if (skipped?.length) {
+        toast.error(`${skipped.length} Batch 2 candidate${skipped.length !== 1 ? 's' : ''} skipped — Batch 2 test isn't configured yet.`);
       }
       return invited;
     } catch (err) {
@@ -878,6 +977,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadDashboardPage,
       loadCollegeReportPage,
       loadTestDetailPage,
+      loadDriveCandidates,
       currentUser,
       loginAdmin,
       loginCandidate,
@@ -888,6 +988,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       restoreDrive,
       permanentlyDeleteDrive,
       updateCandidate,
+      deleteCandidate,
+      deleteAllCandidatesForDrive,
       createQuestion,
       bulkImportQuestions,
       createInterview,

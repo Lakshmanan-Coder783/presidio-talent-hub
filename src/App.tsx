@@ -15,6 +15,7 @@ import { Settings } from './pages/admin/Settings';
 import { TestDetail } from './pages/admin/TestDetail';
 import { Trash } from './pages/admin/Trash';
 import { CollegeReport } from './pages/admin/CollegeReport';
+import { TeamMemberProfile } from './pages/admin/TeamMemberProfile';
 
 // Candidate Pages
 import { CandidatePortal } from './pages/candidate/CandidatePortal';
@@ -104,6 +105,7 @@ const AppRoutes: React.FC = () => {
           </Route>
           <Route element={<SuperAdminOnlyRoute />}>
             <Route path="/admin/dashboard"       element={<Dashboard />} />
+            <Route path="/admin/team/:userId"    element={<TeamMemberProfile />} />
             <Route path="/admin/college-report"  element={<CollegeReport />} />
             <Route path="/admin/settings"        element={<Settings />} />
             <Route path="/admin/trash"           element={<Trash />} />

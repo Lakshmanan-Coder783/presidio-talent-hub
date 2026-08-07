@@ -12,6 +12,17 @@ export function getDriveLinkedAssessment(
   return c ? assessments.find(a => a.id === c.assessmentId) : undefined;
 }
 
+// Whether a drive's two-batch online-assessment UI (Batch 2 tab, Batch columns,
+// per-batch cutoffs, CSV batch selector) should be shown. `oaBatchMode` is
+// authoritative whenever it's explicitly set (so switching a drive back to Single
+// hides the UI even if a Batch 2 assessment already exists). Only drives that
+// predate `oaBatchMode` (field absent) fall back to "does a Batch 2 assessment
+// already exist", so their already-entered Batch 2 data isn't hidden from them.
+export function isTwoBatchDrive(drive: Pick<CampusDrive, 'oaBatchMode' | 'assessmentIdBatch2'> | null | undefined): boolean {
+  if (drive?.oaBatchMode) return drive.oaBatchMode === 'two';
+  return !!drive?.assessmentIdBatch2;
+}
+
 export function getDriveDisplayName(drive: Pick<CampusDrive, 'role' | 'date'>): string {
   const year = new Date(drive.date).getFullYear();
   return `Campus Recruitment || ${drive.role ?? 'Associate Engineer'} - ${year}`;

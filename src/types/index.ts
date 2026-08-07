@@ -29,8 +29,13 @@ export interface CampusDrive {
   selected: number;
   description: string;
   createdAt: string; // ISO timestamp — when this drive record was created, for newest-first sorting
+  createdByUserId?: string; // absent on drives created before this field existed
   deletedAt?: string; // ISO timestamp — set when moved to Trash; drive/candidates stay intact until permanently deleted
   status: 'Draft' | 'Ongoing' | 'Completed';
+  // Whether this drive runs one online-assessment session or two (e.g. a morning
+  // and afternoon batch). Undefined is treated as 'single', for back-compat with
+  // drives created before this field existed.
+  oaBatchMode?: 'single' | 'two';
   questionIds?: string[];
   assessmentId?: string;
   examDate?: string;
@@ -38,6 +43,15 @@ export interface CampusDrive {
   examEndTime?: string;   // HH:mm
   cutoffPercentage?: number; // OA shortlisting cutoff (default 40)
   scoreBandCutoffs?: { average: number; good: number; excellent: number }; // band starting points, 0-100 (default 25/50/75)
+  // Optional second batch (e.g. an afternoon session run when a college lacks enough
+  // systems to test everyone at once) — a separate test link/password/question set,
+  // published independently. Absent means the drive runs a single batch, unchanged.
+  assessmentIdBatch2?: string;
+  questionIdsBatch2?: string[];
+  examStartTimeBatch2?: string;
+  examEndTimeBatch2?: string;
+  cutoffPercentageBatch2?: number;
+  scoreBandCutoffsBatch2?: { average: number; good: number; excellent: number };
   experienceSettings?: {
     testWindow: 'anytime' | 'scheduled';
     reminderEnabled: boolean;
@@ -90,6 +104,9 @@ export interface Candidate {
   cgpa: number;
   email: string;
   phone: string;
+  // Which of the drive's (optional) two batches this candidate is scheduled into.
+  // Undefined is treated as 'Batch 1' everywhere, for back-compat with existing candidates.
+  batch?: 'Batch 1' | 'Batch 2';
   assessmentStatus: 'Not Invited' | 'Pending' | 'InProgress' | 'Completed';
   assessmentPassword?: string;
   assessmentId?: string;
@@ -122,6 +139,8 @@ export interface Candidate {
   interviewFeedback?: string;
   offerStatus: 'None' | 'Offered' | 'Accepted' | 'Declined' | 'Joined';
   funnelStage: 'Applied' | 'Online Test' | 'Interview' | 'Coding Exercise' | 'Whiteboard Interview' | 'Offered' | 'Joined';
+  // Appended to every time funnelStage changes — drives time-in-stage / time-to-hire reporting
+  funnelStageHistory?: { stage: Candidate['funnelStage']; enteredAt: string }[];
   // Extended fields from student database import (PDF format)
   registrationNumber?: string;
   specialization?: string;
@@ -196,10 +215,12 @@ export interface Candidate {
   codingCheckpoint3?: string;
   codingScore?: number;
   codingShortlisted?: boolean;
+  codingEvaluatorUserId?: string; // who scored the coding round, for per-Evaluator workload reporting
 
   // Whiteboarding Round
   whiteboardComments?: string;
   whiteboardFinalResult?: 'Selected' | 'Not Selected';
+  whiteboardEvaluatorUserId?: string; // who scored the whiteboard round, for per-Evaluator workload reporting
 }
 
 export interface CollegeStudent {

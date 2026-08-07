@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Interview } from "../models/Interview.model.js";
 import { Candidate } from "../models/Candidate.model.js";
 import { nextInterviewId } from "../utils/ids.js";
+import { appendFunnelStageHistory } from "../utils/funnelStageHistory.js";
 
 export async function listInterviews(req: Request, res: Response) {
   const { candidateId } = req.query;
@@ -20,9 +21,12 @@ export async function createInterview(req: Request, res: Response) {
 
   const interview = await Interview.create({ ...data, _id: await nextInterviewId() });
 
+  const existing = await Candidate.findById(data.candidateId);
+  const funnelStageHistory = appendFunnelStageHistory(existing?.funnelStageHistory, existing?.funnelStage, data.stage);
+
   const candidate = await Candidate.findByIdAndUpdate(
     data.candidateId,
-    { interviewStatus: "Scheduled", funnelStage: data.stage },
+    { interviewStatus: "Scheduled", funnelStage: data.stage, ...(funnelStageHistory ? { funnelStageHistory } : {}) },
     { new: true },
   );
 

@@ -27,9 +27,15 @@ export async function createAssessment(req: Request, res: Response) {
 // Atomically creates a new assessment AND links it (+ its question list) to the
 // drive, so the two writes can't leave the drive pointing at a half-created
 // assessment (mirrors the frontend's previous single-tick createAssessmentForDrive).
+// batchSlot picks which of the drive's (up to two) test slots this assessment fills —
+// "batch2" is the optional second/afternoon session; default "batch1" is today's
+// single-batch behavior, unchanged.
 export async function createAssessmentForDrive(req: Request, res: Response) {
   const { driveId } = req.params;
-  const { driveQuestionIds, ...data } = req.body as Record<string, unknown> & { driveQuestionIds?: string[] };
+  const { driveQuestionIds, batchSlot, ...data } = req.body as Record<string, unknown> & {
+    driveQuestionIds?: string[];
+    batchSlot?: "batch1" | "batch2";
+  };
 
   const assessment = await Assessment.create({
     ...data,
@@ -37,11 +43,12 @@ export async function createAssessmentForDrive(req: Request, res: Response) {
     candidatesAssignedCount: 0,
   });
 
-  const drive = await CampusDrive.findByIdAndUpdate(
-    driveId,
-    { assessmentId: assessment._id, questionIds: driveQuestionIds ?? [] },
-    { new: true },
-  );
+  const driveUpdate =
+    batchSlot === "batch2"
+      ? { assessmentIdBatch2: assessment._id, questionIdsBatch2: driveQuestionIds ?? [] }
+      : { assessmentId: assessment._id, questionIds: driveQuestionIds ?? [] };
+
+  const drive = await CampusDrive.findByIdAndUpdate(driveId, driveUpdate, { new: true });
   if (!drive) throw new HttpError(404, "Drive not found");
 
   res.status(201).json({ assessment, drive });

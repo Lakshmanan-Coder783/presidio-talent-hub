@@ -39,6 +39,10 @@ export interface CandidateDoc {
   phone: string;
   gender: "Male" | "Female" | "Other";
 
+  // Which of the drive's (optional) two batches this candidate is scheduled into.
+  // Undefined is treated as "Batch 1" everywhere, for back-compat with existing candidates.
+  batch?: "Batch 1" | "Batch 2";
+
   assessmentStatus: "Not Invited" | "Pending" | "InProgress" | "Completed";
   assessmentPassword?: string;
   assessmentId?: string;
@@ -65,6 +69,7 @@ export interface CandidateDoc {
     | "Whiteboard Interview"
     | "Offered"
     | "Joined";
+  funnelStageHistory?: { stage: CandidateDoc["funnelStage"]; enteredAt: string }[];
 
   registrationNumber?: string;
   specialization?: string;
@@ -123,9 +128,11 @@ export interface CandidateDoc {
   codingCheckpoint3?: string;
   codingScore?: number;
   codingShortlisted?: boolean;
+  codingEvaluatorUserId?: string;
 
   whiteboardComments?: string;
   whiteboardFinalResult?: "Selected" | "Not Selected";
+  whiteboardEvaluatorUserId?: string;
 }
 
 const sectionScoresSchema = new Schema<SectionScores>(
@@ -142,6 +149,18 @@ const sectionScoresSchema = new Schema<SectionScores>(
     htmlcssjs: Number,
     subjective: Number,
     sqlQuery: Number,
+  },
+  { _id: false },
+);
+
+const funnelStageHistoryEntrySchema = new Schema<{ stage: CandidateDoc["funnelStage"]; enteredAt: string }>(
+  {
+    stage: {
+      type: String,
+      enum: ["Applied", "Online Test", "Interview", "Coding Exercise", "Whiteboard Interview", "Offered", "Joined"],
+      required: true,
+    },
+    enteredAt: { type: String, required: true },
   },
   { _id: false },
 );
@@ -172,6 +191,8 @@ const candidateSchema = new Schema<CandidateDoc>(
     email: { type: String, required: true, lowercase: true, trim: true },
     phone: String,
     gender: { type: String, enum: ["Male", "Female", "Other"] },
+
+    batch: { type: String, enum: ["Batch 1", "Batch 2"] },
 
     assessmentStatus: {
       type: String,
@@ -216,6 +237,7 @@ const candidateSchema = new Schema<CandidateDoc>(
       ],
       default: "Applied",
     },
+    funnelStageHistory: [funnelStageHistoryEntrySchema],
 
     registrationNumber: String,
     specialization: String,
@@ -274,9 +296,11 @@ const candidateSchema = new Schema<CandidateDoc>(
     codingCheckpoint3: String,
     codingScore: Number,
     codingShortlisted: Boolean,
+    codingEvaluatorUserId: { type: String, ref: "User" },
 
     whiteboardComments: String,
     whiteboardFinalResult: { type: String, enum: ["Selected", "Not Selected"] },
+    whiteboardEvaluatorUserId: { type: String, ref: "User" },
   },
   { _id: false },
 );
@@ -288,6 +312,7 @@ const candidateSchema = new Schema<CandidateDoc>(
 candidateSchema.index({ driveId: 1, email: 1 });
 // Exact lookup used by loginCandidateByTestSlug.
 candidateSchema.index({ email: 1, assessmentId: 1 });
+candidateSchema.index({ driveId: 1, batch: 1 });
 candidateSchema.index({ funnelStage: 1 });
 candidateSchema.index({ offerStatus: 1 });
 

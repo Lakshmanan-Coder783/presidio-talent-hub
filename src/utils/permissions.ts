@@ -31,11 +31,9 @@ export function canEditDriveConfig(user: User | undefined): boolean {
   return !!user?.isSuperAdmin;
 }
 
-// Creating a new drive — Super Admin, or an Evaluator (on any drive) creating their own.
-// Deliberately separate from canEditDriveConfig: Evaluators may create a drive but must
-// not gain edit/delete rights over existing drives.
-export function canCreateDrive(user: User | undefined, db: Database): boolean {
-  return !!user?.isSuperAdmin || isEvaluatorAnywhere(user, db);
+// Creating a new drive — Super Admin only.
+export function canCreateDrive(user: User | undefined): boolean {
+  return !!user?.isSuperAdmin;
 }
 
 export function canManageMembership(

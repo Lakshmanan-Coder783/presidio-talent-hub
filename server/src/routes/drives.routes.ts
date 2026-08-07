@@ -4,7 +4,7 @@ import {
   deleteDrive, restoreDrive, permanentlyDeleteDrive, bulkInvite, activateDriveInvites,
 } from "../controllers/drives.controller.js";
 import {
-  listCandidatesForDrive, bulkImportCandidates, extendDriveExamTime,
+  listCandidatesForDrive, bulkImportCandidates, deleteCandidatesForDrive, extendDriveExamTime,
 } from "../controllers/candidates.controller.js";
 import { listMembershipsForDrive, addDriveMembership } from "../controllers/driveMemberships.controller.js";
 
@@ -20,6 +20,7 @@ drivesRouter.post("/drives/:id/restore", restoreDrive);
 drivesRouter.delete("/drives/:id/permanent", permanentlyDeleteDrive);
 drivesRouter.get("/drives/:driveId/candidates", listCandidatesForDrive);
 drivesRouter.post("/drives/:driveId/candidates/import", bulkImportCandidates);
+drivesRouter.delete("/drives/:driveId/candidates", deleteCandidatesForDrive);
 drivesRouter.patch("/drives/:driveId/extend-time", extendDriveExamTime);
 drivesRouter.get("/drives/:driveId/memberships", listMembershipsForDrive);
 drivesRouter.post("/drives/:driveId/memberships", addDriveMembership);

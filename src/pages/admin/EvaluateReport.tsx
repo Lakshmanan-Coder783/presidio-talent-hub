@@ -205,7 +205,10 @@ export const EvaluateReport: React.FC<EvaluateReportProps> = ({
 
   const effectiveTotalMarks = candidate.assessmentTotalMarks ?? totalMarks;
   const pct = effectiveTotalMarks > 0 ? Math.min(100, Math.round(((candidate.assessmentScore ?? 0) / effectiveTotalMarks) * 100)) : 0;
-  const band = scoreBand(pct, { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs });
+  const band = scoreBand(pct, {
+    ...DEFAULT_SCORE_BAND_CUTOFFS,
+    ...(candidate.batch === 'Batch 2' ? drive.scoreBandCutoffsBatch2 : drive.scoreBandCutoffs),
+  });
   const avgScoreEquivalent = Math.round((avgPercentage / 100) * effectiveTotalMarks);
   const totalAttended = assessmentPool.length;
   const hasPracticalRound = candidate.sectionScores?.coding != null

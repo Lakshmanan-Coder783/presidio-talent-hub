@@ -46,7 +46,7 @@ import {
   getUserRoleForDrive, canEditDriveConfig, canAdvanceCandidate,
   redactCandidateForViewer, canManageMembership, canExtendExamTime,
 } from '../../utils/permissions';
-import { computeDriveStatus, getDriveDisplayName } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveDisplayName, isTwoBatchDrive } from '../../utils/driveStatus';
 import { scoreBand, scoreBandColor, DEFAULT_SCORE_BAND_CUTOFFS } from '../../utils/scoreBand';
 import { deriveInterviewStatus, deriveCodingStatus, deriveWhiteboardStatus } from '../../utils/candidateStatus';
 import { DEFAULT_EXPERIENCE_SETTINGS as DEFAULT_EXP } from '../../utils/experienceSettings';
@@ -111,6 +111,7 @@ interface CandidateRow {
   startTime: string;
   percentage: number;
   band: string;
+  batch?: Candidate['batch'];
   rawStatus: Candidate['assessmentStatus'];
   invitedAt?: string;
   password?: string;
@@ -365,7 +366,7 @@ function YesNoField({ label, value, onChange }: { label: string; value: boolean;
 export const TestDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime, ensureLoaded, loadTestDetailPage } = useApp();
+  const { db, currentUser, updateDrive, updateAssessment, updateQuestion, updateCandidate, deleteCandidate, deleteAllCandidatesForDrive, bulkUpdateCandidates, createAssessmentForDrive, activateDriveInvites, addDriveMembership, removeDriveMembership, extendCandidateExamTime, extendDriveExamTime, ensureLoaded, loadTestDetailPage, loadDriveCandidates } = useApp();
 
   // `drives`/`candidates`/`assessments` are needed regardless of which tab is open —
   // the always-visible header (title, status pill, duration) derives from them, and
@@ -373,42 +374,12 @@ export const TestDetail: React.FC = () => {
   // list first. Fetched as one bundle round trip instead of 3 separate requests.
   // `users` is intentionally excluded: it's only read by specific tabs (Access,
   // Interview Round), which declare it themselves below.
-  useEffect(() => { loadTestDetailPage(); }, [loadTestDetailPage]);
+  useEffect(() => { if (id) loadTestDetailPage(id); }, [loadTestDetailPage, id]);
 
   // existing state
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('questions');
-
-  // Force a fresh fetch of whichever field(s) the active tab actually reads, every time
-  // the tab changes (including switching back to a tab already visited this session) —
-  // so the Network tab shows a live request per click instead of reusing stale cached data.
-  useEffect(() => {
-    switch (activeTab) {
-      case 'questions':
-        ensureLoaded(['questions'], { force: true });
-        break;
-      case 'students-database':
-      case 'candidates':
-      case 'coding':
-      case 'whiteboard':
-        ensureLoaded(['candidates'], { force: true });
-        break;
-      case 'interview':
-        // Also needs `users` to resolve the assigned panelist's name.
-        ensureLoaded(['candidates', 'users'], { force: true });
-        break;
-      case 'experience':
-        ensureLoaded(['drives', 'assessments'], { force: true });
-        break;
-      case 'reports':
-        ensureLoaded(['candidates', 'questions'], { force: true });
-        break;
-      case 'access':
-        ensureLoaded(['users', 'driveMemberships'], { force: true });
-        break;
-    }
-  }, [activeTab, ensureLoaded]);
 
   // evaluate drawer state
   const [evaluateCandidate, setEvaluateCandidate] = useState<Candidate | null>(null);
@@ -435,6 +406,7 @@ export const TestDetail: React.FC = () => {
   const [draftDriveExamDate, setDraftDriveExamDate] = useState('');
   const [draftDriveExamStart, setDraftDriveExamStart] = useState('');
   const [draftDriveExamEnd, setDraftDriveExamEnd] = useState('');
+  const [draftDriveOaBatchMode, setDraftDriveOaBatchMode] = useState<'single' | 'two'>('single');
 
 
   // edit assessment fields (now edited from the Settings sheet)
@@ -456,9 +428,20 @@ export const TestDetail: React.FC = () => {
 
   // OA shortlisting
   const [cutoffInput, setCutoffInput] = useState('40');
+  const [cutoffInputBatch2, setCutoffInputBatch2] = useState('40');
   const [shortlistSelection, setShortlistSelection] = useState<Set<string>>(new Set());
   const [removeShortlistId, setRemoveShortlistId] = useState<string | null>(null);
   const [aiEvaluating, setAiEvaluating] = useState(false);
+
+  // Students Database — edit/delete
+  const [editCandidateId, setEditCandidateId] = useState<string | null>(null);
+  const [editCandidateDraft, setEditCandidateDraft] = useState({
+    name: '', email: '', phone: '', degree: '', specialization: '', gender: 'Male' as Candidate['gender'],
+    dateOfBirth: '', registrationNumber: '', githubUrl: '', linkedinUrl: '', resumeUrl: '', codingPlatformUrls: '',
+    tenth: '', twelfth: '', diploma: '', ugMarks: '', pgMarks: '', backlogHistory: '', currentBacklogs: '',
+  });
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
+  const [deleteAllStudentsOpen, setDeleteAllStudentsOpen] = useState(false);
 
   // Score band cutoffs
   const [bandDraft, setBandDraft] = useState({
@@ -466,7 +449,22 @@ export const TestDetail: React.FC = () => {
     good: String(DEFAULT_SCORE_BAND_CUTOFFS.good),
     excellent: String(DEFAULT_SCORE_BAND_CUTOFFS.excellent),
   });
+  const [bandDraftBatch2, setBandDraftBatch2] = useState({
+    average: String(DEFAULT_SCORE_BAND_CUTOFFS.average),
+    good: String(DEFAULT_SCORE_BAND_CUTOFFS.good),
+    excellent: String(DEFAULT_SCORE_BAND_CUTOFFS.excellent),
+  });
   const [bandPopoverOpen, setBandPopoverOpen] = useState(false);
+  const [bandPopoverOpenBatch2, setBandPopoverOpenBatch2] = useState(false);
+
+  // ── Batch 2 (optional second session) state ──────────────────────────────────
+  const [batch2PickerOpen, setBatch2PickerOpen] = useState(false);
+  const [editingBatch2Slug, setEditingBatch2Slug] = useState(false);
+  const [draftBatch2Slug, setDraftBatch2Slug] = useState('');
+  const [editingBatch2Password, setEditingBatch2Password] = useState(false);
+  const [draftBatch2Password, setDraftBatch2Password] = useState('');
+  const [draftExamStartBatch2, setDraftExamStartBatch2] = useState('');
+  const [draftExamEndBatch2, setDraftExamEndBatch2] = useState('');
 
   // Interview Round sheet
   const [interviewSheetOpen, setInterviewSheetOpen] = useState(false);
@@ -488,20 +486,73 @@ export const TestDetail: React.FC = () => {
   const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
 
   const drive = useMemo(() => db.drives.find(d => d.id === id), [db.drives, id]);
+  const isTwoBatch = isTwoBatchDrive(drive);
+
+  // Force a fresh fetch of whichever field(s) the active tab actually reads, every time
+  // the tab changes (including switching back to a tab already visited this session) —
+  // so the Network tab shows a live request per click instead of reusing stale cached data.
+  // Candidates are always fetched scoped to this drive (and, for the per-batch report
+  // tabs, scoped further to just that batch) rather than every candidate in the system.
+  useEffect(() => {
+    if (!id) return;
+    switch (activeTab) {
+      case 'questions':
+        ensureLoaded(['questions'], { force: true });
+        break;
+      case 'students-database':
+      case 'coding':
+      case 'whiteboard':
+        loadDriveCandidates(id, { force: true });
+        break;
+      case 'candidates':
+        // Online Report (Single Batch) or Batch 1 Result (Two Batch) — only
+        // narrow to Batch 1 when there's actually a second batch to exclude.
+        loadDriveCandidates(id, { batch: isTwoBatch ? 'Batch 1' : undefined, force: true });
+        break;
+      case 'batch2report':
+        loadDriveCandidates(id, { batch: 'Batch 2', force: true });
+        break;
+      case 'interview':
+        // Also needs `users` to resolve the assigned panelist's name. Interview Round
+        // consolidates shortlisted candidates from both batches, so no batch filter.
+        loadDriveCandidates(id, { force: true });
+        ensureLoaded(['users'], { force: true });
+        break;
+      case 'experience':
+        ensureLoaded(['drives', 'assessments'], { force: true });
+        break;
+      case 'reports':
+        loadDriveCandidates(id, { force: true });
+        ensureLoaded(['questions'], { force: true });
+        break;
+      case 'access':
+        ensureLoaded(['users', 'driveMemberships'], { force: true });
+        break;
+    }
+  }, [activeTab, ensureLoaded, loadDriveCandidates, id, isTwoBatch]);
 
   // Sync experience settings when drive loads/changes
   useEffect(() => {
     if (drive) {
       setExpSettings({ ...DEFAULT_EXP, ...drive.experienceSettings });
       setCutoffInput(String(drive.cutoffPercentage ?? 40));
+      setCutoffInputBatch2(String(drive.cutoffPercentageBatch2 ?? 40));
       const c = { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs };
       setBandDraft({ average: String(c.average), good: String(c.good), excellent: String(c.excellent) });
+      const c2 = { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffsBatch2 };
+      setBandDraftBatch2({ average: String(c2.average), good: String(c2.good), excellent: String(c2.excellent) });
+      setDraftExamStartBatch2(drive.examStartTimeBatch2 ?? '');
+      setDraftExamEndBatch2(drive.examEndTimeBatch2 ?? '');
     }
   }, [drive?.id]);
 
   const bandCutoffs = useMemo(
     () => ({ ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive?.scoreBandCutoffs }),
     [drive?.scoreBandCutoffs],
+  );
+  const bandCutoffsBatch2 = useMemo(
+    () => ({ ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive?.scoreBandCutoffsBatch2 }),
+    [drive?.scoreBandCutoffsBatch2],
   );
 
   const driveQuestionIds = drive?.questionIds ?? [];
@@ -549,6 +600,48 @@ export const TestDetail: React.FC = () => {
     const c = driveCandidates.find(c => c.assessmentId);
     return c ? db.assessments.find(a => a.id === c.assessmentId) ?? null : null;
   }, [db.assessments, drive, driveCandidates]);
+
+  // ── Batch 2 (optional second session) derived state ──────────────────────────
+  const linkedAssessmentBatch2 = useMemo(
+    () => (drive?.assessmentIdBatch2 ? db.assessments.find(a => a.id === drive.assessmentIdBatch2) ?? null : null),
+    [db.assessments, drive],
+  );
+  const driveQuestionIdsBatch2 = drive?.questionIdsBatch2 ?? [];
+  const driveQuestionsBatch2 = useMemo(
+    () => db.questions.filter(q => driveQuestionIdsBatch2.includes(q.id)),
+    [db.questions, driveQuestionIdsBatch2],
+  );
+  const alreadyAddedSetBatch2 = useMemo(() => new Set(driveQuestionIdsBatch2), [driveQuestionIdsBatch2]);
+  const totalMarksBatch2 = driveQuestionsBatch2.reduce((s, q) => s + q.marks, 0);
+  const assessmentUrlBatch2 = linkedAssessmentBatch2?.slug
+    ? `${window.location.origin}/take/${linkedAssessmentBatch2.slug}` : null;
+  const estimatedMinutesBatch2 = linkedAssessmentBatch2 ? linkedAssessmentBatch2.duration : driveQuestionsBatch2.length;
+  const isEstimatedMinutesBatch2 = !linkedAssessmentBatch2;
+
+  const sectionsBatch2 = useMemo(() => {
+    return SECTION_ORDER
+      .map(topic => ({
+        topic,
+        questions: driveQuestionsBatch2.filter(q => q.topic === topic),
+      }))
+      .filter(s => s.questions.length > 0);
+  }, [driveQuestionsBatch2]);
+
+  const [collapsedSectionsBatch2, setCollapsedSectionsBatch2] = useState<Set<string>>(
+    () => new Set(sectionsBatch2.map(s => s.topic))
+  );
+
+  const toggleSectionBatch2 = (topic: string) => {
+    setCollapsedSectionsBatch2(prev => {
+      const next = new Set(prev);
+      next.has(topic) ? next.delete(topic) : next.add(topic);
+      return next;
+    });
+  };
+
+  const collapseAllBatch2 = () => {
+    setCollapsedSectionsBatch2(new Set(sectionsBatch2.map(s => s.topic)));
+  };
 
   // Once an assessment exists, its real configured Duration (set in Settings) is
   // the source of truth for the test length — the per-question guess is only a
@@ -602,6 +695,29 @@ export const TestDetail: React.FC = () => {
     { header: 'Name', accessor: 'name' as const, sortable: true },
     { header: 'Email', accessor: 'email' as const },
     { header: 'Phone', accessor: 'phone' as const },
+    ...(isTwoBatch ? [{
+      header: 'Batch',
+      accessor: 'batch' as const,
+      sortable: true,
+      render: (row: StudentsDbRow) => (
+        <Select
+          value={row.batch === 'Batch 2' ? 'Batch 2' : 'Batch 1'}
+          onValueChange={v => {
+            const c = driveCandidates.find(c => c.id === row.id);
+            if (!c || !canEditThisDrive) return;
+            updateCandidate({ ...c, batch: v as 'Batch 1' | 'Batch 2' });
+          }}
+        >
+          <SelectTrigger className="h-7 w-[92px] text-xs" disabled={!canEditThisDrive}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Batch 1">Batch 1</SelectItem>
+            <SelectItem value="Batch 2">Batch 2</SelectItem>
+          </SelectContent>
+        </Select>
+      ),
+    }] : []),
     { header: 'Degree', accessor: 'degree' as const, sortable: true },
     { header: 'Specialization', accessor: 'specialization' as const },
     { header: 'Gender', accessor: 'gender' as const },
@@ -641,6 +757,19 @@ export const TestDetail: React.FC = () => {
     { header: 'PG Marks', accessor: 'pgMarks' as const, sortable: true },
     { header: 'Backlog History', accessor: 'backlogHistory' as const },
     { header: 'Current Backlogs', accessor: 'currentBacklogs' as const },
+    ...(myDriveRole !== 'Evaluator' ? [{
+      header: 'Actions',
+      render: (row: StudentsDbRow) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit candidate" onClick={() => openEditCandidate(row)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete candidate" onClick={() => setDeleteCandidateId(row.id)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ),
+    }] : []),
   ];
 
   const candidateRows = useMemo<CandidateRow[]>(() => {
@@ -650,7 +779,7 @@ export const TestDetail: React.FC = () => {
         const pct = c.assessmentScore != null && effectiveTotal > 0
           ? Math.min(100, Math.round((c.assessmentScore / effectiveTotal) * 100))
           : 0;
-        const band = scoreBand(pct, bandCutoffs);
+        const band = scoreBand(pct, c.batch === 'Batch 2' ? bandCutoffsBatch2 : bandCutoffs);
         const statusLabel =
           c.assessmentStatus === 'Completed' ? 'Finished' :
           c.assessmentStatus === 'InProgress' ? 'In Progress' : 'Pending';
@@ -661,23 +790,26 @@ export const TestDetail: React.FC = () => {
           : '—';
         return {
           id: c.id, name: c.name, email: c.email, status: statusLabel, startTime, percentage: pct, band,
+          batch: c.batch,
           rawStatus: c.assessmentStatus, invitedAt: c.inviteEmailSentAt, password: c.assessmentPassword,
           answers: c.answers, rawScore: c.assessmentScore, effectiveTotalMarks: effectiveTotal,
         };
       });
-  }, [driveCandidates, totalMarks, bandCutoffs]);
+  }, [driveCandidates, totalMarks, bandCutoffs, bandCutoffsBatch2]);
 
-  const overview = useMemo(() => {
-    const invited = candidateRows.length;
-    const completed = candidateRows.filter(r => r.status === 'Finished').length;
-    const started = candidateRows.filter(r => r.status !== 'Pending').length;
+  // Plain (non-memoized) so it can be computed per-panel — once for all candidates
+  // in Single Batch mode, or once per batch's own Online Report sub-tab.
+  const computeOverview = (rows: CandidateRow[]) => {
+    const invited = rows.length;
+    const completed = rows.filter(r => r.status === 'Finished').length;
+    const started = rows.filter(r => r.status !== 'Pending').length;
     const participationPct = invited ? Math.round((started / invited) * 100) : 0;
     const counts = { Poor: 0, Average: 0, Good: 0, Excellent: 0 };
-    for (const r of candidateRows) counts[r.band as keyof typeof counts]++;
+    for (const r of rows) counts[r.band as keyof typeof counts]++;
     const bandPct = (k: keyof typeof counts) =>
       invited ? ((counts[k] / invited) * 100).toFixed(2) + '%' : '0%';
     return { invited, completed, participationPct, bandPct };
-  }, [candidateRows]);
+  };
 
   const assessmentUrl = linkedAssessment?.slug
     ? `${window.location.origin}/take/${linkedAssessment.slug}` : null;
@@ -767,6 +899,87 @@ export const TestDetail: React.FC = () => {
       },
       newQuestionIds
     );
+  };
+
+  // ── Batch 2 handlers (mirror the Batch 1 equivalents above, scoped to the
+  // drive's optional second assessment/question list) ──────────────────────────
+
+  const removeQuestionBatch2 = (qId: string) => {
+    if (!drive) return;
+    updateDrive({ ...drive, questionIdsBatch2: driveQuestionIdsBatch2.filter(id => id !== qId) });
+  };
+
+  const addQuestionsBatch2 = (ids: string[]) => {
+    if (!drive) return;
+    const unique = ids.filter(id => !alreadyAddedSetBatch2.has(id));
+    if (unique.length === 0) return;
+    const newQuestionIds = [...driveQuestionIdsBatch2, ...unique];
+
+    if (linkedAssessmentBatch2) {
+      updateDrive({ ...drive, questionIdsBatch2: newQuestionIds });
+      return;
+    }
+
+    const newQuestions = db.questions.filter(q => newQuestionIds.includes(q.id));
+    const newSections: AssessmentSection[] = SECTION_ORDER
+      .map(topic => {
+        const topicQuestions = newQuestions.filter(q => q.topic === topic);
+        return { name: topic, questionCount: topicQuestions.length, marks: topicQuestions.reduce((s, q) => s + q.marks, 0) };
+      })
+      .filter(s => s.questionCount > 0);
+
+    createAssessmentForDrive(
+      drive.id,
+      {
+        name: `${drive.college} (Batch 2)`,
+        type: 'Combined',
+        duration: Math.max(30, newQuestions.length * 2),
+        totalMarks: newQuestions.reduce((s, q) => s + q.marks, 0),
+        status: 'Draft',
+        sections: newSections,
+        questionIds: newQuestionIds,
+        slug: `${generateSlug(drive.name)}-${drive.id.toLowerCase()}-b2`,
+        accessPassword: generateAccessPassword(),
+      },
+      newQuestionIds,
+      'batch2',
+    );
+  };
+
+  const saveSlugBatch2 = () => {
+    if (!linkedAssessmentBatch2 || !draftBatch2Slug.trim()) { setEditingBatch2Slug(false); return; }
+    updateAssessment({ ...linkedAssessmentBatch2, slug: draftBatch2Slug.trim() });
+    setEditingBatch2Slug(false);
+    toast.success('Batch 2 test URL updated.');
+  };
+
+  const savePasswordBatch2 = () => {
+    if (!linkedAssessmentBatch2 || !draftBatch2Password.trim()) { setEditingBatch2Password(false); return; }
+    updateAssessment({ ...linkedAssessmentBatch2, accessPassword: draftBatch2Password.trim() });
+    setEditingBatch2Password(false);
+    toast.success('Batch 2 password updated.');
+  };
+
+  const regeneratePasswordBatch2 = () => {
+    if (!linkedAssessmentBatch2) return;
+    updateAssessment({ ...linkedAssessmentBatch2, accessPassword: generateAccessPassword() });
+    toast.success('Batch 2 password regenerated.');
+  };
+
+  const handlePublishBatch2 = () => {
+    if (!linkedAssessmentBatch2) return;
+    updateAssessment({ ...linkedAssessmentBatch2, status: 'Active' });
+    toast.success('Batch 2 test published.');
+  };
+
+  const saveExamWindowBatch2 = () => {
+    if (!drive) return;
+    updateDrive({
+      ...drive,
+      examStartTimeBatch2: draftExamStartBatch2 || undefined,
+      examEndTimeBatch2: draftExamEndBatch2 || undefined,
+    });
+    toast.success('Batch 2 exam window updated.');
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -896,16 +1109,31 @@ export const TestDetail: React.FC = () => {
 
   // ── OA shortlisting handlers ─────────────────────────────────────────────────
 
+  // Scopes "Apply Cutoff" to just the rows passed in (a single batch's report panel,
+  // or all rows when there's only one batch) — replaces this subset's own prior
+  // selection without disturbing selections made in the other batch's panel.
+  const applyCutoffToRows = (rows: CandidateRow[], pct: number) => {
+    const matched = rows.filter(r => r.status === 'Finished' && r.percentage >= pct);
+    setShortlistSelection(prev => {
+      const next = new Set(prev);
+      for (const r of rows) next.delete(r.id);
+      for (const r of matched) next.add(r.id);
+      return next;
+    });
+    toast.success(`Cutoff applied — ${matched.length} candidate${matched.length !== 1 ? 's' : ''} auto-selected.`);
+  };
+
   const applyCutoff = () => {
     const pct = parseInt(cutoffInput) || 0;
     if (drive) updateDrive({ ...drive, cutoffPercentage: pct });
-    const ids = new Set(
-      candidateRows
-        .filter(r => r.status === 'Finished' && r.percentage >= pct)
-        .map(r => r.id)
-    );
-    setShortlistSelection(ids);
-    toast.success(`Cutoff applied — ${ids.size} candidate${ids.size !== 1 ? 's' : ''} auto-selected.`);
+    const rows = isTwoBatch ? candidateRows.filter(r => r.batch !== 'Batch 2') : candidateRows;
+    applyCutoffToRows(rows, pct);
+  };
+
+  const applyCutoffBatch2 = () => {
+    const pct = parseInt(cutoffInputBatch2) || 0;
+    if (drive) updateDrive({ ...drive, cutoffPercentageBatch2: pct });
+    applyCutoffToRows(candidateRows.filter(r => r.batch === 'Batch 2'), pct);
   };
 
   // ── Score band cutoff handler ────────────────────────────────────────────────
@@ -927,6 +1155,23 @@ export const TestDetail: React.FC = () => {
     toast.success('Score band cutoffs updated.');
   };
 
+  const saveBandCutoffsBatch2 = () => {
+    if (!drive) return;
+    const average = parseInt(bandDraftBatch2.average);
+    const good = parseInt(bandDraftBatch2.good);
+    const excellent = parseInt(bandDraftBatch2.excellent);
+    if (
+      [average, good, excellent].some(n => Number.isNaN(n) || n < 0 || n > 100) ||
+      !(average < good && good < excellent)
+    ) {
+      toast.error('Cutoffs must be increasing values between 0 and 100.');
+      return;
+    }
+    updateDrive({ ...drive, scoreBandCutoffsBatch2: { average, good, excellent } });
+    setBandPopoverOpenBatch2(false);
+    toast.success('Batch 2 score band cutoffs updated.');
+  };
+
   const toggleShortlistCandidate = (id: string) => {
     setShortlistSelection(prev => {
       const next = new Set(prev);
@@ -935,14 +1180,23 @@ export const TestDetail: React.FC = () => {
     });
   };
 
-  const confirmOaShortlist = () => {
+  // Only confirms the selected candidates that belong to `rows` — so confirming
+  // from one batch's report panel never touches selections pending in the other.
+  const confirmOaShortlistForRows = (rows: CandidateRow[]) => {
     if (!drive) return;
-    const count = shortlistSelection.size;
+    const rowIds = new Set(rows.map(r => r.id));
+    const idsToConfirm = [...shortlistSelection].filter(id => rowIds.has(id));
+    const count = idsToConfirm.length;
+    if (count === 0) return;
     const updates = driveCandidates
-      .filter(c => shortlistSelection.has(c.id))
+      .filter(c => idsToConfirm.includes(c.id))
       .map(c => ({ ...c, oaShortlisted: true, funnelStage: 'Interview' as const }));
     bulkUpdateCandidates(updates);
-    setShortlistSelection(new Set());
+    setShortlistSelection(prev => {
+      const next = new Set(prev);
+      idsToConfirm.forEach(id => next.delete(id));
+      return next;
+    });
     toast.success(`${count} candidate${count !== 1 ? 's' : ''} shortlisted for Interview Round.`);
   };
 
@@ -958,6 +1212,76 @@ export const TestDetail: React.FC = () => {
       funnelStage: candidate.funnelStage === 'Applied' ? 'Applied' : 'Online Test',
     });
     toast.success(`${candidate.name} removed from shortlist.`);
+  };
+
+  const openEditCandidate = (candidate: Candidate) => {
+    setEditCandidateId(candidate.id);
+    setEditCandidateDraft({
+      name: candidate.name,
+      email: candidate.email,
+      phone: candidate.phone,
+      degree: candidate.degree,
+      specialization: candidate.specialization ?? '',
+      gender: candidate.gender,
+      dateOfBirth: candidate.dateOfBirth ?? '',
+      registrationNumber: candidate.registrationNumber ?? '',
+      githubUrl: candidate.githubUrl ?? '',
+      linkedinUrl: candidate.linkedinUrl ?? '',
+      resumeUrl: candidate.resumeUrl ?? '',
+      codingPlatformUrls: candidate.codingPlatformUrls ?? '',
+      tenth: candidate.tenth != null ? String(candidate.tenth) : '',
+      twelfth: candidate.twelfth != null ? String(candidate.twelfth) : '',
+      diploma: candidate.diploma != null ? String(candidate.diploma) : '',
+      ugMarks: candidate.ugMarks != null ? String(candidate.ugMarks) : '',
+      pgMarks: candidate.pgMarks != null ? String(candidate.pgMarks) : '',
+      backlogHistory: candidate.backlogHistory != null ? String(candidate.backlogHistory) : '',
+      currentBacklogs: candidate.currentBacklogs != null ? String(candidate.currentBacklogs) : '',
+    });
+  };
+
+  const saveEditCandidate = () => {
+    const candidate = driveCandidates.find(c => c.id === editCandidateId);
+    if (!candidate) return;
+    const d = editCandidateDraft;
+    updateCandidate({
+      ...candidate,
+      name: d.name,
+      email: d.email,
+      phone: d.phone,
+      degree: d.degree,
+      specialization: d.specialization || undefined,
+      gender: d.gender,
+      dateOfBirth: d.dateOfBirth || undefined,
+      registrationNumber: d.registrationNumber || undefined,
+      githubUrl: d.githubUrl || undefined,
+      linkedinUrl: d.linkedinUrl || undefined,
+      resumeUrl: d.resumeUrl || undefined,
+      codingPlatformUrls: d.codingPlatformUrls || undefined,
+      tenth: d.tenth ? parseFloat(d.tenth) : undefined,
+      twelfth: d.twelfth ? parseFloat(d.twelfth) : undefined,
+      diploma: d.diploma ? parseFloat(d.diploma) : undefined,
+      ugMarks: d.ugMarks ? parseFloat(d.ugMarks) : undefined,
+      pgMarks: d.pgMarks ? parseFloat(d.pgMarks) : undefined,
+      backlogHistory: d.backlogHistory ? parseInt(d.backlogHistory) : undefined,
+      currentBacklogs: d.currentBacklogs ? parseInt(d.currentBacklogs) : undefined,
+    });
+    setEditCandidateId(null);
+    toast.success('Candidate updated.');
+  };
+
+  const confirmDeleteCandidate = async () => {
+    if (!deleteCandidateId) return;
+    const candidate = driveCandidates.find(c => c.id === deleteCandidateId);
+    await deleteCandidate(deleteCandidateId);
+    setDeleteCandidateId(null);
+    toast.success(`${candidate?.name ?? 'Candidate'} deleted.`);
+  };
+
+  const confirmDeleteAllStudents = async () => {
+    if (!drive) return;
+    const deleted = await deleteAllCandidatesForDrive(drive.id);
+    setDeleteAllStudentsOpen(false);
+    if (deleted > 0) toast.success(`${deleted} student${deleted !== 1 ? 's' : ''} deleted.`);
   };
 
   const generateAiEvaluation = (candidate: Candidate) => {
@@ -1129,6 +1453,7 @@ export const TestDetail: React.FC = () => {
       codingCheckpoint2: cdDraft.checkpoint2,
       codingCheckpoint3: cdDraft.checkpoint3,
       codingShortlisted: decision === 'shortlist',
+      codingEvaluatorUserId: currentUser?.user?.id,
       funnelStage: decision === 'shortlist' ? 'Whiteboard Interview' : codingCandidate.funnelStage,
     });
     setCodingSheetOpen(false);
@@ -1159,6 +1484,7 @@ export const TestDetail: React.FC = () => {
       ...wbCandidate,
       whiteboardComments: wbDraft.comments,
       whiteboardFinalResult: result || undefined,
+      whiteboardEvaluatorUserId: currentUser?.user?.id,
       funnelStage: result === 'Selected' ? 'Offered' : wbCandidate.funnelStage,
       offerStatus: result === 'Selected' ? 'None' : wbCandidate.offerStatus,
     });
@@ -1185,6 +1511,7 @@ export const TestDetail: React.FC = () => {
     setDraftDriveExamDate(drive.examDate ?? '');
     setDraftDriveExamStart(drive.examStartTime ?? '');
     setDraftDriveExamEnd(drive.examEndTime ?? '');
+    setDraftDriveOaBatchMode(isTwoBatchDrive(drive) ? 'two' : 'single');
     if (linkedAssessment) {
       setDraftAsmName(linkedAssessment.name);
       setDraftAsmDuration(String(linkedAssessment.duration));
@@ -1204,6 +1531,7 @@ export const TestDetail: React.FC = () => {
       examDate: draftDriveExamDate || undefined,
       examStartTime: draftDriveExamStart || undefined,
       examEndTime: draftDriveExamEnd || undefined,
+      oaBatchMode: draftDriveOaBatchMode,
     });
     if (linkedAssessment) {
       updateAssessment({
@@ -1490,6 +1818,194 @@ export const TestDetail: React.FC = () => {
     );
   }
 
+  // The Online Report body — rendered once (all candidates) in Single Batch mode,
+  // or once per batch inside the "Batch 1/2 Report" sub-tabs in Two Batch mode.
+  // `rows` scopes everything (stats, cutoff, shortlist selection/confirm) to just
+  // the candidates passed in.
+  const renderOnlineReportPanel = (opts: {
+    rows: CandidateRow[];
+    cutoffLabel: string;
+    cutoffValue: string;
+    onCutoffChange: (v: string) => void;
+    onApplyCutoff: () => void;
+    bandPopoverOpen: boolean;
+    setBandPopoverOpen: (v: boolean) => void;
+    bandDraft: { average: string; good: string; excellent: string };
+    setBandDraft: React.Dispatch<React.SetStateAction<{ average: string; good: string; excellent: string }>>;
+    saveBandCutoffs: () => void;
+    showExtendTime?: boolean;
+  }) => {
+    const {
+      rows, cutoffLabel, cutoffValue, onCutoffChange, onApplyCutoff,
+      bandPopoverOpen, setBandPopoverOpen, bandDraft, setBandDraft, saveBandCutoffs, showExtendTime,
+    } = opts;
+    const panelOverview = computeOverview(rows);
+    const selectedInPanel = rows.filter(r => shortlistSelection.has(r.id));
+
+    return (
+      <div className="space-y-6">
+        <div className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm">Overview</h3>
+            {showExtendTime && canExtendTime && driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-xs"
+                onClick={() => setExtendTimeTarget({ scope: 'drive' })}
+              >
+                <Timer className="h-3.5 w-3.5" />
+                Extend Time
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-6">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Test progress</p>
+              <div className="flex gap-6 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Invited</p>
+                  <p className="font-bold text-lg">{panelOverview.invited}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />Completed
+                  </p>
+                  <p className="font-bold text-lg">{panelOverview.completed}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Participation</p>
+                  <p className="font-bold text-lg">{panelOverview.participationPct}%</p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 mb-3">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Score bands</p>
+                {canEditThisDrive && (
+                <Popover open={bandPopoverOpen} onOpenChange={setBandPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button className="text-muted-foreground hover:text-foreground transition-colors" title="Edit score band cutoffs">
+                      <SlidersHorizontal className="h-3 w-3" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64">
+                    <p className="text-sm font-medium">Score band cutoffs</p>
+                    <p className="text-xs text-muted-foreground -mt-2">Minimum % to start each band. Below "Average from" is Poor.</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs">Average from</Label>
+                        <Input
+                          type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                          value={bandDraft.average}
+                          onChange={e => setBandDraft(d => ({ ...d, average: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs">Good from</Label>
+                        <Input
+                          type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                          value={bandDraft.good}
+                          onChange={e => setBandDraft(d => ({ ...d, good: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs">Excellent from</Label>
+                        <Input
+                          type="number" min={0} max={100} className="h-8 w-20 text-sm"
+                          value={bandDraft.excellent}
+                          onChange={e => setBandDraft(d => ({ ...d, excellent: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <Button size="sm" className="w-full h-8 text-xs" onClick={saveBandCutoffs}>Save</Button>
+                  </PopoverContent>
+                </Popover>
+                )}
+              </div>
+              <div className="flex gap-4 text-sm">
+                {(['Poor', 'Average', 'Good', 'Excellent'] as const).map(band => (
+                  <div key={band}>
+                    <p className="text-xs text-muted-foreground">{band}</p>
+                    <p className={`font-semibold ${SCORE_BAND_TEXT_COLOR[band]}`}>{panelOverview.bandPct(band)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Candidate feedback</p>
+              <p className="text-sm text-muted-foreground">No feedback collected yet.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Cutoff & shortlisting toolbar — always visible, even before anyone's
+            finished, so it doesn't read as a missing feature on a light tab */}
+        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex-wrap">
+          <span className="text-sm font-medium text-amber-900">{cutoffLabel}</span>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={cutoffValue}
+              onChange={e => onCutoffChange(e.target.value)}
+              className="h-8 w-20 text-sm"
+            />
+            <span className="text-sm text-amber-800">%</span>
+          </div>
+          <Button size="sm" variant="outline" className="h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-100" onClick={onApplyCutoff}>
+            Apply Cutoff
+          </Button>
+          {selectedInPanel.length > 0 && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-sm text-amber-800 font-medium">{selectedInPanel.length} selected</span>
+              <Button
+                size="sm"
+                className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => confirmOaShortlistForRows(rows)}
+              >
+                Confirm Shortlist for Interview Round
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => setShortlistSelection(prev => {
+                  const next = new Set(prev);
+                  rows.forEach(r => next.delete(r.id));
+                  return next;
+                })}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
+            <Users className="h-8 w-8 opacity-40" />
+            <p className="text-sm">No candidates registered yet.</p>
+            <Button size="sm" variant="outline" onClick={() => setActiveTab('students-database')}>
+              Go to Students Database
+            </Button>
+          </div>
+        ) : (
+          <Table
+            data={rows}
+            columns={candidateColumns}
+            filters={candidateFilters}
+            searchPlaceholder="Search candidates"
+            searchKey="name"
+            exportFileName={`${drive.name}_Candidates`}
+            csvOnlyColumns={candidateCsvOnlyColumns}
+          />
+        )}
+      </div>
+    );
+  };
+
   const TAB_TRIGGER = 'flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent';
 
   return (
@@ -1594,6 +2110,11 @@ export const TestDetail: React.FC = () => {
             <TabsTrigger value="questions" className={TAB_TRIGGER}>
               <AlignLeft className="h-4 w-4" />
               Questions
+              {isTwoBatch && !linkedAssessmentBatch2 && (
+                <span className="ml-1 text-[10px] font-semibold text-muted-foreground bg-muted rounded-full px-1.5 py-0.5">
+                  Batch 2 setup needed
+                </span>
+              )}
             </TabsTrigger>
             {myDriveRole !== 'Evaluator' && (
               <TabsTrigger value="experience" className={TAB_TRIGGER}>
@@ -1603,8 +2124,14 @@ export const TestDetail: React.FC = () => {
             )}
             <TabsTrigger value="candidates" className={TAB_TRIGGER}>
               <Users className="h-4 w-4" />
-              Candidates
+              {isTwoBatch ? 'Batch 1 Result' : 'Online Report'}
             </TabsTrigger>
+            {isTwoBatch && (
+              <TabsTrigger value="batch2report" className={TAB_TRIGGER}>
+                <Users className="h-4 w-4" />
+                Batch 2 Result
+              </TabsTrigger>
+            )}
             {myDriveRole !== 'Evaluator' && (
               <>
                 <TabsTrigger value="interview" className={TAB_TRIGGER}>
@@ -1657,8 +2184,90 @@ export const TestDetail: React.FC = () => {
         {/* ── Questions Tab ── */}
         <TabsContent value="questions" className="m-0 p-6">
           <div className="flex gap-6">
-            {/* Left: question list */}
+            {/* Left: Batch 1 question list */}
             <div className="flex-1 min-w-0">
+              {isTwoBatch && (
+                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Batch 1</p>
+              )}
+
+              {isTwoBatch && linkedAssessment && (
+                <div className="border rounded-lg p-3 space-y-3 mb-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Test Link</Label>
+                    {editingSlug ? (
+                      <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+                        <span className="pl-2 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
+                        <input
+                          autoFocus
+                          className="flex-1 bg-transparent text-xs font-mono outline-none pr-2 py-2"
+                          value={draftSlug}
+                          onChange={e => setDraftSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                          onKeyDown={e => { if (e.key === 'Enter') saveSlug(); if (e.key === 'Escape') setEditingSlug(false); }}
+                          onBlur={saveSlug}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex gap-1.5">
+                        <Input readOnly value={assessmentUrl ?? ''} className="font-mono text-xs h-8" />
+                        {canEditThisDrive && (
+                          <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Edit URL slug"
+                            onClick={() => { setDraftSlug(linkedAssessment.slug ?? ''); setEditingSlug(true); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" disabled={!assessmentUrl}
+                          onClick={() => assessmentUrl && copyToClipboard(assessmentUrl, 'Test URL')}>
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Password</Label>
+                    {editingPassword ? (
+                      <input
+                        autoFocus
+                        className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono tracking-widest outline-none focus-within:ring-2 focus-within:ring-ring"
+                        value={draftPassword}
+                        onChange={e => setDraftPassword(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') savePassword(); if (e.key === 'Escape') setEditingPassword(false); }}
+                        onBlur={savePassword}
+                      />
+                    ) : (
+                      <div className="flex gap-1.5">
+                        <Input readOnly value={linkedAssessment.accessPassword ?? ''} className="font-mono tracking-widest text-sm h-8" />
+                        {canEditThisDrive && (
+                          <>
+                            <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Edit password"
+                              onClick={() => { setDraftPassword(linkedAssessment.accessPassword ?? ''); setEditingPassword(true); }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Regenerate password" onClick={regeneratePassword}>
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" disabled={!linkedAssessment.accessPassword}
+                          onClick={() => linkedAssessment.accessPassword && copyToClipboard(linkedAssessment.accessPassword, 'Password')}>
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-1">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      linkedAssessment.status === 'Active'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {linkedAssessment.status}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">
                   {driveQuestions.length} questions &middot; {totalMarks} marks &middot; {isEstimatedMinutes ? '~' : ''}{estimatedMinutes} min
@@ -1780,7 +2389,232 @@ export const TestDetail: React.FC = () => {
                   })}
                 </div>
               )}
+
+              {isTwoBatch && canEditThisDrive && linkedAssessment && linkedAssessment.status !== 'Active' && driveQuestions.length > 0 && (
+                <div className="mt-6 pt-4 border-t flex justify-end">
+                  <Button
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={() => setConfirmPublishOpen(true)}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Confirm & Publish Test
+                  </Button>
+                </div>
+              )}
             </div>
+
+            {/* Batch 2 question list (only for Two Batch drives) */}
+            {isTwoBatch && (
+              <div className="flex-1 min-w-0 border-l pl-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Batch 2</p>
+                  {!linkedAssessmentBatch2 && (
+                    <span className="text-[10px] font-semibold text-muted-foreground bg-muted rounded-full px-1.5 py-0.5">
+                      Setup needed
+                    </span>
+                  )}
+                </div>
+
+                {linkedAssessmentBatch2 && (
+                  <div className="border rounded-lg p-3 space-y-3 mb-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Test Link</Label>
+                      {editingBatch2Slug ? (
+                        <div className="flex items-center rounded-md border border-input bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+                          <span className="pl-2 pr-1 text-xs text-muted-foreground whitespace-nowrap select-none">/take/</span>
+                          <input
+                            autoFocus
+                            className="flex-1 bg-transparent text-xs font-mono outline-none pr-2 py-2"
+                            value={draftBatch2Slug}
+                            onChange={e => setDraftBatch2Slug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                            onKeyDown={e => { if (e.key === 'Enter') saveSlugBatch2(); if (e.key === 'Escape') setEditingBatch2Slug(false); }}
+                            onBlur={saveSlugBatch2}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <Input readOnly value={assessmentUrlBatch2 ?? ''} className="font-mono text-xs h-8" />
+                          {canEditThisDrive && (
+                            <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Edit URL slug"
+                              onClick={() => { setDraftBatch2Slug(linkedAssessmentBatch2.slug ?? ''); setEditingBatch2Slug(true); }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" disabled={!assessmentUrlBatch2}
+                            onClick={() => assessmentUrlBatch2 && copyToClipboard(assessmentUrlBatch2, 'Batch 2 Test URL')}>
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Password</Label>
+                      {editingBatch2Password ? (
+                        <input
+                          autoFocus
+                          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono tracking-widest outline-none focus-within:ring-2 focus-within:ring-ring"
+                          value={draftBatch2Password}
+                          onChange={e => setDraftBatch2Password(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') savePasswordBatch2(); if (e.key === 'Escape') setEditingBatch2Password(false); }}
+                          onBlur={savePasswordBatch2}
+                        />
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <Input readOnly value={linkedAssessmentBatch2.accessPassword ?? ''} className="font-mono tracking-widest text-sm h-8" />
+                          {canEditThisDrive && (
+                            <>
+                              <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Edit password"
+                                onClick={() => { setDraftBatch2Password(linkedAssessmentBatch2.accessPassword ?? ''); setEditingBatch2Password(true); }}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" title="Regenerate password" onClick={regeneratePasswordBatch2}>
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
+                          <Button size="sm" variant="outline" className="shrink-0 h-8 w-8 p-0" disabled={!linkedAssessmentBatch2.accessPassword}
+                            onClick={() => linkedAssessmentBatch2.accessPassword && copyToClipboard(linkedAssessmentBatch2.accessPassword, 'Batch 2 Password')}>
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {canEditThisDrive && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Start Time</Label>
+                          <Input type="time" className="h-8 text-xs" value={draftExamStartBatch2} onChange={e => setDraftExamStartBatch2(e.target.value)} onBlur={saveExamWindowBatch2} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">End Time</Label>
+                          <Input type="time" className="h-8 text-xs" value={draftExamEndBatch2} onChange={e => setDraftExamEndBatch2(e.target.value)} onBlur={saveExamWindowBatch2} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-1">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        linkedAssessmentBatch2.status === 'Active'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {linkedAssessmentBatch2.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    {driveQuestionsBatch2.length} questions &middot; {totalMarksBatch2} marks &middot; {isEstimatedMinutesBatch2 ? '~' : ''}{estimatedMinutesBatch2} min
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {driveQuestionsBatch2.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={collapseAllBatch2}>
+                        Collapse all
+                      </Button>
+                    )}
+                    <Button size="sm" className="gap-1.5" onClick={() => setBatch2PickerOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      Add questions
+                    </Button>
+                  </div>
+                </div>
+
+                {driveQuestionsBatch2.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 gap-3 border-2 border-dashed rounded-lg text-muted-foreground">
+                    <p className="text-sm">No questions added to Batch 2 yet.</p>
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setBatch2PickerOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      Add from question bank
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {SESSIONS.map(session => {
+                      const sessionSections = sectionsBatch2.filter(s => session.topics.includes(s.topic));
+                      if (sessionSections.length === 0) return null;
+                      const sessionMarks = sessionSections.reduce((sum, s) => sum + s.questions.reduce((a, q) => a + q.marks, 0), 0);
+                      const sessionQCount = sessionSections.reduce((sum, s) => sum + s.questions.length, 0);
+                      return (
+                        <div key={session.name} className="border rounded-xl overflow-hidden">
+                          <div className="px-4 py-3 bg-slate-100 dark:bg-slate-800 flex items-center justify-between">
+                            <span className="font-bold text-sm">{session.name}</span>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>{sessionMarks} marks</span>
+                              <span>{sessionQCount} question{sessionQCount !== 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                          <div className="space-y-0 divide-y">
+                            {sessionSections.map((sec, sIdx) => {
+                              const collapsed = collapsedSectionsBatch2.has(sec.topic);
+                              const sectionMarks = sec.questions.reduce((s, q) => s + q.marks, 0);
+                              return (
+                                <div key={sec.topic}>
+                                  <button
+                                    className="w-full flex items-center justify-between px-4 py-3 bg-muted/40 hover:bg-muted/60 text-left"
+                                    onClick={() => toggleSectionBatch2(sec.topic)}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      {collapsed
+                                        ? <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                        : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                                      <span className="font-semibold text-sm">{sIdx + 1}. {sec.topic}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                      <span>Total Marks: {sectionMarks}</span>
+                                      <span>{sec.questions.length} question{sec.questions.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                  </button>
+
+                                  {!collapsed && (
+                                    <div className="divide-y">
+                                      {sec.questions.map((q, qIdx) => (
+                                        <div
+                                          key={q.id}
+                                          className={`group flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer
+                                            ${selectedQuestion?.id === q.id ? 'bg-primary/5 border-l-2 border-primary' : 'hover:bg-muted/30'}`}
+                                          onClick={() => { setSelectedQuestion(q); setEditingQuestion(false); }}
+                                        >
+                                          <span className="text-xs text-muted-foreground w-6 shrink-0">#{qIdx + 1}</span>
+                                          <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${topicColor(q.topic)}`}>
+                                            {q.topic}
+                                          </span>
+                                          <span className="text-sm flex-1 truncate">{q.text}</span>
+                                          <span className="text-xs text-muted-foreground shrink-0">{q.marks} pts</span>
+                                          <button
+                                            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 hover:text-red-500"
+                                            title="Remove question"
+                                            onClick={e => { e.stopPropagation(); removeQuestionBatch2(q.id); }}
+                                          >
+                                            <X className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {canEditThisDrive && linkedAssessmentBatch2 && linkedAssessmentBatch2.status !== 'Active' && driveQuestionsBatch2.length > 0 && (
+                  <div className="mt-6 pt-4 border-t flex justify-end">
+                    <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handlePublishBatch2}>
+                      <CheckCircle2 className="h-4 w-4" />
+                      Publish Batch 2
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Right: question preview / edit */}
             {selectedQuestion && (
@@ -1986,8 +2820,9 @@ export const TestDetail: React.FC = () => {
             )}
           </div>
 
-          {/* Confirm & Publish button — shown only in Draft state with questions */}
-          {liveStatus === 'Draft' && driveQuestions.length > 0 && linkedAssessment && (
+          {/* Confirm & Publish button — Single Batch only; Two Batch drives use each
+              column's own inline box instead (Batch 1's above, Batch 2's in its column). */}
+          {!isTwoBatch && liveStatus === 'Draft' && driveQuestions.length > 0 && linkedAssessment && (
             <div className="mt-6 pt-4 border-t flex justify-end">
               <Button
                 className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -2006,7 +2841,20 @@ export const TestDetail: React.FC = () => {
             <p className="text-sm text-muted-foreground">
               {driveCandidates.length} student{driveCandidates.length !== 1 ? 's' : ''} registered for this drive
             </p>
-            {!!linkedAssessment && renderSendInvitesControl()}
+            <div className="flex items-center gap-2">
+              {myDriveRole !== 'Evaluator' && driveCandidates.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs text-destructive hover:text-destructive"
+                  onClick={() => setDeleteAllStudentsOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete All
+                </Button>
+              )}
+              {!!linkedAssessment && renderSendInvitesControl()}
+            </div>
           </div>
           {driveCandidates.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-1.5 border-2 border-dashed rounded-lg text-muted-foreground">
@@ -2421,154 +3269,34 @@ export const TestDetail: React.FC = () => {
         )}
 
         {/* ── Candidates Tab ── */}
-        <TabsContent value="candidates" className="m-0 p-6 space-y-6">
-          <div className="border rounded-lg p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-sm">Overview</h3>
-              {canExtendTime && driveCandidates.some(c => c.assessmentStatus !== 'Completed') && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-xs"
-                  onClick={() => setExtendTimeTarget({ scope: 'drive' })}
-                >
-                  <Timer className="h-3.5 w-3.5" />
-                  Extend Time
-                </Button>
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-6">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Test progress</p>
-                <div className="flex gap-6 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Invited</p>
-                    <p className="font-bold text-lg">{overview.invited}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" />Completed
-                    </p>
-                    <p className="font-bold text-lg">{overview.completed}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Participation</p>
-                    <p className="font-bold text-lg">{overview.participationPct}%</p>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5 mb-3">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Score bands</p>
-                  {canEditThisDrive && (
-                  <Popover open={bandPopoverOpen} onOpenChange={setBandPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <button className="text-muted-foreground hover:text-foreground transition-colors" title="Edit score band cutoffs">
-                        <SlidersHorizontal className="h-3 w-3" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64">
-                      <p className="text-sm font-medium">Score band cutoffs</p>
-                      <p className="text-xs text-muted-foreground -mt-2">Minimum % to start each band. Below "Average from" is Poor.</p>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <Label className="text-xs">Average from</Label>
-                          <Input
-                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
-                            value={bandDraft.average}
-                            onChange={e => setBandDraft(d => ({ ...d, average: e.target.value }))}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <Label className="text-xs">Good from</Label>
-                          <Input
-                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
-                            value={bandDraft.good}
-                            onChange={e => setBandDraft(d => ({ ...d, good: e.target.value }))}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <Label className="text-xs">Excellent from</Label>
-                          <Input
-                            type="number" min={0} max={100} className="h-8 w-20 text-sm"
-                            value={bandDraft.excellent}
-                            onChange={e => setBandDraft(d => ({ ...d, excellent: e.target.value }))}
-                          />
-                        </div>
-                      </div>
-                      <Button size="sm" className="w-full h-8 text-xs" onClick={saveBandCutoffs}>Save</Button>
-                    </PopoverContent>
-                  </Popover>
-                  )}
-                </div>
-                <div className="flex gap-4 text-sm">
-                  {(['Poor', 'Average', 'Good', 'Excellent'] as const).map(band => (
-                    <div key={band}>
-                      <p className="text-xs text-muted-foreground">{band}</p>
-                      <p className={`font-semibold ${SCORE_BAND_TEXT_COLOR[band]}`}>{overview.bandPct(band)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Candidate feedback</p>
-                <p className="text-sm text-muted-foreground">No feedback collected yet.</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Cutoff & shortlisting toolbar */}
-          {candidateRows.some(r => r.status === 'Finished') && (
-            <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex-wrap">
-              <span className="text-sm font-medium text-amber-900">OA Shortlisting Cutoff:</span>
-              <div className="flex items-center gap-1.5">
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={cutoffInput}
-                  onChange={e => setCutoffInput(e.target.value)}
-                  className="h-8 w-20 text-sm"
-                />
-                <span className="text-sm text-amber-800">%</span>
-              </div>
-              <Button size="sm" variant="outline" className="h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-100" onClick={applyCutoff}>
-                Apply Cutoff
-              </Button>
-              {shortlistSelection.size > 0 && (
-                <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sm text-amber-800 font-medium">{shortlistSelection.size} selected</span>
-                  <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={confirmOaShortlist}>
-                    Confirm Shortlist for Interview Round
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShortlistSelection(new Set())}>
-                    Clear
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {candidateRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
-              <Users className="h-8 w-8 opacity-40" />
-              <p className="text-sm">No candidates registered yet.</p>
-              <Button size="sm" variant="outline" onClick={() => setActiveTab('students-database')}>
-                Go to Students Database
-              </Button>
-            </div>
-          ) : (
-            <Table
-              data={candidateRows}
-              columns={candidateColumns}
-              filters={candidateFilters}
-              searchPlaceholder="Search candidates"
-              searchKey="name"
-              exportFileName={`${drive.name}_Candidates`}
-              csvOnlyColumns={candidateCsvOnlyColumns}
-            />
-          )}
+        <TabsContent value="candidates" className="m-0 p-6">
+          {renderOnlineReportPanel({
+            rows: isTwoBatch ? candidateRows.filter(r => r.batch !== 'Batch 2') : candidateRows,
+            cutoffLabel: isTwoBatch ? 'Batch 1 Cutoff:' : 'OA Shortlisting Cutoff:',
+            cutoffValue: cutoffInput,
+            onCutoffChange: setCutoffInput,
+            onApplyCutoff: applyCutoff,
+            bandPopoverOpen, setBandPopoverOpen,
+            bandDraft, setBandDraft,
+            saveBandCutoffs,
+            showExtendTime: true,
+          })}
         </TabsContent>
+
+        {isTwoBatch && (
+        <TabsContent value="batch2report" className="m-0 p-6">
+          {renderOnlineReportPanel({
+            rows: candidateRows.filter(r => r.batch === 'Batch 2'),
+            cutoffLabel: 'Batch 2 Cutoff:',
+            cutoffValue: cutoffInputBatch2,
+            onCutoffChange: setCutoffInputBatch2,
+            onApplyCutoff: applyCutoffBatch2,
+            bandPopoverOpen: bandPopoverOpenBatch2, setBandPopoverOpen: setBandPopoverOpenBatch2,
+            bandDraft: bandDraftBatch2, setBandDraft: setBandDraftBatch2,
+            saveBandCutoffs: saveBandCutoffsBatch2,
+          })}
+        </TabsContent>
+        )}
 
         {myDriveRole !== 'Evaluator' && (
         <>
@@ -3082,6 +3810,15 @@ export const TestDetail: React.FC = () => {
         onAdd={addQuestions}
       />
 
+      {/* ── Batch 2 question picker sheet ── */}
+      <QuestionPicker
+        open={batch2PickerOpen}
+        onClose={() => setBatch2PickerOpen(false)}
+        allQuestions={db.questions}
+        alreadyAdded={alreadyAddedSetBatch2}
+        onAdd={addQuestionsBatch2}
+      />
+
 
       {/* ── Evaluate drawer ── */}
       <EvaluateReport
@@ -3160,6 +3897,34 @@ export const TestDetail: React.FC = () => {
               <p className="text-sm text-muted-foreground">
                 {liveStatus} — determined automatically from candidate progress.
               </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Online Assessment</Label>
+              <RadioGroup
+                value={draftDriveOaBatchMode}
+                onValueChange={v => setDraftDriveOaBatchMode(v as 'single' | 'two')}
+                className="pt-1"
+              >
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem value="single" id="edit-oa-batch-single" className="mt-0.5" />
+                  <Label htmlFor="edit-oa-batch-single" className="font-normal cursor-pointer">
+                    <span className="font-medium">Single Batch</span>
+                    <span className="block text-xs text-muted-foreground">One test for all candidates.</span>
+                  </Label>
+                </div>
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem value="two" id="edit-oa-batch-two" className="mt-0.5" />
+                  <Label htmlFor="edit-oa-batch-two" className="font-normal cursor-pointer">
+                    <span className="font-medium">Two Batches</span>
+                    <span className="block text-xs text-muted-foreground">Separate morning/afternoon tests.</span>
+                  </Label>
+                </div>
+              </RadioGroup>
+              {draftDriveOaBatchMode === 'single' && !!linkedAssessmentBatch2 && (
+                <p className="text-xs text-amber-600">
+                  This drive already has Batch 2 set up — switching to Single Batch hides it without deleting it.
+                </p>
+              )}
             </div>
             <div className="space-y-3 rounded-lg border p-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Test Window (optional)</p>
@@ -3507,6 +4272,151 @@ export const TestDetail: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Delete Candidate Confirmation Dialog ── */}
+      <AlertDialog open={!!deleteCandidateId} onOpenChange={v => { if (!v) setDeleteCandidateId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this candidate?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {driveCandidates.find(c => c.id === deleteCandidateId)?.name ?? 'This candidate'} will be permanently
+              removed from this drive, including any assessment, interview, or offer progress. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              onClick={confirmDeleteCandidate}
+            >
+              Yes, Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Delete All Students Confirmation Dialog ── */}
+      <AlertDialog open={deleteAllStudentsOpen} onOpenChange={setDeleteAllStudentsOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete all {driveCandidates.length} students?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes every candidate registered for this drive — including any assessment,
+              interview, or offer progress — across both batches if this drive has two. Use this to clear a bad
+              Students Database upload before re-importing. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              onClick={confirmDeleteAllStudents}
+            >
+              Yes, Delete All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Edit Candidate Sheet ── */}
+      <Sheet open={!!editCandidateId} onOpenChange={v => { if (!v) setEditCandidateId(null); }}>
+        <SheetContent side="center" className="sm:max-w-2xl flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Edit Candidate</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Name</Label>
+                <Input value={editCandidateDraft.name} onChange={e => setEditCandidateDraft(d => ({ ...d, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Registration Number</Label>
+                <Input value={editCandidateDraft.registrationNumber} onChange={e => setEditCandidateDraft(d => ({ ...d, registrationNumber: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input type="email" value={editCandidateDraft.email} onChange={e => setEditCandidateDraft(d => ({ ...d, email: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={editCandidateDraft.phone} onChange={e => setEditCandidateDraft(d => ({ ...d, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Degree</Label>
+                <Input value={editCandidateDraft.degree} onChange={e => setEditCandidateDraft(d => ({ ...d, degree: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Specialization</Label>
+                <Input value={editCandidateDraft.specialization} onChange={e => setEditCandidateDraft(d => ({ ...d, specialization: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Gender</Label>
+                <Select value={editCandidateDraft.gender} onValueChange={v => setEditCandidateDraft(d => ({ ...d, gender: v as Candidate['gender'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Date of Birth</Label>
+                <Input value={editCandidateDraft.dateOfBirth} onChange={e => setEditCandidateDraft(d => ({ ...d, dateOfBirth: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>GitHub URL</Label>
+                <Input value={editCandidateDraft.githubUrl} onChange={e => setEditCandidateDraft(d => ({ ...d, githubUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>LinkedIn URL</Label>
+                <Input value={editCandidateDraft.linkedinUrl} onChange={e => setEditCandidateDraft(d => ({ ...d, linkedinUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Resume URL</Label>
+                <Input value={editCandidateDraft.resumeUrl} onChange={e => setEditCandidateDraft(d => ({ ...d, resumeUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Coding Platform URLs</Label>
+                <Input value={editCandidateDraft.codingPlatformUrls} onChange={e => setEditCandidateDraft(d => ({ ...d, codingPlatformUrls: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>10th %</Label>
+                <Input type="number" value={editCandidateDraft.tenth} onChange={e => setEditCandidateDraft(d => ({ ...d, tenth: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>12th %</Label>
+                <Input type="number" value={editCandidateDraft.twelfth} onChange={e => setEditCandidateDraft(d => ({ ...d, twelfth: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Diploma</Label>
+                <Input type="number" value={editCandidateDraft.diploma} onChange={e => setEditCandidateDraft(d => ({ ...d, diploma: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UG Marks</Label>
+                <Input type="number" value={editCandidateDraft.ugMarks} onChange={e => setEditCandidateDraft(d => ({ ...d, ugMarks: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>PG Marks</Label>
+                <Input type="number" value={editCandidateDraft.pgMarks} onChange={e => setEditCandidateDraft(d => ({ ...d, pgMarks: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Backlog History</Label>
+                <Input type="number" value={editCandidateDraft.backlogHistory} onChange={e => setEditCandidateDraft(d => ({ ...d, backlogHistory: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Current Backlogs</Label>
+                <Input type="number" value={editCandidateDraft.currentBacklogs} onChange={e => setEditCandidateDraft(d => ({ ...d, currentBacklogs: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <SheetFooter className="px-6 py-4 border-t shrink-0 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setEditCandidateId(null)}>Cancel</Button>
+            <Button className="flex-1" onClick={saveEditCandidate}>Save Changes</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {/* ── Publish Success Dialog — shows link + password ── */}
       <Dialog open={publishSuccessOpen} onOpenChange={setPublishSuccessOpen}>

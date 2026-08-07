@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { CommandPalette } from './CommandPalette';
 import { useRecentActivity, type ActivityType } from '../hooks/useRecentActivity';
+import { ThemeToggle } from './ThemeToggle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -194,6 +195,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
             <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Notifications" className="relative h-9 w-9">

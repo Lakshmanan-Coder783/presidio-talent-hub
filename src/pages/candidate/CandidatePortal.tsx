@@ -28,6 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { StarRating } from '@/components/ui/star-rating';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { resolveExperienceSettings } from '../../utils/experienceSettings';
 import { seededShuffle, shuffleQuestionOptions } from '../../utils/seededShuffle';
@@ -204,8 +205,10 @@ export const CandidatePortal: React.FC = () => {
   const questions = useMemo(() => {
     if (!assessment || !candidate) return [];
     // drive.questionIds (Questions tab) is the source of truth for what's attached;
-    // assessment.questionIds is only set once, at creation time.
-    const ids = drive?.questionIds ?? assessment.questionIds;
+    // assessment.questionIds is only set once, at creation time. Batch 2 candidates
+    // draw from the drive's separate Batch 2 question list instead.
+    const driveQuestionIds = candidate.batch === 'Batch 2' ? drive?.questionIdsBatch2 : drive?.questionIds;
+    const ids = driveQuestionIds ?? assessment.questionIds;
     let qs = db.questions.filter(q => ids.includes(q.id));
 
     if (fixedSectionOrder && assessment.sections?.length) {
@@ -612,6 +615,7 @@ export const CandidatePortal: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-5 text-sm">
+          <ThemeToggle />
           <span className="text-muted-foreground">
             Candidate ID: <b className="text-foreground">{candidate.id}</b>
           </span>

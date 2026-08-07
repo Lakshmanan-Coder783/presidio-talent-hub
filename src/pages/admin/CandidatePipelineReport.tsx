@@ -51,7 +51,10 @@ export const CandidatePipelineReport: React.FC<CandidatePipelineReportProps> = (
   const oaCompleted = candidate.assessmentStatus === 'Completed';
   const effectiveTotal = candidate.assessmentTotalMarks ?? totalMarks;
   const pct = effectiveTotal > 0 ? Math.min(100, Math.round(((candidate.assessmentScore ?? 0) / effectiveTotal) * 100)) : 0;
-  const band = scoreBand(pct, { ...DEFAULT_SCORE_BAND_CUTOFFS, ...drive.scoreBandCutoffs });
+  const band = scoreBand(pct, {
+    ...DEFAULT_SCORE_BAND_CUTOFFS,
+    ...(candidate.batch === 'Batch 2' ? drive.scoreBandCutoffsBatch2 : drive.scoreBandCutoffs),
+  });
 
   const interviewStatus = deriveInterviewStatus(candidate);
   const interviewStarted = interviewStatus !== 'Pending';

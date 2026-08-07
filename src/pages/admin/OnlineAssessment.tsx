@@ -5,6 +5,7 @@ import { Table } from '../../components/Table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from '@/components/ui/sheet';
@@ -19,7 +20,7 @@ import { UserCheck, UserX, ExternalLink, FileText, Plus, Upload, Pencil, Trash2 
 import { toast } from 'sonner';
 import type { CampusDrive, Candidate, CollegeStudent } from '../../types';
 import { parseStudentFile, type ParsedStudentRow } from '../../utils/parseStudentFile';
-import { computeDriveStatus, getDriveLinkedAssessment, getDriveDisplayName } from '../../utils/driveStatus';
+import { computeDriveStatus, getDriveLinkedAssessment, getDriveDisplayName, isTwoBatchDrive } from '../../utils/driveStatus';
 import { getVisibleDrives, canEditDriveConfig, canCreateDrive } from '../../utils/permissions';
 import { formatDriveDateRange } from '../../utils/dateFormat';
 
@@ -39,11 +40,11 @@ interface TestRow {
   status: CampusDrive['status'];
   ownerInitials: string;
   ownerName: string;
-  ownerColor: string;
   team: string;
 }
 
-const OWNER = { initials: 'LM', name: 'Lakshmanan M', color: 'bg-blue-600' };
+const getInitials = (name: string): string =>
+  name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
 const relativeTime = (ts: number | null): string => {
   if (!ts) return '—';
@@ -73,7 +74,7 @@ export const OnlineAssessment: React.FC = () => {
   useEffect(() => { loadCampusDrivePage(); }, [loadCampusDrivePage]);
   const navigate = useNavigate();
   const canEditDrives = canEditDriveConfig(currentUser?.user);
-  const canCreateDrives = canCreateDrive(currentUser?.user, db);
+  const canCreateDrives = canCreateDrive(currentUser?.user);
   const visibleDrives = useMemo(() => getVisibleDrives(currentUser?.user, db), [currentUser?.user, db]);
 
   // ── Delete drive state ───────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ export const OnlineAssessment: React.FC = () => {
   const [draftDay2Date, setDraftDay2Date] = useState('');
   const [draftLocation, setDraftLocation] = useState('');
 
-  const [spocUserId, setSpocUserId] = useState('');
+  const [draftOaBatchMode, setDraftOaBatchMode] = useState<'single' | 'two'>('single');
 
   // ── College student pool state ───────────────────────────────────────────────
   const collegeFileInputRef = useRef<HTMLInputElement>(null);
@@ -106,10 +107,14 @@ export const OnlineAssessment: React.FC = () => {
   const [attendanceOpen, setAttendanceOpen] = useState(false);
 
   // ── Students database (per-drive) import state ──────────────────────────────
+  type DriveCsvImportRow = Parameters<typeof bulkImportCandidates>[1][number] & {
+    onlineAssessmentBatch?: 'Batch 1' | 'Batch 2';
+  };
   const driveFileInputRef = useRef<HTMLInputElement>(null);
   const [activeImportDriveId, setActiveImportDriveId] = useState<string | null>(null);
   const [driveCsvPreviewOpen, setDriveCsvPreviewOpen] = useState(false);
-  const [driveCsvParsedData, setDriveCsvParsedData] = useState<Parameters<typeof bulkImportCandidates>[1]>([]);
+  const [driveCsvParsedData, setDriveCsvParsedData] = useState<DriveCsvImportRow[]>([]);
+  const [driveCsvImportBatch, setDriveCsvImportBatch] = useState<'file' | 'Batch 1' | 'Batch 2'>('file');
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const copyToClipboard = (text: string, label: string) => {
@@ -140,7 +145,7 @@ export const OnlineAssessment: React.FC = () => {
     setDraftDate('');
     setDraftDay2Date('');
     setDraftLocation('');
-    setSpocUserId('');
+    setDraftOaBatchMode('single');
     setEditOpen(true);
   };
 
@@ -159,7 +164,8 @@ export const OnlineAssessment: React.FC = () => {
         location: draftLocation,
         description: '',
         status: 'Draft',
-      }, spocUserId || undefined);
+        oaBatchMode: draftOaBatchMode,
+      });
       if (drive) toast.success('Drive created successfully.');
     } else {
       if (!editDrive) return;
@@ -236,6 +242,7 @@ export const OnlineAssessment: React.FC = () => {
     try {
       const rows = await parseStudentFile(file);
       setDriveCsvParsedData(rows.map(r => ({ ...r, college: drive.college })));
+      setDriveCsvImportBatch('file');
       setDriveCsvPreviewOpen(true);
     } catch {
       toast.error('Failed to parse file. Please check the format.');
@@ -243,16 +250,29 @@ export const OnlineAssessment: React.FC = () => {
     }
   };
 
+  // "file" defers to each row's own "Online Assessment Batch" column (blank -> Batch 1);
+  // an explicit Batch 1/Batch 2 selection overrides every row in this import.
+  const resolveImportBatch = (
+    row: { onlineAssessmentBatch?: 'Batch 1' | 'Batch 2' },
+    override: 'file' | 'Batch 1' | 'Batch 2',
+  ): 'Batch 1' | 'Batch 2' =>
+    override === 'file' ? (row.onlineAssessmentBatch ?? 'Batch 1') : override;
+
   const confirmDriveCsvImport = async () => {
     if (!activeImportDriveId) return;
-    const imported = await bulkImportCandidates(activeImportDriveId, driveCsvParsedData);
+    const rowsWithBatch = driveCsvParsedData.map(r => ({ ...r, batch: resolveImportBatch(r, driveCsvImportBatch) }));
+    const { imported, updated } = await bulkImportCandidates(activeImportDriveId, rowsWithBatch);
     setDriveCsvPreviewOpen(false);
     setDriveCsvParsedData([]);
     setActiveImportDriveId(null);
-    if (imported > 0) {
-      toast.success(`${imported} student${imported !== 1 ? 's' : ''} registered for the drive.`);
+    if (imported > 0 || updated > 0) {
+      const parts = [
+        imported > 0 ? `${imported} new` : null,
+        updated > 0 ? `${updated} updated` : null,
+      ].filter(Boolean);
+      toast.success(`${parts.join(', ')} student${imported + updated !== 1 ? 's' : ''}.`);
     } else {
-      toast.info('No new students — all emails already exist as candidates.');
+      toast.info('No changes — nothing new or different from what\'s already registered.');
     }
   };
 
@@ -292,7 +312,7 @@ export const OnlineAssessment: React.FC = () => {
   ];
 
   // ── Students database preview (spreadsheet-style) ────────────────────────────
-  type DriveDbPreviewRow = { sno: number } & Parameters<typeof bulkImportCandidates>[1][number];
+  type DriveDbPreviewRow = { sno: number } & DriveCsvImportRow;
 
   const driveCsvPreviewTableData = useMemo<DriveDbPreviewRow[]>(
     () => driveCsvParsedData.map((r, i) => ({ sno: i + 1, ...r })),
@@ -309,6 +329,12 @@ export const OnlineAssessment: React.FC = () => {
     { header: 'Specialization', accessor: 'specialization' as const },
     { header: 'Gender', accessor: 'gender' as const },
     { header: 'DOB', accessor: 'dateOfBirth' as const },
+    ...(isTwoBatchDrive(db.drives.find(d => d.id === activeImportDriveId)) ? [{
+      header: 'Batch',
+      render: (row: DriveDbPreviewRow) => (
+        <span className="text-sm font-medium">{resolveImportBatch(row, driveCsvImportBatch)}</span>
+      ),
+    }] : []),
     {
       header: 'GitHub',
       render: (row: DriveDbPreviewRow) =>
@@ -374,6 +400,9 @@ export const OnlineAssessment: React.FC = () => {
       const isPublished = getDriveLinkedAssessment(drive, driveCandidates, db.assessments)?.status === 'Active';
       const liveStatus = computeDriveStatus(driveCandidates, isPublished);
 
+      const owner = drive.createdByUserId ? db.users.find(u => u.id === drive.createdByUserId) : undefined;
+      const ownerName = owner?.name ?? '—';
+
       return {
         id:               drive.id,
         name:             drive.name,
@@ -388,13 +417,12 @@ export const OnlineAssessment: React.FC = () => {
         driveDay2Date:    drive.day2Date,
         pipelineProgress: computePipelineProgress(driveCandidates),
         status:           liveStatus,
-        ownerInitials:    OWNER.initials,
-        ownerName:        OWNER.name,
-        ownerColor:       OWNER.color,
+        ownerInitials:    owner ? getInitials(ownerName) : '—',
+        ownerName,
         team:             liveStatus,
       };
     });
-  }, [visibleDrives, db.candidates, db.assessments]);
+  }, [visibleDrives, db.candidates, db.assessments, db.users]);
 
   // ── Columns ──────────────────────────────────────────────────────────────────
   const columns = [
@@ -489,9 +517,7 @@ export const OnlineAssessment: React.FC = () => {
       sortable: true,
       render: (row: TestRow) => (
         <div className="flex items-center gap-2">
-          <span
-            className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${row.ownerColor}`}
-          >
+          <span className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground bg-primary shrink-0">
             {row.ownerInitials}
           </span>
           <span className="text-sm truncate max-w-[120px]">{row.ownerName}</span>
@@ -656,26 +682,39 @@ export const OnlineAssessment: React.FC = () => {
               <Label>Location</Label>
               <Input value={draftLocation} onChange={e => setDraftLocation(e.target.value)} />
             </div>
-            {isCreating && currentUser?.user?.isSuperAdmin && (
+            {isCreating && (
               <div className="space-y-1.5">
-                <Label>SPOC</Label>
-                <Select value={spocUserId} onValueChange={setSpocUserId}>
-                  <SelectTrigger><SelectValue placeholder="Select SPOC (optional)" /></SelectTrigger>
-                  <SelectContent>
-                    {db.users.filter(u => !u.isSuperAdmin).map(u => (
-                      <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {spocUserId && (
-                  <p className="text-xs text-muted-foreground">
-                    SPOC email: {db.users.find(u => u.id === spocUserId)?.email}
-                  </p>
-                )}
+                <Label>Online Assessment</Label>
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Some colleges split candidates across a morning and afternoon session when there
+                  aren't enough systems to test everyone at once — each batch gets its own link,
+                  password, and question set.
+                </p>
+                <RadioGroup
+                  value={draftOaBatchMode}
+                  onValueChange={v => setDraftOaBatchMode(v as 'single' | 'two')}
+                  className="pt-1"
+                >
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="single" id="oa-batch-single" className="mt-0.5" />
+                    <Label htmlFor="oa-batch-single" className="font-normal cursor-pointer">
+                      <span className="font-medium">Single Batch</span>
+                      <span className="block text-xs text-muted-foreground">One test for all candidates.</span>
+                    </Label>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="two" id="oa-batch-two" className="mt-0.5" />
+                    <Label htmlFor="oa-batch-two" className="font-normal cursor-pointer">
+                      <span className="font-medium">Two Batches</span>
+                      <span className="block text-xs text-muted-foreground">Separate morning/afternoon tests.</span>
+                    </Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-xs text-muted-foreground">
+                  You can assign a SPOC afterward from the drive's Access tab, and switch this later
+                  from Edit Drive Details if the plan changes.
+                </p>
               </div>
-            )}
-            {isCreating && !currentUser?.user?.isSuperAdmin && (
-              <p className="text-xs text-muted-foreground">You'll be added as Evaluator on this drive.</p>
             )}
           </div>
 
@@ -750,6 +789,21 @@ export const OnlineAssessment: React.FC = () => {
               )}
               {driveCsvParsedData.length} student{driveCsvParsedData.length !== 1 ? 's' : ''} found in file
             </p>
+            {isTwoBatchDrive(db.drives.find(d => d.id === activeImportDriveId)) && (
+              <div className="flex items-center gap-2 pt-2">
+                <Label className="text-sm font-normal shrink-0">Batch</Label>
+                <Select value={driveCsvImportBatch} onValueChange={v => setDriveCsvImportBatch(v as 'file' | 'Batch 1' | 'Batch 2')}>
+                  <SelectTrigger className="w-[200px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="file">Use file's column</SelectItem>
+                    <SelectItem value="Batch 1">Force Batch 1</SelectItem>
+                    <SelectItem value="Batch 2">Force Batch 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {driveCsvParsedData.length === 0 ? (

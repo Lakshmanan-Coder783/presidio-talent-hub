@@ -1,11 +1,14 @@
 import type { Request, Response } from "express";
+import type { QueryFilter } from "mongoose";
 import { Candidate } from "../models/Candidate.model.js";
+import type { CandidateDoc } from "../models/Candidate.model.js";
 import { CampusDrive } from "../models/CampusDrive.model.js";
 import { Offer } from "../models/Offer.model.js";
 import { Assessment } from "../models/Assessment.model.js";
 import { Question } from "../models/Question.model.js";
 import { nextCandidateId, nextOfferId } from "../utils/ids.js";
 import { HttpError } from "../middleware/errorHandler.js";
+import { appendFunnelStageHistory } from "../utils/funnelStageHistory.js";
 
 // Server-side field redaction (the real port of redactCandidateForViewer,
 // with per-role visibility) lands in the auth phase. For now this is a no-op
@@ -17,7 +20,13 @@ export async function listCandidates(_req: Request, res: Response) {
 }
 
 export async function listCandidatesForDrive(req: Request, res: Response) {
-  const candidates = await Candidate.find({ driveId: req.params.driveId });
+  const { batch } = req.query as { batch?: string };
+  // No batch column set on a candidate defaults to Batch 1 everywhere else in
+  // the app (see bulkInvite's identical batchFilter) — match that here too.
+  const batchFilter: QueryFilter<CandidateDoc> = batch
+    ? (batch === "Batch 2" ? { batch: "Batch 2" } : { batch: { $ne: "Batch 2" } })
+    : {};
+  const candidates = await Candidate.find({ driveId: req.params.driveId, ...batchFilter });
   res.json(candidates);
 }
 
@@ -27,22 +36,67 @@ export async function getCandidate(req: Request, res: Response) {
   res.json(candidate);
 }
 
+export async function deleteCandidate(req: Request, res: Response) {
+  const candidate = await Candidate.findByIdAndDelete(req.params.id);
+  if (!candidate) throw new HttpError(404, "Candidate not found");
+  res.status(204).end();
+}
+
+// Bulk recovery path for a bad Students Database upload — wipes every candidate
+// registered for the drive in one call instead of requiring a delete per row.
+export async function deleteCandidatesForDrive(req: Request, res: Response) {
+  const { driveId } = req.params;
+  const result = await Candidate.deleteMany({ driveId });
+  res.json({ deleted: result.deletedCount ?? 0 });
+}
+
 export async function updateCandidate(req: Request, res: Response) {
-  const candidate = await Candidate.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const existing = await Candidate.findById(req.params.id);
+  if (!existing) throw new HttpError(404, "Candidate not found");
+
+  const nextStage = (req.body as Record<string, unknown>).funnelStage as CandidateDoc["funnelStage"] | undefined;
+  const funnelStageHistory = appendFunnelStageHistory(existing.funnelStageHistory, existing.funnelStage, nextStage);
+
+  const candidate = await Candidate.findByIdAndUpdate(
+    req.params.id,
+    { ...req.body, ...(funnelStageHistory ? { funnelStageHistory } : {}) },
+    { new: true, runValidators: true },
+  );
   if (!candidate) throw new HttpError(404, "Candidate not found");
   res.json(candidate);
 }
 
 export async function bulkUpdateCandidates(req: Request, res: Response) {
   const updates = req.body as Array<Record<string, unknown> & { id: string }>;
+  const existing = await Candidate.find({ _id: { $in: updates.map(u => u.id) } });
+  const existingById = new Map(existing.map(c => [c._id, c]));
+
   const results = await Promise.all(
-    updates.map(({ id, ...fields }) =>
-      Candidate.findByIdAndUpdate(id, fields, { new: true, runValidators: true }),
-    ),
+    updates.map(({ id, ...fields }) => {
+      const prev = existingById.get(id);
+      const funnelStageHistory = appendFunnelStageHistory(
+        prev?.funnelStageHistory,
+        prev?.funnelStage,
+        fields.funnelStage as CandidateDoc["funnelStage"] | undefined,
+      );
+      return Candidate.findByIdAndUpdate(
+        id,
+        { ...fields, ...(funnelStageHistory ? { funnelStageHistory } : {}) },
+        { new: true, runValidators: true },
+      );
+    }),
   );
   res.json(results.filter(Boolean));
 }
 
+// Re-importing the Students Database is expected to reflect edits made in the
+// spreadsheet: a row whose email already exists in this drive updates that
+// candidate's registration/profile fields (name, contact/academic details,
+// links, batch, ...) in place rather than being skipped. Only fields present in
+// `row` are ever touched (a partial $set via findByIdAndUpdate), so pipeline
+// state — assessmentStatus, funnelStage, oaShortlisted, interview/coding/
+// whiteboard scores, offerStatus, etc. — is never part of the row shape and is
+// left untouched by a re-import.
 export async function bulkImportCandidates(req: Request, res: Response) {
   const { driveId } = req.params;
   const rows = req.body as Array<Record<string, unknown> & { email: string }>;
@@ -50,13 +104,22 @@ export async function bulkImportCandidates(req: Request, res: Response) {
   const drive = await CampusDrive.findById(driveId);
   if (!drive) throw new HttpError(404, "Drive not found");
 
-  const existingCandidates = await Candidate.find({ driveId }, { email: 1 });
-  const existing = new Set(existingCandidates.map(c => c.email.toLowerCase()));
+  const existingCandidates = await Candidate.find({ driveId });
+  const existingByEmail = new Map(existingCandidates.map(c => [c.email.toLowerCase(), c]));
 
   const toInsert = [];
+  const toUpdate: Array<{ id: string; row: Record<string, unknown> }> = [];
+  const seenInFile = new Set<string>();
   for (const row of rows) {
-    if (existing.has(row.email.toLowerCase())) continue; // skip duplicates within this drive
-    existing.add(row.email.toLowerCase()); // guard against duplicates within the same import batch too
+    const emailKey = row.email.toLowerCase();
+    if (seenInFile.has(emailKey)) continue; // dedup within the uploaded file itself
+    seenInFile.add(emailKey);
+
+    const existing = existingByEmail.get(emailKey);
+    if (existing) {
+      toUpdate.push({ id: existing._id, row });
+      continue;
+    }
     toInsert.push({
       ...row,
       _id: await nextCandidateId(),
@@ -66,12 +129,20 @@ export async function bulkImportCandidates(req: Request, res: Response) {
       interviewStatus: "Not Scheduled",
       offerStatus: "None",
       funnelStage: "Applied",
+      funnelStageHistory: [{ stage: "Applied", enteredAt: new Date().toISOString() }],
     });
   }
 
-  if (toInsert.length === 0) return res.json({ imported: 0 });
-  const created = await Candidate.insertMany(toInsert);
-  res.status(201).json({ imported: created.length, candidates: created });
+  const created = toInsert.length ? await Candidate.insertMany(toInsert) : [];
+  const updated = await Promise.all(
+    toUpdate.map(u => Candidate.findByIdAndUpdate(u.id, u.row, { new: true, runValidators: true })),
+  );
+
+  res.status(201).json({
+    imported: created.length,
+    updated: updated.filter(Boolean).length,
+    candidates: [...created, ...updated.filter(Boolean)],
+  });
 }
 
 export async function markAttendance(req: Request, res: Response) {
@@ -122,9 +193,11 @@ export async function submitCandidateAssessment(req: Request, res: Response) {
   // The drive's questionIds (managed in the Questions tab) are the source of
   // truth for what's actually attached to the test; assessment.questionIds is
   // set once at creation and isn't kept in sync with later edits — preserved
-  // deliberately, matching the original client-side scoring logic.
+  // deliberately, matching the original client-side scoring logic. When the
+  // candidate belongs to Batch 2, the drive's Batch 2 question list applies instead.
   const drive = candidate.driveId ? await CampusDrive.findById(candidate.driveId) : null;
-  const questionIds = drive?.questionIds?.length ? drive.questionIds : assessment.questionIds;
+  const driveQuestionIds = candidate.batch === "Batch 2" ? drive?.questionIdsBatch2 : drive?.questionIds;
+  const questionIds = driveQuestionIds?.length ? driveQuestionIds : assessment.questionIds;
   const questions = await Question.find({ _id: { $in: questionIds } });
   const questionById = new Map(questions.map(q => [q._id, q]));
 
@@ -171,6 +244,7 @@ export async function submitCandidateAssessment(req: Request, res: Response) {
   }
 
   const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
+  const funnelStageHistory = appendFunnelStageHistory(candidate.funnelStageHistory, candidate.funnelStage, "Online Test");
 
   await Candidate.findByIdAndUpdate(candidateId, {
     assessmentStatus: "Completed",
@@ -181,6 +255,7 @@ export async function submitCandidateAssessment(req: Request, res: Response) {
     answers,
     sectionScores: scoresBreakdown,
     funnelStage: "Online Test",
+    ...(funnelStageHistory ? { funnelStageHistory } : {}),
     deviceBrowser,
     deviceOS,
     windowViolationCount: proctoring?.windowViolationCount,
@@ -204,9 +279,19 @@ export async function updateOfferStatus(req: Request, res: Response) {
   const candidateId = req.params.id as string;
   const { status } = req.body as { status: "None" | "Offered" | "Accepted" | "Declined" | "Joined" };
 
+  const existing = await Candidate.findById(candidateId);
+  if (!existing) throw new HttpError(404, "Candidate not found");
+
   const fields: Record<string, unknown> = { offerStatus: status };
   if (status === "Offered") fields.funnelStage = "Offered";
   if (status === "Joined") fields.funnelStage = "Joined";
+  const funnelStageHistory = appendFunnelStageHistory(
+    existing.funnelStageHistory,
+    existing.funnelStage,
+    fields.funnelStage as CandidateDoc["funnelStage"] | undefined,
+  );
+  if (funnelStageHistory) fields.funnelStageHistory = funnelStageHistory;
+
   const candidate = await Candidate.findByIdAndUpdate(candidateId, fields, { new: true });
   if (!candidate) throw new HttpError(404, "Candidate not found");
 
